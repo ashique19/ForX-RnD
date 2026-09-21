@@ -21,20 +21,50 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 
 ## Install (Windows)
 
+Double-click **`INSTALL.bat`** (or run it from a command prompt). It prints an **OK / MISSING** checklist and **does not fail silently**.
+
 ```bat
 cd C:\AI\forex-lab
-"%LOCALAPPDATA%\Programs\Python\Python311\python.exe" -m venv .venv
-.venv\Scripts\activate
-python -m pip install -U pip
-pip install -r requirements.txt
+INSTALL.bat
 ```
 
-Or with any Python 3.10+:
+What it checks **before** creating `.venv`:
+
+| Check | Required | If MISSING |
+|-------|----------|------------|
+| **Python 3.11+** | yes | Stops. Install from [python.org/downloads](https://www.python.org/downloads/). Tick **Add python.exe to PATH** and leave **pip** checked, then re-run `INSTALL.bat`. |
+| **pip** | yes | Reinstall Python with pip, or `python -m ensurepip --upgrade`. |
+| **venv module** | yes | Windows: use the python.org installer. Linux: `python3-venv`. |
+| **Write access** | yes | Copy the project to a writable folder (not `Program Files`). |
+| **Network (pip)** | optional | Stated as MISSING; `pip install` needs internet unless wheels are cached. |
+| **requirements.txt** | yes | Run `INSTALL.bat` from this repo folder. |
+
+If Python is not installed at all, `INSTALL.bat` still prints that checklist (Python / pip / venv = MISSING) plus the download link, then **exits without creating a half-broken venv**.
+
+On success it creates `.venv`, installs `requirements.txt`, and verifies `import streamlit` and `import forex_lab`. It then offers to start the desk (`RUN_UI.bat`).
 
 ```bat
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+REM skip the Y/N prompt
+set INSTALL_QUIET=1
+INSTALL.bat
+
+REM install then launch http://localhost:8501
+set INSTALL_LAUNCH_UI=1
+INSTALL.bat --launch-ui
+```
+
+Override the interpreter with `FORX_PYTHON` if several copies are installed:
+
+```bat
+set FORX_PYTHON=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
+INSTALL.bat
+```
+
+Any OS with Python 3.11+ already on PATH:
+
+```bat
+python -m forex_lab.install_check --preflight
+python -m forex_lab.install_check --install
 ```
 
 ## Quick start
@@ -105,7 +135,7 @@ The top of the page is the **signal screen** (primary): one **dense board** — 
 
 Fetch / Train / Backtest / Generate signals live in the collapsed sidebar **Lab** expander. Walk-forward CSV/metrics/equity/logs are in a collapsed **Research lab** expander under the board. Open those when you need data or a model, not to read the screen.
 
-Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing):
+Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing). Prefer `INSTALL.bat` first so the OK/MISSING checklist has already passed:
 
 ```bat
 cd C:\AI\forex-lab
@@ -255,12 +285,13 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, **dark dense terminal theme** (`.streamlit/config.toml` + `forex_lab/ui/theme.py` BUY/SELL/HOLD contrast), watchlist load/save plus board-row status, **workspace preset load/save/apply/reset** (`tests/test_workspace.py`: scalp/swing builtins, user shadow, JSON load, in-memory overlay does not write `default.yaml`, **applying a preset does not wipe the paper journal**), local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), paper journal session labels matching the board Asia wrap (`test_paper_session_matches_board_asia_wrap_and_overlap`), Asia/Dhaka display-time formatting, data-health rows, PaperBroker fills/SL-TP scoring, paper lookback scorer RIGHT/WRONG/PENDING (`tests/test_score.py`: TP/SL, horizon signed move, STALE/session/conf aggregates, mistake filters), the event calendar parse/cache/fail-soft path plus next-event labels, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, **selective open gates** (`tests/test_gates.py`: MTF/confidence/event, fail-soft when calendar/MTF missing, default-off), the pandas-ta subset (causal / default-off), FRED as-of lag plus fail-soft when the cache is missing (no network), watchlist alert flips / STALE / MISSING / rate-limit / event-within-60m (`tests/test_alerts.py`), the dense board columns (Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | Actions), unicode sparklines, and **Paper BUY/SELL disabled on STALE/MISSING** (`paper_submit_allowed`, AppTest on disabled buttons).
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, **dark dense terminal theme** (`.streamlit/config.toml` + `forex_lab/ui/theme.py` BUY/SELL/HOLD contrast), watchlist load/save plus board-row status, **workspace preset load/save/apply/reset** (`tests/test_workspace.py`: scalp/swing builtins, user shadow, JSON load, in-memory overlay does not write `default.yaml`, **applying a preset does not wipe the paper journal**), local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), paper journal session labels matching the board Asia wrap (`test_paper_session_matches_board_asia_wrap_and_overlap`), Asia/Dhaka display-time formatting, data-health rows, PaperBroker fills/SL-TP scoring, paper lookback scorer RIGHT/WRONG/PENDING (`tests/test_score.py`: TP/SL, horizon signed move, STALE/session/conf aggregates, mistake filters), the event calendar parse/cache/fail-soft path plus next-event labels, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, **selective open gates** (`tests/test_gates.py`: MTF/confidence/event, fail-soft when calendar/MTF missing, default-off), the pandas-ta subset (causal / default-off), FRED as-of lag plus fail-soft when the cache is missing (no network), watchlist alert flips / STALE / MISSING / rate-limit / event-within-60m (`tests/test_alerts.py`), the dense board columns (Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | Actions), unicode sparklines, **Paper BUY/SELL disabled on STALE/MISSING** (`paper_submit_allowed`, AppTest on disabled buttons), and the **Windows installer preflight** (`tests/test_install_check.py`: missing Python prints `[MISSING]` plus the python.org link, old 3.10 is rejected, pip/venv/write-access failures, optional network does not fail required checks, mocked `.venv` + import verify, `INSTALL.bat` still documents the no-Python path).
 
 ## Project layout
 
 ```
 streamlit_app.py # trader signal screen (streamlit run streamlit_app.py)
+INSTALL.bat      # Windows installer: OK/MISSING checklist, .venv, requirements, optional RUN_UI.bat
 RUN_UI.bat       # Windows helper: venv + streamlit on localhost:8501
 forex_lab/
   console.py     # ASCII-safe CLI prints + UTF-8 stdio
@@ -283,6 +314,7 @@ forex_lab/
   backtest.py    # walk-forward + metrics + report
   signals.py     # latest_signals.csv
   cli.py         # CLI entry
+  install_check.py  # stdlib preflight / installer (python -m forex_lab.install_check)
   ui/            # Streamlit helpers (watch board, health strip, alerts, workspace presets, dark terminal theme; no live trading)
 config/default.yaml
 config/watchlist.yaml  # persisted research watchlist for the Streamlit board
