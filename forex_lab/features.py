@@ -21,6 +21,9 @@ Label schemes
     reference price (more optimistic than next-open).
 
 Features at t use only information available at or before t.
+
+Optional packs (default off): ``feature_extras.pandas_ta`` extra oscillators
+and ``feature_extras.fred`` as-of macro series. See ``ta_pack.py`` / ``fred.py``.
 """
 from __future__ import annotations
 
@@ -257,6 +260,12 @@ def _add_feature_extras(
     htf = _higher_tf_features(df, cfg)
     for col in htf.columns:
         out[col] = htf[col].to_numpy()
+
+    from forex_lab.ta_pack import add_pandas_ta_features
+    from forex_lab.fred import add_fred_features
+
+    add_pandas_ta_features(out, df, extra)
+    add_fred_features(out, df, extra, cfg, pair=pair)
 
     other = extra.get("cross_pair")
     if not other:

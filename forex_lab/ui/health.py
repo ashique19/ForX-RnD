@@ -57,19 +57,49 @@ def _yf_last_label(gate: FetchGate | None, pair: str) -> str:
         return "n/a"
 
 
+def _fred_health(status: Any | None) -> dict[str, str] | None:
+    if status is None or not bool(getattr(status, "enabled", False)):
+        return None
+    series = list(getattr(status, "series", None) or [])
+    source = str(getattr(status, "source", "") or "missing")
+    err = getattr(status, "error", None)
+    fetched = str(getattr(status, "fetched_at", None) or "n/a")
+    key_note = "FRED_API_KEY set" if getattr(status, "used_api_key", False) else "no API key (CSV ok)"
+    cadence = f"FRED daily · as-of lag · {key_note}"
+    if err and not series:
+        status_s, observed, detail = "FAIL", "no series", str(err)
+    elif source == "missing" and not series:
+        status_s, observed, detail = "MISSING", "no cache", str(err or "FRED pack enabled, no series yet")
+    elif series:
+        status_s = "STALE" if err else "OK"
+        observed = ", ".join(series[:5])
+        detail = str(err or f"{len(series)} series · {source}")
+    else:
+        status_s, observed, detail = "MISSING", "no series", str(err or source)
+    return {
+        "Feed": "FRED macro",
+        "Status": status_s,
+        "Observed": observed,
+        "Cadence": cadence,
+        "Last update": fetched,
+        "Detail": detail,
+    }
+
+
 def build_health_rows(
     board_rows: Iterable[Any],
     *,
     news_map: dict[str, NewsBundle] | None = None,
     calendar: Any | None = None,
     calendar_ttl_s: int = 1800,
+    fred: Any | None = None,
     gate: FetchGate | None = None,
     realtime: bool = False,
     refresh_s: int = 60,
     news_ttl_s: int = 300,
     yf_min_interval_s: int = 60,
 ) -> list[dict[str, str]]:
-    """One row per OHLCV feed + one per news feed + optional calendar."""
+    """One row per OHLCV feed + one per news feed + optional calendar/FRED."""
     cadence = (
         f"realtime {int(refresh_s)}s (local signals; yfinance when due, "
         f"1 pair/tick, min {int(yf_min_interval_s)}s)"
@@ -149,6 +179,9 @@ def build_health_rows(
     cal_row = _calendar_health(calendar, calendar_ttl_s)
     if cal_row is not None:
         out.append(cal_row)
+    fred_row = _fred_health(fred)
+    if fred_row is not None:
+        out.append(fred_row)
     return out
 
 

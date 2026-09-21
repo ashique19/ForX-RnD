@@ -24,6 +24,7 @@ from forex_lab.ui.board import (
     research_target,
     style_board,
 )
+from forex_lab.fred import fred_feed_status
 from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
 from forex_lab.ui.pipeline import (
     artifact_status,
@@ -899,11 +900,16 @@ def render_watch_board(cfg) -> None:
 
         news_ttl = int((cfg.get("news") or {}).get("cache_ttl_s") or 300)
         cal_ttl = int((cfg.get("calendar") or {}).get("cache_ttl_s") or 1800)
+        try:
+            fred_status = fred_feed_status(cfg)
+        except Exception:  # noqa: BLE001 — health must never break the board
+            fred_status = None
         health = build_health_rows(
             rows,
             news_map=news_map,
             calendar=calendar,
             calendar_ttl_s=cal_ttl,
+            fred=fred_status,
             gate=_yf_gate(),
             realtime=realtime,
             refresh_s=seconds,
@@ -924,8 +930,8 @@ def render_watch_board(cfg) -> None:
             )
         with st.expander(exp_label, expanded=bool(unhealthy)):
             st.caption(
-                "v0 — active feeds this board can see (OHLCV per pair + news + event calendar). "
-                "Full registry / daily digest / weekly retrain stay later."
+                "v0 — active feeds this board can see (OHLCV per pair + news + event calendar"
+                " + FRED when enabled). Full registry / daily digest / weekly retrain stay later."
             )
             if health:
                 st.dataframe(pd.DataFrame(health), use_container_width=True, hide_index=True)

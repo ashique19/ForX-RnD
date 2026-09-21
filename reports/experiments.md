@@ -42,3 +42,20 @@ Reproduce screens: `python3 scripts/screen_variants.py` (not a user CLI command)
 ### HTF / extras / news (this PR)
 
 Optional *features* are on so a **retrained** model can use them: `feature_extras.higher_tf: [4h]`, `sess_ldn_ny`, `vol_pct`. The committed EURUSD joblib still predicts with its original columns (`signals.py` dropna is on model `feature_cols` only). `signals.htf_trend_filter` and London+NY *filters* stay **off** — prior screens were worse. Cross-pair is `null` (skip if CSV missing). Google News RSS is UI context only; it does not enter labels or the model.
+
+### pandas-ta / FRED feature packs (this PR)
+
+Same walk-forward protocol as the table above, on the **current** `data/EURUSD_1h.csv` (41 folds). These numbers are a 4-way screen against each other — not a reprint of `reports/latest_report.md` (that run also compared logistic and may be an older cache).
+
+FRED loaded via public CSV (**no** `FRED_API_KEY`): `DFF`, `DGS10`, `T10Y2Y`, `DTWEXBGS`, `VIXCLS`, as-of `lag_days=1`. pandas-ta pack used the native causal subset (not numba).
+
+| Variant | Trades | Win rate | Total return | Max DD | Profit factor | vs baseline |
+|---|---:|---:|---:|---:|---:|---|
+| baseline (current extras, packs off) | 1067 | 50.52% | -9.78% | -10.36% | 0.8894 | — |
+| + pandas-ta | 1079 | 49.77% | -8.94% | -10.27% | 0.8997 | +0.01 PF, still &lt; 1; fold noise |
+| + FRED | 1059 | 49.67% | -9.67% | -10.58% | 0.8895 | null; slightly worse DD |
+| + both | 1045 | 50.62% | -8.78% | -10.28% | 0.9000 | same as TA; FRED adds no lift |
+
+**Default stays off for both packs.** A 0.01 profit-factor tick is well inside fold PF std (~0.5–0.6). Every variant still has PF < 1 and negative total return. This is **not** a trading edge. Enable in `config/default.yaml` only for research retrains.
+
+Reproduce: `python3 scripts/screen_feature_packs.py` (writes `reports/feature_pack_screen.md`).

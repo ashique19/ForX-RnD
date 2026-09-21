@@ -50,7 +50,9 @@ range_windows: [20, 50]
 
 # Extra causal features (the committed EURUSD joblib ignores unknown columns
 # until you retrain). Not walk-forward screened as an upgrade — HTF/cross-pair
-# did not earn a default *filter*. See reports/experiments.md.
+# did not earn a default *filter*. pandas-ta / FRED packs stay **off**: EURUSD
+# WF showed a ~0.01 PF tick for TA (noise, still PF<1) and a null FRED pack
+# with a slightly worse drawdown. See reports/experiments.md.
 feature_extras:
   higher_tf: ["4h"]        # resample of the SAME pair CSV; add "1D" if wanted; [] disables
   htf_sma_window: 20
@@ -58,6 +60,36 @@ feature_extras:
   session_overlap: true    # sess_ldn_ny feature (London∩NY); not a trade filter
   vol_percentile_window: 100  # 0 = off; causal min-max position of short vol
   cross_pair: null         # e.g. GBPUSD; skipped if that CSV is missing (EURUSD-only safe)
+  pandas_ta:
+    enabled: false         # extra oscillators (stoch/ADX/BB/CCI/WILLR/ROC/KC); native subset
+    backend: native        # native (CI-safe) | pandas_ta if `pip install pandas-ta`
+    indicators: [stoch, adx, bbands, cci, willr, roc, kc]
+    stoch_k: 14
+    stoch_d: 3
+    stoch_smooth_k: 3
+    adx_period: 14
+    bb_window: 20
+    bb_std: 2.0
+    cci_period: 20
+    willr_period: 14
+    roc_period: 12
+    kc_window: 20
+    kc_atr: 1.5
+  fred:
+    enabled: false         # macro as-of features; skip if cache/download fails
+    api_key_env: FRED_API_KEY  # optional; CSV download works without a key
+    lag_days: 1            # observation dated D is first used at D+lag (no same-day leak)
+    cache_dir: data/fred_cache
+    cache_ttl_s: 86400
+    timeout_s: 12
+    z_window: 60           # rolling z on the *daily* series before hourly ffill
+    allow_network: true
+    series:                # skip the pair's own FX print (DEXUSEU on EURUSD)
+      - DFF                # Fed funds
+      - DGS10              # 10y Treasury
+      - T10Y2Y             # 10y-2y curve
+      - DTWEXBGS           # broad USD goods index (dollar proxy)
+      - VIXCLS             # VIX
 
 # Local explanations (research UI). shap is optional; XGBoost pred_contribs is the default.
 explain:

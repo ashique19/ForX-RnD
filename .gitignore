@@ -13,5 +13,6 @@ data/AUDUSD_*.csv
 data/USDCAD_*.csv
 data/news_cache.json
 data/calendar_cache.json
+data/fred_cache/
 data/paper_broker.json
 data/paper_broker.json.tmp
