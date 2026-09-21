@@ -411,18 +411,18 @@ def test_chrome_cards_borders_and_section_heads():
 
 
 def test_apply_palette_roundtrip_light_default():
-    from forex_lab.ui.theme import DARK, LIGHT, MUTED, TEXT, apply_palette, terminal_css
+    import forex_lab.ui.theme as theme
 
     try:
-        assert apply_palette("light") == "light"
-        assert TEXT.lower() == LIGHT["TEXT"].lower()
-        light_css = terminal_css()
-        assert LIGHT["BG"] in light_css
-        assert apply_palette("dark") == "dark"
-        assert MUTED.lower() == DARK["MUTED"].lower()
-        dark_css = terminal_css()
-        assert DARK["BG"] in dark_css
-        assert apply_palette("nope") == "light"
-        assert TEXT.lower() == LIGHT["TEXT"].lower()
+        assert theme.apply_palette("light") == "light"
+        assert theme.TEXT.lower() == theme.LIGHT["TEXT"].lower()
+        light_css = theme.terminal_css()
+        assert theme.LIGHT["BG"] in light_css
+        assert theme.apply_palette("dark") == "dark"
+        assert theme.MUTED.lower() == theme.DARK["MUTED"].lower()
+        dark_css = theme.terminal_css()
+        assert theme.DARK["BG"] in dark_css
+        assert theme.apply_palette("nope") == "light"
+        assert theme.TEXT.lower() == theme.LIGHT["TEXT"].lower()
     finally:
-        apply_palette("light")
+        theme.apply_palette("light")
