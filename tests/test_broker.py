@@ -192,3 +192,32 @@ def test_modify_sl_is_paper_extra_not_on_port(tmp_path):
     with pytest.raises(BrokerError, match="below"):
         b.modify_sl(pos["id"], 1.1000, price=1.1000)
     assert not hasattr(BrokerPort, "modify_sl") or "modify_sl" not in BrokerPort.__abstractmethods__
+
+
+def test_paper_session_matches_board_asia_wrap_and_overlap(tmp_path):
+    """Paper journal session labels must match board.sessions (Asia 21-07, london+ny)."""
+    from forex_lab.broker import session_name
+
+    cfg = {
+        "board": {"sessions": {"asia": [21, 7], "london": [7, 16], "ny": [13, 21]}},
+        "spread_pips": 0.0,
+    }
+    # Sunday FX open / late Asia — previously hard-coded as "off"
+    assert session_name(datetime(2026, 9, 20, 22, 0, 0), cfg) == "asia"
+    assert session_name(datetime(2026, 9, 21, 21, 30, 0), cfg) == "asia"
+    # London∩NY — previously "overlap"
+    assert session_name(datetime(2026, 9, 21, 14, 0, 0), cfg) == "london+ny"
+    assert session_name(datetime(2026, 9, 21, 10, 0, 0), cfg) == "london"
+    # Weekend closed
+    assert session_name(datetime(2026, 9, 19, 12, 0, 0), cfg) == "closed"
+
+    b = PaperBroker(tmp_path / "sess.json", cfg=cfg)
+    b.submit(
+        "BUY",
+        "EURUSD",
+        price=1.10,
+        entry_bar_time="2026-09-20 22:00:00 UTC",
+        validity="OK",
+    )
+    assert b.list_positions()[0]["session"] == "asia"
+

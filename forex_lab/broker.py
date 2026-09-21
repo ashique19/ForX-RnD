@@ -102,20 +102,22 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
-def session_name(ts: object) -> str:
+def session_name(ts: object, cfg: dict[str, Any] | None = None) -> str:
+    """Journal session bucket — same UTC windows as ``classify_session`` / board badge.
+
+    Older hard-coded hours treated 21:00–24:00 UTC as ``off`` and London∩NY as
+    ``overlap``. The desk uses Asia wrap (21–07) and ``london+ny``; mismatching
+    those labels skewed paper ``by_session`` aggregates vs the board clock.
+    """
+    from forex_lab.session import classify_session
+
     t = pd.to_datetime(ts, utc=True, errors="coerce")
     if pd.isna(t):
         return "n/a"
-    hour = int(t.tz_convert("UTC").hour)
-    if 0 <= hour < 7:
-        return "asia"
-    if 7 <= hour < 13:
-        return "london"
-    if 13 <= hour < 16:
-        return "overlap"
-    if 16 <= hour < 21:
-        return "ny"
-    return "off"
+    py = t.to_pydatetime()
+    if py.tzinfo is not None:
+        py = py.astimezone(timezone.utc).replace(tzinfo=None)
+    return classify_session(py, cfg).name
 
 
 def conf_bucket(confidence: object) -> str:
@@ -303,7 +305,7 @@ class PaperBroker(BrokerPort):
             "horizon": int(meta.get("horizon") or self.cfg.get("horizon") or 8),
             "spread_frac": spread,
             "unrealized": -spread * qty,
-            "session": session_name(meta.get("entry_bar_time") or now),
+            "session": session_name(meta.get("entry_bar_time") or now, self.cfg),
             "conf_bucket": conf_bucket(meta.get("confidence")),
             "note": str(meta.get("note") or ""),
             "news_bias": str(meta.get("news_bias") or ""),
