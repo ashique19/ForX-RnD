@@ -11,6 +11,7 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 - Past backtest metrics **do not** predict future results.
 - Always paper-trade and validate independently before risking capital.
 - Beating SMA / always-long in this lab is a **research signal**, not a deployable edge (slippage, weekend gaps, and broker quotes are not modeled).
+- News headlines (Google News RSS) can be **late, incomplete, or wrong**. The bias note is a keyword heuristic on fetched titles only — not a trade instruction.
 
 ## Install (Windows)
 
@@ -58,9 +59,15 @@ If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. 
 
 ## Local dashboard (Streamlit)
 
-A browser UI on **localhost:8501** to run fetch / train / backtest / generate signals and view `signals/latest_signals.csv` plus walk-forward metrics from `reports/latest_metrics.json`. It calls the same `forex_lab` functions as the CLI. **No broker APIs, no order buttons, no auto-trading.**
+A **trader-facing signal screen** on **localhost:8501**. Math analysis + news context flash **BUY / SELL / HOLD** with details so **you** decide. It calls the same `forex_lab` functions as the CLI. **No broker APIs, no order buttons, no auto-trading.**
 
-The top of the page is a **watch board**: one row per selected pair (`Pair | Timeframe | Buy/Sell | Target | Signal details`). Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. **Realtime** auto-refreshes the board on a configurable interval (`st.fragment`); when it is off, **Manual update** / **Update selected** refresh once. Auto-refresh is a research timer, **not** broker realtime. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal. The sidebar Fetch / Train / Backtest tools are unchanged.
+The top of the page is the **signal screen** (primary): one flash card per watchlist pair — **Pair | Timeframe | Buy/Sell (color badge) | Target | Signal details | News context**. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. **Realtime** auto-refreshes the board on a configurable interval (`st.fragment`); when it is off, **Manual update** / **Update selected** refresh once. Auto-refresh is a research timer, **not** broker realtime. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
+
+**News lane (v1):** Google News RSS search per pair (no API key). Shows a few recent headlines (title, time, link) plus a short bullish/bearish/mixed/unclear note from a keyword heuristic on those titles only — it never invents articles. Labeled **news context, not a trade instruction**. Cache: `data/news_cache.json` (gitignored), default TTL **300s**, HTTP timeout **6s**. Be polite to the feed; if fetch fails, the math board still renders with an empty news state.
+
+**Explainability:** expand a card for local feature drivers (XGBoost `pred_contribs`, optional SHAP, logistic coef fallback), which config rules passed/failed, and a grounded rationale. This describes the fitted model on one bar — not evidence of an edge.
+
+Fetch / Train / Backtest / Generate signals live in the collapsed sidebar **Lab** expander. Walk-forward CSV/metrics/equity/logs are in a collapsed **Research lab** expander under the board. Open those when you need data or a model, not to read the screen.
 
 Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing):
 
@@ -88,6 +95,7 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `models/EURUSD_logistic.joblib` | Logistic baseline model |
 | `signals/latest_signals.csv` | Latest BUY/SELL/HOLD rows (confidence-filtered) |
 | `config/watchlist.yaml` | Streamlit watch-board pairs (local; survives reruns) |
+| `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
 | `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
 | `reports/latest_metrics.json` | Same metrics as JSON |
@@ -129,6 +137,7 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `signals.min_confidence` — min P(predicted class) to emit BUY/SELL (default `0.40`; random 3-class is ~0.33). Harsh cutoffs can hurt: on EURUSD 1h, the highest XGBoost confidence bucket was **not** the best.
 - `signals.min_dir_edge` — min |P(BUY) − P(SELL)| (default `0.0`; leave the model's HOLD class to do the sitting-out).
 - `signals.sessions` — optional UTC session allow-list (`london`, `ny`, `asia`). Empty = all hours. London+NY-only **hurt** EURUSD vs the unfiltered model.
+- `signals.htf_trend_filter` — optional higher-timeframe SMA-slope agreement (`4h` / `1D`). **Default off**: session/vol-style filters hurt EURUSD in prior screens.
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
 - `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
 
@@ -149,7 +158,7 @@ That legacy rule was: `BUY` if `Close[t+N]/Close[t]-1 > threshold`, `SELL` if be
 
 ## Features (causal)
 
-Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. No column is built from future bars. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
+Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. Optional extras (`feature_extras`): 4h resample of the **same** pair (backward-filled completed bars), London∩NY overlap flag, short-vol percentile, optional cross-pair returns (skipped if that CSV is missing). The committed EURUSD joblib only uses columns it was trained with until you retrain. No column is built from future bars. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
 
 ## How to read success rate
 
@@ -174,17 +183,19 @@ Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR bar
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, and watchlist load/save plus board-row status.
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, and Google News RSS parse + keyword bias (no network).
 
 ## Project layout
 
 ```
-streamlit_app.py # local dashboard (streamlit run streamlit_app.py)
+streamlit_app.py # trader signal screen (streamlit run streamlit_app.py)
 RUN_UI.bat       # Windows helper: venv + streamlit on localhost:8501
 forex_lab/
   console.py     # ASCII-safe CLI prints + UTF-8 stdio
   data.py        # yfinance fetch + synthetic fallback
   features.py    # causal features + labels
+  explain.py     # local drivers / rule overlay / grounded rationale
+  news.py        # Google News RSS + keyword bias (UI context only)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report
   signals.py     # latest_signals.csv

@@ -48,6 +48,24 @@ vol_window: 20
 vol_long_window: 100
 range_windows: [20, 50]
 
+# Extra causal features (the committed EURUSD joblib ignores unknown columns
+# until you retrain). Not walk-forward screened as an upgrade — HTF/cross-pair
+# did not earn a default *filter*. See reports/experiments.md.
+feature_extras:
+  higher_tf: ["4h"]        # resample of the SAME pair CSV; add "1D" if wanted; [] disables
+  htf_sma_window: 20
+  htf_slope_span: 3        # HTF bars for SMA slope
+  session_overlap: true    # sess_ldn_ny feature (London∩NY); not a trade filter
+  vol_percentile_window: 100  # 0 = off; causal min-max position of short vol
+  cross_pair: null         # e.g. GBPUSD; skipped if that CSV is missing (EURUSD-only safe)
+
+# Local explanations (research UI). shap is optional; XGBoost pred_contribs is the default.
+explain:
+  top_n: 5
+  ollama: false            # if true, try localhost:11434; ignored when Ollama is down
+  ollama_timeout_s: 1.0
+  ollama_model: llama3.2
+
 # Walk-forward backtest (time-ordered; no shuffle)
 walk_forward:
   train_bars: 2000
@@ -84,6 +102,17 @@ signals:
   sessions: []             # e.g. [london, ny]; empty = all UTC hours
   min_vol_regime: 0.0      # 0 = off; >1 keeps only high-vol vs long-run vol
   min_tp_pips: 0.0         # skip entries whose TP distance is below this (0 = off)
+  htf_trend_filter: null   # null/off | 4h | 1D — require HTF SMA slope to agree with BUY/SELL
+                           # Default off: session/vol filters hurt EURUSD in prior screens.
+
+# News lane (decision context beside math; not a trade instruction)
+news:
+  enabled: true
+  source: google_news_rss  # free RSS search; no API key
+  max_headlines: 8
+  timeout_s: 6
+  cache_ttl_s: 300         # be polite to Google News; reuse for 5 minutes
+  cache_file: data/news_cache.json
 
 # Paths (relative to project root)
 paths:

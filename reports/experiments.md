@@ -38,3 +38,7 @@ In-sample XGBoost gain is dominated by `sess_ny` / `hour_sin` / `sess_asia` — 
 Single-split transfer (EURUSD train 80% → other pair after that timestamp, **not** walk-forward): EURUSD→GBPUSD PF 1.15 on 234 trades; EURUSD→USDJPY PF 0.87 on 229 trades. Mixed, small, and the weaker of the two is the honest one.
 
 Reproduce screens: `python3 scripts/screen_variants.py` (not a user CLI command).
+
+### HTF / extras / news (this PR)
+
+Optional *features* are on so a **retrained** model can use them: `feature_extras.higher_tf: [4h]`, `sess_ldn_ny`, `vol_pct`. The committed EURUSD joblib still predicts with its original columns (`signals.py` dropna is on model `feature_cols` only). `signals.htf_trend_filter` and London+NY *filters* stay **off** — prior screens were worse. Cross-pair is `null` (skip if CSV missing). Google News RSS is UI context only; it does not enter labels or the model.

@@ -146,6 +146,8 @@ def test_board_row_eurusd_uses_existing_signals_csv():
     assert row.target != ""
     assert "conf=" in row.signal_details
     assert row.model
+    assert row.rationale
+    assert row.explain_method
 
 
 def test_build_board_rows_mixed_status(tmp_path):

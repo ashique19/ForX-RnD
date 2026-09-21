@@ -37,9 +37,12 @@ def _attach_policy_columns(
     """Copy session/vol/ATR columns used by signal filters. Causal features only."""
     out = frame.copy()
     aligned = X.reindex(out.index)
-    for extra in ("sess_asia", "sess_london", "sess_ny", "vol_regime", "atr_pct"):
+    for extra in ("sess_asia", "sess_london", "sess_ny", "sess_ldn_ny", "vol_regime", "atr_pct", "vol_pct"):
         if extra in aligned.columns:
             out[extra] = aligned[extra].to_numpy()
+    for col in aligned.columns:
+        if str(col).startswith("tf_") and str(col).endswith("_sma_slope"):
+            out[col] = aligned[col].to_numpy()
     min_tp = float((cfg.get("signals") or {}).get("min_tp_pips", 0.0) or 0.0)
     if min_tp > 0 and "atr_pct" in aligned.columns:
         pip = pip_size_for_pair(pair, cfg)
@@ -295,7 +298,7 @@ def walk_forward_backtest(
     pair: str,
     model_type: str | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
-    X, y, ohlcv = make_dataset(df, cfg)
+    X, y, ohlcv = make_dataset(df, cfg, pair=pair)
     wf = cfg.get("walk_forward") or {}
     train_bars = int(wf.get("train_bars", 2000))
     test_bars = int(wf.get("test_bars", 250))

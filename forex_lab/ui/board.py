@@ -11,6 +11,7 @@ import pandas as pd
 
 from forex_lab.config_loader import load_config
 from forex_lab.data import load_cached_ohlcv, try_yfinance_refresh
+from forex_lab.explain import SignalExplanation, explain_latest_signal
 from forex_lab.features import true_range_atr
 from forex_lab.signals import generate_signals
 from forex_lab.ui.pipeline import artifact_status, load_signals
@@ -44,6 +45,10 @@ class BoardRow:
     data_source: str | None = None
     n_bars: int | None = None
     error: str | None = None
+    rationale: str | None = None
+    explain_method: str | None = None
+    drivers: list = field(default_factory=list)
+    rules: list = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
@@ -123,7 +128,12 @@ def research_target(ohlcv: pd.DataFrame | None, cfg: dict[str, Any], signal: str
     return compact, note
 
 
-def _details_from_signal(last: pd.Series | dict[str, Any], *, status: str | None = None) -> str:
+def _details_from_signal(
+    last: pd.Series | dict[str, Any],
+    *,
+    status: str | None = None,
+    explanation: SignalExplanation | None = None,
+) -> str:
     if status and status != STATUS_READY:
         return status
     get = last.get if hasattr(last, "get") else lambda k, d=None: last[k] if k in last else d  # type: ignore[index]
@@ -132,11 +142,23 @@ def _details_from_signal(last: pd.Series | dict[str, Any], *, status: str | None
     model = get("model") or "n/a"
     when = _fmt_when(get("datetime"))
     pb, ps, ph = get("p_buy"), get("p_sell"), get("p_hold")
-    return (
+    base = (
         f"conf={_fmt(conf, 4)}  dir_edge={_fmt(edge, 4)}  "
         f"p_buy={_fmt(pb, 3)} p_sell={_fmt(ps, 3)} p_hold={_fmt(ph, 3)}  "
         f"{model}  {when}"
     )
+    if explanation is None:
+        return base
+    extra = []
+    drv = explanation.compact_drivers(3)
+    if drv:
+        extra.append(drv)
+    rules = explanation.compact_rules()
+    if rules:
+        extra.append(rules)
+    if explanation.rationale:
+        extra.append(explanation.rationale[:180] + ("…" if len(explanation.rationale) > 180 else ""))
+    return base + ("  |  " + "  |  ".join(extra) if extra else "")
 
 
 def row_from_signal(
@@ -162,12 +184,16 @@ def row_from_signal(
         except (TypeError, ValueError):
             return None
 
+    explanation = None
+    if ohlcv is not None and not ohlcv.empty:
+        explanation = explain_latest_signal(pair, ohlcv, cfg, last, target=target)
+
     return BoardRow(
         pair=pair.upper(),
         timeframe=timeframe,
         buy_sell=sig,
         target=target,
-        signal_details=_details_from_signal(last),
+        signal_details=_details_from_signal(last, explanation=explanation),
         status=STATUS_READY,
         confidence=_num("confidence"),
         dir_edge=_num("dir_edge"),
@@ -181,6 +207,10 @@ def row_from_signal(
         target_note=note,
         data_source=data_source,
         n_bars=n_bars,
+        rationale=None if explanation is None else explanation.rationale,
+        explain_method=None if explanation is None else explanation.method,
+        drivers=list(explanation.drivers) if explanation is not None else [],
+        rules=list(explanation.rules) if explanation is not None else [],
     )
 
 

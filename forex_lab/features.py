@@ -76,7 +76,11 @@ def _rolling_z(s: pd.Series, window: int) -> pd.Series:
     return (s - mu) / sd.replace(0, np.nan)
 
 
-def build_features(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
+def build_features(
+    df: pd.DataFrame,
+    cfg: dict[str, Any],
+    pair: str | None = None,
+) -> pd.DataFrame:
     """Return feature frame aligned to df index. All features causal."""
     close = df["Close"]
     high = df["High"]
@@ -158,7 +162,132 @@ def build_features(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
     if float(vol.std() or 0.0) > 0:
         out["vol_z"] = _rolling_z(vol, vol_w)
 
+    _add_feature_extras(out, df, cfg, pair=pair)
     return out
+
+
+def _extras_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
+    return dict(cfg.get("feature_extras") or {})
+
+
+def _tf_rule(name: str) -> tuple[str, str] | None:
+    """Return (column_tag, pandas resample rule) or None."""
+    raw = str(name or "").strip()
+    key = raw.lower().replace(" ", "")
+    mapping = {
+        "4h": ("4h", "4h"),
+        "4hour": ("4h", "4h"),
+        "1d": ("1D", "1D"),
+        "d": ("1D", "1D"),
+        "daily": ("1D", "1D"),
+        "1h": ("1h", "1h"),
+    }
+    if key not in mapping:
+        return None
+    return mapping[key]
+
+
+def _higher_tf_features(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
+    """Resample the same pair to higher TFs and align with backward fill.
+
+    HTF statistics at 1h time t use only HTF bars whose timestamp is <= t
+    (completed or closing-at-t bars). No future 1h bars enter the HTF SMA.
+    """
+    extra = _extras_cfg(cfg)
+    tfs = extra.get("higher_tf") or []
+    if not tfs:
+        return pd.DataFrame(index=df.index)
+    sma_w = int(extra.get("htf_sma_window", 20) or 20)
+    slope_span = int(extra.get("htf_slope_span", 3) or 3)
+    min_p = max(3, sma_w // 2)
+    idx = pd.DatetimeIndex(pd.to_datetime(df.index))
+    base = df.copy()
+    base.index = idx
+    out = pd.DataFrame(index=df.index)
+    for spec in tfs:
+        parsed = _tf_rule(str(spec))
+        if parsed is None:
+            continue
+        tag, rule = parsed
+        if rule == "1h":
+            continue  # already the lab bar
+        htf = (
+            base.resample(rule, label="right", closed="right")
+            .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+            .dropna(how="any")
+        )
+        if htf.empty:
+            continue
+        close = htf["Close"]
+        sma = close.rolling(sma_w, min_periods=min_p).mean()
+        block = pd.DataFrame(
+            {
+                f"tf_{tag}_sma_ratio": close / sma.replace(0, np.nan) - 1.0,
+                f"tf_{tag}_sma_slope": sma / sma.shift(slope_span) - 1.0,
+                f"tf_{tag}_ret": close.pct_change(1),
+            },
+            index=htf.index,
+        )
+        aligned = block.reindex(idx, method="ffill")
+        aligned.index = df.index
+        out = out.join(aligned)
+    return out
+
+
+def _add_feature_extras(
+    out: pd.DataFrame,
+    df: pd.DataFrame,
+    cfg: dict[str, Any],
+    pair: str | None,
+) -> None:
+    extra = _extras_cfg(cfg)
+    if bool(extra.get("session_overlap", True)):
+        if "sess_london" in out.columns and "sess_ny" in out.columns:
+            out["sess_ldn_ny"] = (out["sess_london"] * out["sess_ny"]).astype(float)
+
+    vp = int(extra.get("vol_percentile_window", 0) or 0)
+    if vp > 0 and "volatility" in out.columns:
+        vol = out["volatility"]
+        rmin = vol.rolling(vp, min_periods=max(5, vp // 5)).min()
+        rmax = vol.rolling(vp, min_periods=max(5, vp // 5)).max()
+        out["vol_pct"] = (vol - rmin) / (rmax - rmin).replace(0, np.nan)
+        if "ret_1" in out.columns:
+            out["vol_shock"] = out["ret_1"].abs() / vol.replace(0, np.nan)
+
+    htf = _higher_tf_features(df, cfg)
+    for col in htf.columns:
+        out[col] = htf[col].to_numpy()
+
+    other = extra.get("cross_pair")
+    if not other:
+        return
+    other_key = str(other).upper().replace("/", "").replace("-", "")
+    self_key = str(pair or "").upper().replace("/", "").replace("-", "")
+    if self_key and other_key == self_key:
+        return
+    try:
+        from forex_lab.data import load_cached_ohlcv
+    except Exception:
+        return
+    interval = str(cfg.get("interval") or "1h")
+    try:
+        odf = load_cached_ohlcv(other_key, cfg, interval)
+    except Exception:
+        return
+    if odf is None or odf.empty or "Close" not in odf.columns:
+        return
+    src = odf["Close"].copy()
+    src.index = pd.to_datetime(src.index)
+    src = src.sort_index()
+    src = src[~src.index.duplicated(keep="last")]
+    target_idx = pd.DatetimeIndex(pd.to_datetime(df.index))
+    aligned = src.reindex(target_idx, method="ffill")
+    aligned.index = df.index
+    ret1 = aligned.pct_change(1)
+    out["xpair_ret_1"] = ret1
+    out["xpair_ret_6"] = aligned.pct_change(6)
+    sma20 = aligned.rolling(20, min_periods=10).mean()
+    out["xpair_sma20_ratio"] = aligned / sma20.replace(0, np.nan) - 1.0
 
 
 def _barrier_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -325,9 +454,13 @@ def build_labels(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.Series:
     return labels
 
 
-def make_dataset(df: pd.DataFrame, cfg: dict[str, Any]) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+def make_dataset(
+    df: pd.DataFrame,
+    cfg: dict[str, Any],
+    pair: str | None = None,
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """Features X, labels y, and raw OHLCV aligned after dropping NaNs."""
-    feats = build_features(df, cfg)
+    feats = build_features(df, cfg, pair=pair)
     labels = build_labels(df, cfg)
     combined = feats.join(labels).join(df[REQUIRED_OHLCV])
     combined = combined.dropna()
