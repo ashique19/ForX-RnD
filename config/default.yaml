@@ -175,6 +175,20 @@ calendar:
     - Employment Change
     - GDP
 
+# Selective open gates (flashed BUY/SELL + paper BUY/SELL). Fail-soft when
+# calendar or MTF is missing — never crash, never invent a block.
+# Default **off**: EURUSD walk-forward (reports/gate_screen.md) did not improve
+# PF / total return / max DD vs baseline. Enable only for research.
+gates:
+  enabled: false
+  apply_to_flash: true     # rewrite BUY/SELL -> HOLD on the scan row when gated
+  apply_to_paper: true     # disable Paper BUY/SELL (CLOSE still works)
+  require_mtf_agree: true  # HOLD unless causal HTF SMA slope agrees (n/a = pass)
+  min_confidence: null     # null = reuse signals.min_confidence; set 0.50 to raise
+  no_new_opens_in_event_window: true  # reuse advice before/during/after minutes
+  event_windows: [before, during, after]
+  fail_soft: true          # missing calendar/MTF/confidence = pass, not a crash
+
 # Advisory cards in the detail drawer + Next-event ⚠ on the scan row.
 # Never auto-submit via BrokerPort.
 advice:

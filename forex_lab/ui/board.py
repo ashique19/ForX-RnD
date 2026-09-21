@@ -15,6 +15,7 @@ from forex_lab.config_loader import load_config
 from forex_lab.data import csv_mtime_utc, load_cached_ohlcv, try_yfinance_refresh
 from forex_lab.explain import SignalExplanation, explain_latest_signal
 from forex_lab.features import true_range_atr
+from forex_lab.gates import apply_open_gates, evaluate_open_gates_for_row, gates_apply_to_paper, gates_enabled
 from forex_lab.freshness import (
     VALIDITY_CLOSED,
     VALIDITY_ERROR,
@@ -49,6 +50,11 @@ SPARKLINE_BARS = 48
 SPARK_CHARS = "▁▂▃▄▅▆▇█"
 PAPER_BLOCKED_VALIDITIES = frozenset({VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR})
 PAPER_STALE_CAPTION = "Paper BUY/SELL is disabled when Data● is STALE or MISSING — refresh (Fetch) first."
+PAPER_GATE_CAPTION = (
+    "Paper BUY/SELL can also be disabled by selective gates "
+    "(MTF agree / min confidence / event window) when gates.enabled is true. "
+    "Default off — not a live edge."
+)
 
 
 @dataclass
@@ -109,6 +115,9 @@ class BoardRow:
     session: SessionState | None = None
     next_event: str = "—"
     next_event_warn: bool = False
+    gate_blocked: bool = False
+    gate_reason: str = ""
+    gate_fail_soft: list[str] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
@@ -133,12 +142,54 @@ class BoardRow:
         }
 
 
-def paper_submit_allowed(validity: str | None) -> bool:
-    """OK/CLOSED can paper-submit. STALE/MISSING/ERROR cannot — block bad clicks."""
-    return str(validity or "").upper() not in PAPER_BLOCKED_VALIDITIES
+def paper_submit_allowed(
+    validity: str | None,
+    row: BoardRow | None = None,
+    cfg: dict[str, Any] | None = None,
+    events: list[CalendarEvent] | None = None,
+    now: Any = None,
+) -> bool:
+    """OK/CLOSED can paper-submit. STALE/MISSING/ERROR cannot — block bad clicks.
+
+    When ``row`` + ``cfg`` are passed and ``gates.enabled``, also apply selective
+    open gates (MTF / confidence / event window). Missing calendar or MTF
+    fail-softs (does not block). Validity-only calls keep the old signature.
+    """
+    if str(validity or "").upper() in PAPER_BLOCKED_VALIDITIES:
+        return False
+    if row is None:
+        return True
+    return paper_open_allowed(row, cfg=cfg, events=events, now=now)
 
 
-def paper_submit_block_reason(validity: str | None) -> str:
+def paper_open_allowed(
+    row: BoardRow,
+    *,
+    cfg: dict[str, Any] | None = None,
+    events: list[CalendarEvent] | None = None,
+    now: Any = None,
+) -> bool:
+    """Validity + optional selective gates. CLOSE is not gated here."""
+    if str(row.validity or "").upper() in PAPER_BLOCKED_VALIDITIES:
+        return False
+    if getattr(row, "gate_blocked", False):
+        return False
+    if not gates_enabled(cfg) or not gates_apply_to_paper(cfg):
+        return True
+    try:
+        decision = evaluate_open_gates_for_row(row, cfg, events, now)
+        return bool(decision.allowed)
+    except Exception:
+        return True
+
+
+def paper_submit_block_reason(
+    validity: str | None,
+    row: BoardRow | None = None,
+    cfg: dict[str, Any] | None = None,
+    events: list[CalendarEvent] | None = None,
+    now: Any = None,
+) -> str:
     v = str(validity or "").upper()
     if v == VALIDITY_STALE:
         return "Paper BUY/SELL disabled — data STALE, refresh required"
@@ -146,6 +197,15 @@ def paper_submit_block_reason(validity: str | None) -> str:
         return "Paper BUY/SELL disabled — data MISSING, Fetch required"
     if v == VALIDITY_ERROR:
         return "Paper BUY/SELL disabled — data ERROR"
+    if row is not None and getattr(row, "gate_reason", ""):
+        return f"Paper BUY/SELL disabled — {row.gate_reason}"
+    if row is not None and gates_enabled(cfg) and gates_apply_to_paper(cfg):
+        try:
+            decision = evaluate_open_gates_for_row(row, cfg, events, now)
+            if not decision.allowed:
+                return decision.caption()
+        except Exception:
+            return ""
     return ""
 
 
@@ -154,6 +214,10 @@ def paper_actions_label(row: BoardRow, *, has_open: bool = False) -> str:
         return "CLOSE"
     if not paper_submit_allowed(row.validity):
         return f"disabled ({row.validity})"
+    if getattr(row, "gate_blocked", False):
+        by = (row.extra or {}).get("gate_blocked_by") or []
+        tag = by[0] if by else "gate"
+        return f"disabled ({tag})"
     return "BUY/SELL"
 
 
@@ -227,14 +291,14 @@ def attach_next_event(
     if ev is None:
         row.next_event = "—"
         row.next_event_warn = False
-        return row
+        return apply_open_gates(row, cfg, events=events, now=now)
     before, during, after = _event_window_minutes(cfg)
     win = event_window(
         ev, now, before_minutes=before, during_minutes=during, after_minutes=after
     )
     row.next_event_warn = win in {"before", "during"}
     row.next_event = next_event_label(ev, now, warn=row.next_event_warn)
-    return row
+    return apply_open_gates(row, cfg, events=events, now=now)
 
 
 def _fmt(x: object, digits: int = 4) -> str:
@@ -550,7 +614,7 @@ def row_from_signal(
         last_signal_at=_fmt_when(get("datetime"), cfg),
         validity=VALIDITY_OK,
     )
-    return apply_mtf_flash(attach_visuals(row, ohlcv, cfg, now=None), cfg)
+    return apply_open_gates(apply_mtf_flash(attach_visuals(row, ohlcv, cfg, now=None), cfg), cfg)
 
 
 def _status_row(
@@ -804,7 +868,7 @@ def build_board_row(
         cfg,
         now=clock,
     )
-    return apply_mtf_flash(row, cfg)
+    return apply_open_gates(apply_mtf_flash(row, cfg), cfg)
 
 
 def build_board_rows(
@@ -861,6 +925,8 @@ def board_table(
     for r in rows:
         if events is not None:
             attach_next_event(r, events, now=now, cfg=cfg)
+        else:
+            apply_open_gates(r, cfg, events=None, now=now)
         records.append(r.as_table_dict())
     return pd.DataFrame(records)
 

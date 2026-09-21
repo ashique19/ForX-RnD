@@ -25,6 +25,7 @@ from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MtfStatus
 from forex_lab.ui.board import (
     BOARD_TABLE_COLS,
     NEED_FETCH_TRAIN,
+    PAPER_GATE_CAPTION,
     PAPER_STALE_CAPTION,
     attach_next_event,
     board_table,
@@ -136,7 +137,7 @@ This is the **trader screen**: one dense scan board. Click a pair for the detail
 
 **Conf** — P(predicted class). Scan aid only.
 
-**Data●** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last bar older than ~2× the timeframe is **STALE**. Weekends / Friday after ~21:00 UTC show **CLOSED**. **Paper BUY/SELL is disabled when STALE or MISSING** — refresh (Fetch) first.
+**Data●** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last bar older than ~2× the timeframe is **STALE**. Weekends / Friday after ~21:00 UTC show **CLOSED**. **Paper BUY/SELL is disabled when STALE or MISSING** — refresh (Fetch) first. Optional **gates** (MTF agree / min confidence / event window) can also HOLD the flash and disable paper opens when `gates.enabled` is true (default **off**).
 
 **Last/mid** — cached yfinance close as **last/mid-ish**. Not broker bid/ask.
 
@@ -150,7 +151,7 @@ This is the **trader screen**: one dense scan board. Click a pair for the detail
 
 **Spark** — unicode spark of cached closes. Empty when STALE/MISSING (no invented prices). Sparkline chart lives in the drawer.
 
-**Actions** — Paper BUY / SELL / CLOSE via `BrokerPort` (`broker.backend: paper` only). Disabled on STALE/MISSING with a clear caption. SL/TP default from the ATR risk box when available. Practice desk — not a live order.
+**Actions** — Paper BUY / SELL / CLOSE via `BrokerPort` (`broker.backend: paper` only). Disabled on STALE/MISSING with a clear caption. Optional gates (default off) can also disable BUY/SELL. CLOSE still works on an open paper position. SL/TP default from the ATR risk box when available. Practice desk — not a live order.
 
 **Detail drawer** — chart, SHAP/drivers, news context, risk box, rationale, advisory cards (no new opens / hold / close / tighten SL). Advice **never auto-submitted**.
 
@@ -653,10 +654,22 @@ def _driver_snapshot(row) -> str:
     return ", ".join(bits)
 
 
-def _submit_paper_fill(row, cfg, broker: BrokerPort, side: str, news: NewsBundle | None) -> None:
-    """Local practice fill via BrokerPort. STALE/MISSING never submit."""
-    if not paper_submit_allowed(row.validity):
-        st.error(paper_submit_block_reason(row.validity) or PAPER_STALE_CAPTION)
+def _submit_paper_fill(
+    row,
+    cfg,
+    broker: BrokerPort,
+    side: str,
+    news: NewsBundle | None,
+    calendar: CalendarBundle | None = None,
+) -> None:
+    """Local practice fill via BrokerPort. STALE/MISSING/gated never submit."""
+    events = list(calendar.events) if calendar is not None else []
+    clock = now_utc()
+    if not paper_submit_allowed(row.validity, row, cfg, events=events, now=clock):
+        st.error(
+            paper_submit_block_reason(row.validity, row, cfg, events=events, now=clock)
+            or PAPER_STALE_CAPTION
+        )
         return
     price, entry_bar, ohlcv = _cached_quote(row, cfg)
     if price is None:
@@ -708,7 +721,7 @@ def _render_paper_actions(
     cfg,
     broker: BrokerPort | None,
     news: NewsBundle | None = None,
-    calendar: CalendarBundle | None = None,  # noqa: ARG001 — compact board has no advice cards
+    calendar: CalendarBundle | None = None,
     *,
     compact: bool = False,
 ) -> None:
@@ -723,8 +736,10 @@ def _render_paper_actions(
             st.warning(warn)
     price, _entry_bar, ohlcv = _cached_quote(row, cfg)
     open_pos = position_for_pair(broker, row.pair)
-    blocked = not paper_submit_allowed(row.validity)
-    block_reason = paper_submit_block_reason(row.validity)
+    events = list(calendar.events) if calendar is not None else []
+    clock = now_utc()
+    blocked = not paper_submit_allowed(row.validity, row, cfg, events=events, now=clock)
+    block_reason = paper_submit_block_reason(row.validity, row, cfg, events=events, now=clock)
     if not compact:
         st.markdown("**Practice desk**")
         backend = str((cfg.get("broker") or {}).get("backend") or "paper")
@@ -733,6 +748,8 @@ def _render_paper_actions(
             "Same submit/close a live venue would use; fills are local until a real backend exists. "
             "Not a broker order. No auto-submit. Advisory cards never place fills. "
             + PAPER_STALE_CAPTION
+            + " "
+            + PAPER_GATE_CAPTION
         )
         _render_suggestions(
             row,
@@ -804,7 +821,7 @@ def _render_paper_actions(
     side = "BUY" if buy else ("SELL" if sell else None)
     if side is None:
         return
-    _submit_paper_fill(row, cfg, broker, side, news)
+    _submit_paper_fill(row, cfg, broker, side, news, calendar)
 
 
 def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False) -> None:
@@ -963,8 +980,14 @@ def _render_detail_drawer(
                         f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)} · "
                         f"{open_pos.get('outcome') or 'PENDING'} — paper mark vs last/mid-ish, not live broker PnL"
                     )
-            if not paper_submit_allowed(row.validity):
-                st.caption(paper_submit_block_reason(row.validity) or PAPER_STALE_CAPTION)
+            cal_events = list(calendar.events) if calendar is not None else []
+            if not paper_submit_allowed(row.validity, row, cfg, events=cal_events, now=now_utc()):
+                st.caption(
+                    paper_submit_block_reason(
+                        row.validity, row, cfg, events=cal_events, now=now_utc()
+                    )
+                    or PAPER_STALE_CAPTION
+                )
         with tabs[4]:
             st.caption(
                 f"conf={_fmt_num(row.confidence, 4)} · dir_edge={_fmt_num(row.dir_edge, 4)} · "
@@ -1452,6 +1475,8 @@ def render_watch_board(cfg) -> None:
             st.caption(
                 "Click a pair for chart / SHAP / news / risk / rationale. "
                 + PAPER_STALE_CAPTION
+                + " "
+                + PAPER_GATE_CAPTION
             )
             with st.expander("Event calendar", expanded=False):
                 _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
