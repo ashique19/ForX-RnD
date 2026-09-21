@@ -1,0 +1,59 @@
+{
+  "fred_status": {
+    "enabled": true,
+    "source": "csv",
+    "error": null,
+    "series": [
+      "DFF",
+      "DGS10",
+      "T10Y2Y",
+      "DTWEXBGS",
+      "VIXCLS"
+    ],
+    "fetched_at": "2026-09-21 11:01 UTC",
+    "used_api_key": false,
+    "notes": []
+  },
+  "rows": [
+    {
+      "variant": "baseline",
+      "n_trades": 1067,
+      "win_rate": 0.5051546391752577,
+      "total_return": -0.0977570711721748,
+      "max_dd": -0.1036160670483689,
+      "profit_factor": 0.8894169603844656,
+      "folds": 41,
+      "sec": 12.5
+    },
+    {
+      "variant": "pandas_ta",
+      "n_trades": 1079,
+      "win_rate": 0.4976830398517145,
+      "total_return": -0.08935580031588553,
+      "max_dd": -0.10274741486797434,
+      "profit_factor": 0.8996708086942579,
+      "folds": 41,
+      "sec": 12.9
+    },
+    {
+      "variant": "fred",
+      "n_trades": 1059,
+      "win_rate": 0.4966949952785647,
+      "total_return": -0.09668516056201282,
+      "max_dd": -0.10575021782540561,
+      "profit_factor": 0.8895229818577999,
+      "folds": 41,
+      "sec": 13.0
+    },
+    {
+      "variant": "both",
+      "n_trades": 1045,
+      "win_rate": 0.5062200956937799,
+      "total_return": -0.08776996456972486,
+      "max_dd": -0.10284901213511266,
+      "profit_factor": 0.8999844200420354,
+      "folds": 41,
+      "sec": 13.9
+    }
+  ]
+}

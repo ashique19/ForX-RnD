@@ -50,8 +50,9 @@ range_windows: [20, 50]
 
 # Extra causal features (the committed EURUSD joblib ignores unknown columns
 # until you retrain). Not walk-forward screened as an upgrade — HTF/cross-pair
-# did not earn a default *filter*. pandas-ta / FRED packs default **off** until a
-# walk-forward screen says they help (or clearly don't hurt). See reports/experiments.md.
+# did not earn a default *filter*. pandas-ta / FRED packs stay **off**: EURUSD
+# WF showed a ~0.01 PF tick for TA (noise, still PF<1) and a null FRED pack
+# with a slightly worse drawdown. See reports/experiments.md.
 feature_extras:
   higher_tf: ["4h"]        # resample of the SAME pair CSV; add "1D" if wanted; [] disables
   htf_sma_window: 20

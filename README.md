@@ -14,7 +14,7 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 - News headlines (Google News RSS) can be **late, incomplete, or wrong**. The bias note is a keyword heuristic on fetched titles only — not a trade instruction.
 - The event calendar uses an **unofficial** weekly Forex Factory JSON dump (`nfs.faireconomy.media`). Times can be revised; confirm on Fed / BLS / ECB / BoE sources. Fail-soft if offline.
 - Advisory cards (no new opens / hold / close / tighten SL) are **decision support**. They never auto-submit via `BrokerPort`. MTF badges are causal SMA slope on the same CSV — not a live trend service.
-- Extra TA (`feature_extras.pandas_ta`) and FRED macro (`feature_extras.fred`) packs are **off by default** until a walk-forward screen says they help. FRED uses an as-of lag (not ALFRED vintages). A missing `FRED_API_KEY` is fine — public CSV is tried; if that fails the pack adds no columns.
+- Extra TA (`feature_extras.pandas_ta`) and FRED macro (`feature_extras.fred`) packs are **off by default**. A EURUSD walk-forward screen showed a ~0.01 PF tick for TA (fold noise, still PF < 1) and a null FRED pack with a slightly worse drawdown — not an edge. FRED uses an as-of lag (not ALFRED vintages). A missing `FRED_API_KEY` is fine — public CSV is tried; if that fails the pack adds no columns.
 
 ## Install (Windows)
 
@@ -118,7 +118,8 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `data/calendar_cache.json` | Forex Factory weekly JSON cache for the event calendar (local; gitignored) |
 | `data/fred_cache/` | FRED daily CSV cache when the macro pack is enabled (local; gitignored) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
-| `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
+| `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, pandas-ta/FRED, …); included in the report |
+| `reports/feature_pack_screen.md` | Walk-forward baseline vs +TA vs +FRED vs both |
 | `reports/latest_metrics.json` | Same metrics as JSON |
 
 ## How to refresh data
@@ -166,7 +167,7 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
 - `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
 
-A screen of those knobs (asymmetric 1.5:1 / 2:1, cost-aware labels, vol filter, pooled multi-pair train, GBPUSD/USDJPY transfer) is in `reports/experiments.md`. Headline remains **profit factor < 1**. Do not treat a small PF tick around 1.0 as an edge — fold PF std is ~0.5.
+A screen of those knobs (asymmetric 1.5:1 / 2:1, cost-aware labels, vol filter, pooled multi-pair train, GBPUSD/USDJPY transfer, pandas-ta / FRED packs) is in `reports/experiments.md`. Headline remains **profit factor < 1**. Do not treat a small PF tick around 1.0 as an edge — fold PF std is ~0.5.
 
 Legacy close-to-close labels are still available:
 
@@ -185,9 +186,9 @@ That legacy rule was: `BUY` if `Close[t+N]/Close[t]-1 > threshold`, `SELL` if be
 
 Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. Optional extras (`feature_extras`): 4h resample of the **same** pair (backward-filled completed bars), London∩NY overlap flag, short-vol percentile, optional cross-pair returns (skipped if that CSV is missing).
 
-**pandas-ta pack** (`feature_extras.pandas_ta`, default **off**): extra causal oscillators — stochastic, ADX ±DI, Bollinger %B/bandwidth, CCI, Williams %R, ROC, Keltner position. Default backend is a **native** subset in `forex_lab/ta_pack.py` so CI does not need numba. `pip install pandas-ta` is optional (`backend: pandas_ta`). No column uses future bars.
+**pandas-ta pack** (`feature_extras.pandas_ta`, default **off**): extra causal oscillators — stochastic, ADX ±DI, Bollinger %B/bandwidth, CCI, Williams %R, ROC, Keltner position. Default backend is a **native** subset in `forex_lab/ta_pack.py` so CI does not need numba. `pip install pandas-ta` is optional (`backend: pandas_ta`). No column uses future bars. EURUSD walk-forward: PF 0.890 → 0.900 (noise; still < 1). Left off.
 
-**FRED pack** (`feature_extras.fred`, default **off**): daily macro series (Fed funds `DFF`, 10y `DGS10`, curve `T10Y2Y`, broad dollar `DTWEXBGS`, VIX `VIXCLS`) aligned to each 1h bar with `lag_days` (default 1): an observation dated calendar day `D` is first used at `D+lag` 00:00, then forward-filled. Same-day prints never enter features. Optional `FRED_API_KEY` uses `fredapi` when installed; otherwise a public FRED CSV is downloaded and cached in `data/fred_cache/` (gitignored, TTL 24h). If the key is missing **and** CSV fails, the pack adds **no columns** (train/backtest still run). Do not add the pair’s own FRED FX print (`DEXUSEU` on EURUSD) — it is skipped automatically.
+**FRED pack** (`feature_extras.fred`, default **off**): daily macro series (Fed funds `DFF`, 10y `DGS10`, curve `T10Y2Y`, broad dollar `DTWEXBGS`, VIX `VIXCLS`) aligned to each 1h bar with `lag_days` (default 1): an observation dated calendar day `D` is first used at `D+lag` 00:00, then forward-filled. Same-day prints never enter features. Optional `FRED_API_KEY` uses `fredapi` when installed; otherwise a public FRED CSV is downloaded and cached in `data/fred_cache/` (gitignored, TTL 24h). If the key is missing **and** CSV fails, the pack adds **no columns** (train/backtest still run). Do not add the pair’s own FRED FX print (`DEXUSEU` on EURUSD) — it is skipped automatically. EURUSD walk-forward: null vs baseline, slightly worse max DD. Left off.
 
 The committed EURUSD joblib only uses columns it was trained with until you retrain. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
 

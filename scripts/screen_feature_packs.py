@@ -59,21 +59,18 @@ def _md_table(rows: list[dict]) -> str:
             continue
         verdict = "—"
         if row["variant"] != "baseline":
-            better = (
-                (row.get("profit_factor") or 0) >= (base.get("profit_factor") or 0)
-                and (row.get("total_return") or -9) >= (base.get("total_return") or -9)
-                and (row.get("max_dd") or -9) >= (base.get("max_dd") or -9)
-            )
-            worse = (
-                (row.get("profit_factor") or 0) < (base.get("profit_factor") or 0)
-                or (row.get("total_return") or 0) < (base.get("total_return") or 0)
-            )
-            if better:
-                verdict = "not worse / keep candidate"
-            elif worse:
-                verdict = "worse or mixed — keep off"
+            d_pf = (row.get("profit_factor") or 0) - (base.get("profit_factor") or 0)
+            d_ret = (row.get("total_return") or 0) - (base.get("total_return") or 0)
+            d_dd = (row.get("max_dd") or 0) - (base.get("max_dd") or 0)
+            # Fold PF std is ~0.5–0.6; a 0.01 PF tick is not an upgrade.
+            if d_dd < -0.005 and d_pf < 0.05:
+                verdict = "worse DD / null — keep off"
+            elif abs(d_pf) < 0.05 and abs(d_ret) < 0.03:
+                verdict = "null / fold noise — keep off"
+            elif d_pf > 0 and d_ret > 0 and d_dd >= -0.005:
+                verdict = "better on this sample — still not an edge; keep off unless large"
             else:
-                verdict = "null"
+                verdict = "mixed — keep off"
         lines.append(
             f"| {row['variant']} | {row.get('n_trades', 0)} | {pct(row.get('win_rate'))} | "
             f"{pct(row.get('total_return'))} | {pct(row.get('max_dd'))} | "
