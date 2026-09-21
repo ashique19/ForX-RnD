@@ -731,7 +731,7 @@ def build_board_row(
 
     status = artifact_status(pair, cfg, interval=interval)
     data_source: str | None = None
-    fetch_at = fmt_display(csv_mtime_utc(pair, cfg, interval), cfg)
+    fetch_at = fmt_display(csv_mtime_utc(pair, cfg, interval), cfg, seconds=True)
     # Light yfinance refresh only when a model exists — never synthetic, never a silent fetch.
     if refresh_data and status.get("model_exists"):
         _df, reason = try_yfinance_refresh(
@@ -739,7 +739,7 @@ def build_board_row(
         )
         if _df is not None:
             data_source = reason
-            fetch_at = fmt_display(clock, cfg)
+            fetch_at = fmt_display(clock, cfg, seconds=True)
         else:
             data_source = f"cached ({reason})"
         status = artifact_status(pair, cfg, interval=interval)

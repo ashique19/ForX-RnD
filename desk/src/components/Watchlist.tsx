@@ -20,6 +20,12 @@ export function WatchlistPanel({
   const [interval, setInterval] = useState("");
   const [error, setError] = useState("");
   const [assets, setAssets] = useState<string[]>([]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 5000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -108,6 +114,8 @@ export function WatchlistPanel({
             {rows.map((row) => {
               const sig = row.signal.toLowerCase();
               const sigClass = sig === "buy" || sig === "sell" ? sig : sig === "hold" ? "hold" : "na";
+              const fetched = primaryFetchLabel(row, nowMs);
+              const barAge = barAgeLabel(row);
               return (
                 <tr
                   key={row.pair}
@@ -137,8 +145,9 @@ export function WatchlistPanel({
                       {row.session.text}
                     </span>
                   </td>
-                  <td className="wl-age last" title={row.last_bar_dhaka || undefined}>
-                    {row.age === "—" ? "—" : `${row.age} ago`}
+                  <td className="wl-age last" title={ageTitle(row)} aria-label={barAge ? `${fetched}, ${barAge}` : fetched}>
+                    <span className="fetch-age">{fetched}</span>
+                    {barAge ? <span className="bar-age"> {barAge}</span> : null}
                   </td>
                   <td>
                     <button
@@ -168,4 +177,50 @@ function dataClass(tone: string): string {
   if (tone === "lag") return "data-lag";
   if (tone === "closed") return "data-closed";
   return "data-miss";
+}
+
+function parseDeskStamp(label: string | undefined): number | null {
+  if (!label) return null;
+  const text = label.trim();
+  if (!text || text === "—" || text.toLowerCase() === "n/a") return null;
+  const match = text.match(
+    /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?(?:\s+(UTC|Asia\/Dhaka|BDST))?$/,
+  );
+  if (!match) return null;
+  const sec = match[3] ?? "00";
+  const zone = match[4] ?? "Asia/Dhaka";
+  const iso = `${match[1]}T${match[2]}:${sec}`;
+  const ms = Date.parse(zone === "UTC" ? `${iso}Z` : `${iso}+06:00`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function compactAge(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function fetchAgeText(seconds: number): string {
+  if (seconds < 60) return "just now";
+  return `fetched ${compactAge(seconds)}`;
+}
+
+function primaryFetchLabel(row: BoardRow, nowMs: number): string {
+  const fetchedAt = parseDeskStamp(row.last_fetch_dhaka);
+  if (fetchedAt != null) return fetchAgeText(Math.max(0, (nowMs - fetchedAt) / 1000));
+  if (row.fetch_age) return row.fetch_age;
+  return "—";
+}
+
+function barAgeLabel(row: BoardRow): string {
+  if (!row.age || row.age === "—") return "";
+  return `bar ${row.age}`;
+}
+
+function ageTitle(row: BoardRow): string {
+  const fetch = row.last_fetch_dhaka && row.last_fetch_dhaka !== "n/a" ? `Last fetch ${row.last_fetch_dhaka}` : "No successful fetch";
+  const bar = row.last_bar_dhaka && row.last_bar_dhaka !== "n/a" ? `Bar open ${row.last_bar_dhaka}` : "";
+  return bar ? `${fetch} · ${bar}` : fetch;
 }

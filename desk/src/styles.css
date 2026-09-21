@@ -310,6 +310,16 @@
     .data-ok { color: var(--green); font-size: 11px; font-weight: 500; }
     .data-lag { color: var(--amber); font-size: 11px; font-weight: 500; }
     .last { color: var(--faint); font-size: 11px; }
+    table.wl td.wl-age .fetch-age {
+      color: var(--text-2);
+      font-weight: 600;
+    }
+    table.wl td.wl-age .bar-age {
+      margin-left: 6px;
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 400;
+    }
     .fresh-pill {
       display: inline-block;
       min-width: 3.4em;

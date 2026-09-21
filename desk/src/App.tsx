@@ -128,6 +128,10 @@ export function App() {
           setNoticeUntil(null);
           setError(null);
         }
+        if (result.row && !result.fetch_failed) {
+          const fresh = result.row;
+          setBoard((cur) => mergeBoardRow(cur, fresh));
+        }
         if (result.fetch_failed && result.row) {
           const failed = result.row;
           skipBoard.current = true;
