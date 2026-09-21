@@ -92,6 +92,12 @@
     "tp_atr": 2.0,
     "sl_atr": 2.0,
     "min_confidence": 0.4,
-    "min_dir_edge": 0.0
+    "min_dir_edge": 0.0,
+    "sessions": [],
+    "min_vol_regime": 0.0,
+    "min_tp_pips": 0.0,
+    "cost_aware": false,
+    "calibrate": null,
+    "prune_bottom_frac": 0.0
   }
 }

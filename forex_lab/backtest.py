@@ -512,12 +512,12 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
             "```",
             "fill      = Open[t+1]          # next-bar open; not used as a feature",
             "ATR       = Wilder ATR at t    # causal",
-            "upper     = fill + tp_atr * ATR",
-            "lower     = fill - sl_atr * ATR",
+            "long  TP  = fill + tp_atr * ATR ;  long  SL = fill - sl_atr * ATR",
+            "short TP  = fill - tp_atr * ATR ;  short SL = fill + sl_atr * ATR",
             "scan      = High/Low of bars t+1 .. t+horizon",
-            "BUY  if upper is touched first",
-            "SELL if lower is touched first",
-            "HOLD if timeout, or both barriers in the same bar",
+            "BUY  if the long trade hits TP before SL",
+            "SELL if the short trade hits TP before SL",
+            "HOLD if neither side wins (timeout, conflict, or both fail)",
             "```",
             "",
             "Backtest uses the same fill, barriers, and (optional) one-position rule.",
@@ -610,12 +610,21 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
         "- Fold std tells you whether a headline number is stable or driven by a few windows.",
         "- Logistic is a linear comparison on the **same** folds/features/filters, not a second trading system.",
         "",
-        "## Disclaimer",
-        "",
-        "This lab is for research education only. It does **not** place broker orders.",
-        "Data from yfinance is not identical to broker executable quotes. Past backtest results do not predict future performance.",
-        "Even if the model beats these baselines, that is a research signal — not evidence of a deployable edge after slippage, gaps, and session holes.",
-        "",
+        ]
+    )
+    extra = reports_dir / "experiments.md"
+    if extra.exists():
+        text = extra.read_text(encoding="utf-8").strip()
+        if text:
+            lines.extend(["", text, ""])
+    lines.extend(
+        [
+            "## Disclaimer",
+            "",
+            "This lab is for research education only. It does **not** place broker orders.",
+            "Data from yfinance is not identical to broker executable quotes. Past backtest results do not predict future performance.",
+            "Even if the model beats these baselines, that is a research signal — not evidence of a deployable edge after slippage, gaps, and session holes.",
+            "",
         ]
     )
     md_path.write_text("\n".join(lines), encoding="utf-8")

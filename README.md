@@ -50,6 +50,12 @@ python -m forex_lab fetch --pair EURUSD --synthetic
 
 Re-run `train` then `backtest` after a fetch so models and `reports/latest_report.md` match the new cache.
 
+### Windows console encoding
+
+`fetch` writes `data\<PAIR>_<interval>.csv` **before** any console print. CLI stdout is ASCII (`->`, not `→`). `INSTALL.bat` and `RUN_DEMO.bat` set `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`, and code page 65001.
+
+If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. `RUN_DEMO.bat` will not overwrite an existing `data\EURUSD_1h.csv` with synthetic data on a later error. Do not mix synthetic numbers with yfinance numbers in the same report.
+
 ## Outputs
 
 | Path | Meaning |
@@ -59,6 +65,7 @@ Re-run `train` then `backtest` after a fetch so models and `reports/latest_repor
 | `models/EURUSD_logistic.joblib` | Logistic baseline model |
 | `signals/latest_signals.csv` | Latest BUY/SELL/HOLD rows (confidence-filtered) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
+| `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
 | `reports/latest_metrics.json` | Same metrics as JSON |
 
 ## How to refresh data
@@ -81,22 +88,27 @@ For each decision bar `t`, features use **only data at or before `t`**. The simu
 ```
 fill   = Open[t+1]
 ATR    = Wilder ATR at t          (causal)
-upper  = fill + tp_atr * ATR      (default tp_atr = 2.0)
-lower  = fill - sl_atr * ATR      (default sl_atr = 2.0)
+long  TP = fill + tp_atr * ATR    (default 2.0)
+long  SL = fill - sl_atr * ATR    (default 2.0)
+short TP / SL = the mirror
 scan   = High/Low of bars t+1 .. t+horizon   (default horizon = 8)
 
-BUY  if upper is touched first
-SELL if lower is touched first
-HOLD if the vertical barrier is hit first (timeout)
-HOLD if both barriers are touched in the same bar (ambiguous path)
+BUY  if the long trade hits TP before SL
+SELL if the short trade hits TP before SL
+HOLD if neither side wins (timeout / conflict)
 ```
 
-Barriers are **symmetric** in ATR units so the label does not bake in a long/short payoff bias. Backtest exits use the same fill, ATR width, first-touch rule, and (by default) **one open position at a time**.
+Barriers are **per-side** (long TP = +tp_atr ATR, long SL = -sl_atr ATR, and the mirror for shorts) so an asymmetric R:R does not bake in a long/short **label** bias. Default `tp_atr = sl_atr = 2.0` matches a single upper/lower pair. Backtest exits use the same fill, ATR width, first-touch rule, and (by default) **one open position at a time**.
 
 Optional filters applied to **both** `backtest` and `signals` (so the CSV is the same policy as the report):
 
 - `signals.min_confidence` — min P(predicted class) to emit BUY/SELL (default `0.40`; random 3-class is ~0.33). Harsh cutoffs can hurt: on EURUSD 1h, the highest XGBoost confidence bucket was **not** the best.
 - `signals.min_dir_edge` — min |P(BUY) − P(SELL)| (default `0.0`; leave the model's HOLD class to do the sitting-out).
+- `signals.sessions` — optional UTC session allow-list (`london`, `ny`, `asia`). Empty = all hours. London+NY-only **hurt** EURUSD vs the unfiltered model.
+- `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
+- `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
+
+A screen of those knobs (asymmetric 1.5:1 / 2:1, cost-aware labels, vol filter, pooled multi-pair train, GBPUSD/USDJPY transfer) is in `reports/experiments.md`. Headline remains **profit factor < 1**. Do not treat a small PF tick around 1.0 as an edge — fold PF std is ~0.5.
 
 Legacy close-to-close labels are still available:
 
@@ -144,6 +156,7 @@ Tests check causal features (future bar edits must not change past rows), triple
 
 ```
 forex_lab/
+  console.py     # ASCII-safe CLI prints + UTF-8 stdio
   data.py        # yfinance fetch + synthetic fallback
   features.py    # causal features + labels
   model.py       # XGBoost + logistic
@@ -152,4 +165,5 @@ forex_lab/
   cli.py         # CLI entry
 config/default.yaml
 tests/
+scripts/screen_variants.py  # optional research screen (not a user command)
 ```

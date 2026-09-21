@@ -103,6 +103,8 @@ def fetch_ohlcv(
     out_path = data_path(pair, cfg, interval)
 
     if force_synthetic:
+        if out_path.exists():
+            safe_print(f"[fetch] warning: overwriting existing {out_path} with synthetic")
         df = generate_synthetic_ohlcv(pair=pair, interval=interval)
         df.to_csv(out_path)
         return df, "synthetic"

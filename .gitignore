@@ -6,3 +6,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# extra-pair caches; EURUSD_1h.csv is the committed demo set
+data/GBPUSD_*.csv
+data/USDJPY_*.csv
+data/AUDUSD_*.csv
+data/USDCAD_*.csv

@@ -6,8 +6,13 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 import time
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from forex_lab.config_loader import load_config
 from forex_lab.data import load_ohlcv
