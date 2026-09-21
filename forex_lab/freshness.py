@@ -20,6 +20,8 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.clock import fmt_display
+
 VALIDITY_OK = "OK"
 VALIDITY_STALE = "STALE"
 VALIDITY_MISSING = "MISSING"
@@ -300,7 +302,7 @@ class FetchGate:
     def backoff_until_label(self) -> str:
         if self.until <= 0:
             return ""
-        return fmt_ts(datetime.fromtimestamp(self.until, tz=timezone.utc), seconds=True)
+        return fmt_display(datetime.fromtimestamp(self.until, tz=timezone.utc), seconds=True)
 
     def mark_fail(self, reason: str, now_ts: float) -> None:
         self.failures += 1

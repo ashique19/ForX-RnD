@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.clock import fmt_display
 from forex_lab.config_loader import load_config
 from forex_lab.data import csv_mtime_utc, load_cached_ohlcv, try_yfinance_refresh
 from forex_lab.explain import SignalExplanation, explain_latest_signal
@@ -21,7 +22,6 @@ from forex_lab.freshness import (
     VALIDITY_STALE,
     Freshness,
     assess_ohlcv,
-    fmt_ts,
     now_utc,
 )
 from forex_lab.mtf import (
@@ -133,13 +133,8 @@ def _fmt(x: object, digits: int = 4) -> str:
         return str(x)
 
 
-def _fmt_when(value: object) -> str:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return "n/a"
-    ts = pd.to_datetime(value, errors="coerce")
-    if pd.isna(ts):
-        return str(value)
-    return ts.strftime("%Y-%m-%d %H:%M")
+def _fmt_when(value: object, cfg: dict[str, Any] | None = None) -> str:
+    return fmt_display(value, cfg)
 
 
 def _barrier_levels(ohlcv: pd.DataFrame | None, cfg: dict[str, Any]) -> dict[str, Any] | None:
@@ -360,6 +355,7 @@ def _details_from_signal(
     *,
     status: str | None = None,
     explanation: SignalExplanation | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> str:
     if status and status != STATUS_READY:
         return status
@@ -367,7 +363,7 @@ def _details_from_signal(
     conf = get("confidence")
     edge = get("dir_edge")
     model = get("model") or "n/a"
-    when = _fmt_when(get("datetime"))
+    when = _fmt_when(get("datetime"), cfg)
     pb, ps, ph = get("p_buy"), get("p_sell"), get("p_hold")
     base = (
         f"conf={_fmt(conf, 4)}  dir_edge={_fmt(edge, 4)}  "
@@ -420,7 +416,7 @@ def row_from_signal(
         timeframe=timeframe,
         buy_sell=sig,
         target=target,
-        signal_details=_details_from_signal(last, explanation=explanation),
+        signal_details=_details_from_signal(last, explanation=explanation, cfg=cfg),
         status=STATUS_READY,
         confidence=_num("confidence"),
         dir_edge=_num("dir_edge"),
@@ -428,7 +424,7 @@ def row_from_signal(
         p_sell=_num("p_sell"),
         p_hold=_num("p_hold"),
         model=None if get("model") is None else str(get("model")),
-        datetime=_fmt_when(get("datetime")),
+        datetime=_fmt_when(get("datetime"), cfg),
         close=_num("close"),
         raw_signal=None if get("raw_signal") is None else str(get("raw_signal")),
         target_note=note,
@@ -438,7 +434,7 @@ def row_from_signal(
         explain_method=None if explanation is None else explanation.method,
         drivers=list(explanation.drivers) if explanation is not None else [],
         rules=list(explanation.rules) if explanation is not None else [],
-        last_signal_at=_fmt_when(get("datetime")),
+        last_signal_at=_fmt_when(get("datetime"), cfg),
         validity=VALIDITY_OK,
     )
     return apply_mtf_flash(attach_visuals(row, ohlcv, cfg, now=None), cfg)
@@ -482,11 +478,12 @@ def apply_freshness(
     fresh: Freshness,
     *,
     last_fetch_at: str | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> BoardRow:
     """Attach validity. STALE/MISSING/ERROR never flash a live BUY/SELL."""
     row.validity = fresh.validity
     row.validity_reason = fresh.reason
-    row.last_bar_at = fresh.last_bar_label
+    row.last_bar_at = fmt_display(fresh.last_bar, cfg) if fresh.last_bar else fresh.last_bar_label
     if last_fetch_at:
         row.last_fetch_at = last_fetch_at
     if row.status in {STATUS_NEED_FETCH, STATUS_NEED_TRAIN}:
@@ -549,7 +546,7 @@ def build_board_row(
 
     status = artifact_status(pair, cfg, interval=interval)
     data_source: str | None = None
-    fetch_at = fmt_ts(csv_mtime_utc(pair, cfg, interval))
+    fetch_at = fmt_display(csv_mtime_utc(pair, cfg, interval), cfg)
     # Light yfinance refresh only when a model exists — never synthetic, never a silent fetch.
     if refresh_data and status.get("model_exists"):
         _df, reason = try_yfinance_refresh(
@@ -557,7 +554,7 @@ def build_board_row(
         )
         if _df is not None:
             data_source = reason
-            fetch_at = fmt_ts(clock)
+            fetch_at = fmt_display(clock, cfg)
         else:
             data_source = f"cached ({reason})"
         status = artifact_status(pair, cfg, interval=interval)
@@ -598,7 +595,7 @@ def build_board_row(
             last_fetch_at=fetch_at if fetch_at != "n/a" else None,
         )
         return attach_visuals(
-            apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at),
+            apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at, cfg=cfg),
             ohlcv_only,
             cfg,
             now=clock,
@@ -689,7 +686,7 @@ def build_board_row(
     )
     fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
     row = attach_visuals(
-        apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None),
+        apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None, cfg=cfg),
         ohlcv,
         cfg,
         now=clock,

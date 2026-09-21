@@ -187,6 +187,11 @@ advice:
   flatten_action: close            # NFP/FOMC/CPI-style names in the before/during window
   tighten_sl_atr: 1.0              # vs barrier.sl_atr (default 2.0) — research SL only
 
+# Display clock for the Streamlit desk. Data/session windows stay UTC.
+ui:
+  timezone: Asia/Dhaka     # zoneinfo name; default Dhaka (UTC+6, no DST)
+  timezone_tag: Asia/Dhaka # suffix on timestamps so the zone is obvious
+
 # Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
 
 # Paper practice desk (UI Buy/Sell/Close). Not a live venue.

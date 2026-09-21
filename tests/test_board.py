@@ -283,6 +283,8 @@ def test_board_row_eurusd_uses_existing_signals_csv():
     if row.quote.available:
         assert "last/mid-ish" in row.quote.kind or row.quote.kind == "mid"
         assert row.quote.bid is None
+    if row.last_bar_at and row.last_bar_at != "n/a":
+        assert "Asia/Dhaka" in row.last_bar_at
 
 
 def test_board_row_session_follows_clock_not_last_bar():

@@ -9,7 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from forex_lab.freshness import FetchGate, fmt_ts
+from forex_lab.clock import fmt_display, relabel
+from forex_lab.freshness import FetchGate
 from forex_lab.news import NewsBundle
 
 
@@ -20,7 +21,7 @@ def _calendar_health(calendar: Any | None, ttl_s: int) -> dict[str, str] | None:
     events = list(getattr(calendar, "events", None) or [])
     err = getattr(calendar, "error", None)
     stale = bool(getattr(calendar, "stale_cache", False))
-    fetched = str(getattr(calendar, "fetched_at", None) or "n/a")
+    fetched = relabel(getattr(calendar, "fetched_at", None))
     if err and not events:
         status, observed, detail = "FAIL", "no events", str(err)
     elif stale:
@@ -52,7 +53,7 @@ def _yf_last_label(gate: FetchGate | None, pair: str) -> str:
     if not ts:
         return "n/a"
     try:
-        return fmt_ts(datetime.fromtimestamp(float(ts), tz=timezone.utc), seconds=True)
+        return fmt_display(datetime.fromtimestamp(float(ts), tz=timezone.utc), seconds=True)
     except (OSError, OverflowError, ValueError):
         return "n/a"
 
@@ -63,7 +64,7 @@ def _fred_health(status: Any | None) -> dict[str, str] | None:
     series = list(getattr(status, "series", None) or [])
     source = str(getattr(status, "source", "") or "missing")
     err = getattr(status, "error", None)
-    fetched = str(getattr(status, "fetched_at", None) or "n/a")
+    fetched = relabel(getattr(status, "fetched_at", None))
     key_note = "FRED_API_KEY set" if getattr(status, "used_api_key", False) else "no API key (CSV ok)"
     cadence = f"FRED daily · as-of lag · {key_note}"
     if err and not series:
@@ -114,8 +115,8 @@ def build_health_rows(
         tf = str(getattr(row, "timeframe", "") or "")
         validity = str(getattr(row, "validity", "MISSING") or "MISSING")
         yf_ok = _yf_last_label(gate, pair)
-        last_fetch = str(getattr(row, "last_fetch_at", None) or yf_ok or "n/a")
-        observed = str(getattr(row, "last_bar_at", None) or "n/a")
+        last_fetch = relabel(getattr(row, "last_fetch_at", None) or yf_ok or "n/a")
+        observed = relabel(getattr(row, "last_bar_at", None) or "n/a")
         n_bars = getattr(row, "n_bars", None)
         if n_bars is not None:
             observed = f"{observed} ({n_bars} bars)"
@@ -158,7 +159,7 @@ def build_health_rows(
                 "Status": status,
                 "Observed": observed_n,
                 "Cadence": news_cadence,
-                "Last update": str(bundle.fetched_at or "n/a"),
+                "Last update": relabel(bundle.fetched_at or "n/a"),
                 "Detail": detail,
             }
         )
@@ -172,7 +173,7 @@ def build_health_rows(
                 "Status": "FAIL",
                 "Observed": str(gate.last_error),
                 "Cadence": cadence,
-                "Last update": gate.backoff_until_label() or "n/a",
+                "Last update": relabel(gate.backoff_until_label() or "n/a"),
                 "Detail": f"backing off until {gate.backoff_until_label()}",
             },
         )

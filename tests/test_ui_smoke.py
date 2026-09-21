@@ -167,3 +167,4 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "spread" in low
     assert "session" in low
     assert "not broker bid/ask" in low or "not broker" in low
+    assert "asia/dhaka" in low or "dhaka" in low

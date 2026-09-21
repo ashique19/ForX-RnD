@@ -13,6 +13,7 @@ import streamlit as st
 from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_pair
 from forex_lab.calendar import CalendarBundle, countdown_label
 from forex_lab import calendar as calendar_lab
+from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.advise import Suggestion, suggest_actions
@@ -65,7 +66,6 @@ from forex_lab.freshness import (
     YF_MIN_INTERVAL_S,
     assess_ohlcv,
     board_cfg,
-    fmt_ts,
     is_rate_limited_reason,
     now_utc,
     should_fetch_ohlcv,
@@ -91,7 +91,7 @@ DISCLAIMER = (
     "MTF badges use causal higher-TF SMA slope on the same CSV — not a live trend service. "
     "Last on the board is yfinance **last/mid-ish**, not executable bid/ask. "
     "Spread is the **config pip estimate** (cost context), not your broker’s live spread. "
-    "Session is a UTC clock badge (Asia/London/NY windows in config) — not a venue calendar. "
+    "Session is a UTC-window clock badge (Asia/London/NY); times on the desk are **Asia/Dhaka**. "
     "Paper uPnL is a local mark vs that last/mid-ish cache — **not** live broker PnL. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
@@ -145,7 +145,7 @@ A future `mt5` / `oanda` backend would implement the same four methods. **Not** 
 with last update, cadence, and OK/STALE/FAIL. Opens itself when a feed is STALE/FAIL/MISSING.
 
 **Last update** — last candle time, last successful CSV write (fetch), last signal time.
-The board also shows a global **board last refreshed** timestamp.
+The board also shows a global **board last refreshed** timestamp. Desk clocks are **Asia/Dhaka** (`ui.timezone`) with an `Asia/Dhaka` tag. Session windows stay UTC.
 
 **Signal details** — confidence, probabilities, top feature drivers, rule overlay, short rationale.
 
@@ -387,12 +387,13 @@ def _render_sparkline(row) -> None:
     st.caption(row.sparkline_note)
 
 
-def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str]) -> None:
+def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=None) -> None:
     st.markdown("**Event calendar**")
     st.caption(
         "High-impact FX releases (NFP, FOMC, CPI, rate decisions, …). "
         "Free unofficial Forex Factory weekly JSON via nfs.faireconomy.media — no API key. "
-        "Cached locally; fail-soft if offline. **Not a trade instruction.**"
+        "Cached locally; fail-soft if offline. **Not a trade instruction.** "
+        f"{clock_note(cfg)}"
     )
     if bundle is None:
         st.info("Calendar not loaded this tick.")
@@ -414,10 +415,10 @@ def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str]) -> N
         mark = " · highlight" if e.highlight else ""
         st.markdown(
             f"- **{cd}** · {e.currency} · {e.impact}{mark} · {e.title}  \n"
-            f"  {e.when} · pairs {pairs_txt}"
+            f"  {fmt_display(when or e.when, cfg)} · pairs {pairs_txt}"
             + (f" · forecast {e.forecast} prev {e.previous}" if e.forecast or e.previous else "")
         )
-    src = bundle.fetched_at or "cache"
+    src = relabel(bundle.fetched_at, cfg) if bundle.fetched_at else "cache"
     stale = " · stale cache" if bundle.stale_cache else ""
     st.caption(f"Source: {bundle.source} · {src}{stale}")
 
@@ -470,8 +471,11 @@ def _render_advice_card(
     )
     st.caption(card.detail)
     if card.countdown or card.event_title:
+        when_txt = relabel(getattr(card, "event_when", None), cfg)
+        when_bit = f" · {when_txt}" if when_txt != "n/a" else ""
         st.caption(
-            f"{card.currencies or ''} {card.event_title or ''} · {card.countdown or ''} · window {card.window}"
+            f"{card.currencies or ''} {card.event_title or ''} · {card.countdown or ''}"
+            f"{when_bit} · window {card.window}"
         )
     st.caption(card.disclaimer)
     if card.action == "tighten_sl" and card.suggested_sl is not None and broker is not None:
@@ -661,7 +665,7 @@ def _render_paper_actions(
         st.error(str(exc))
 
 
-def _render_paper_journal(broker: BrokerPort) -> None:
+def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
     backend = "paper"
     st.caption(
         f"Practice book via BrokerPort (`broker.backend: {backend}`). "
@@ -715,7 +719,7 @@ def _render_paper_journal(broker: BrokerPort) -> None:
         show = pd.DataFrame(
             [
                 {
-                    "when": r.get("entry_time"),
+                    "when": relabel(r.get("entry_time"), cfg, seconds=True),
                     "pair": r.get("pair"),
                     "side": r.get("side"),
                     "status": r.get("status"),
@@ -773,10 +777,16 @@ def _render_paper_journal(broker: BrokerPort) -> None:
             st.caption("• " + note)
     if fills:
         st.markdown("**Fills** (`BrokerPort.list_fills`)")
-        st.dataframe(pd.DataFrame(fills), use_container_width=True, hide_index=True)
+        fill_rows = []
+        for f in fills:
+            d = dict(f)
+            if "time" in d:
+                d["time"] = relabel(d.get("time"), cfg, seconds=True)
+            fill_rows.append(d)
+        st.dataframe(pd.DataFrame(fill_rows), use_container_width=True, hide_index=True)
 
 
-def _render_news_lane(bundle: NewsBundle | None) -> None:
+def _render_news_lane(bundle: NewsBundle | None, cfg=None) -> None:
     st.caption("News context, not a trade instruction")
     if bundle is None:
         st.info("No news yet.")
@@ -790,11 +800,11 @@ def _render_news_lane(bundle: NewsBundle | None) -> None:
     for h in (bundle.headlines or [])[:8]:
         title = h.title if len(h.title) < 110 else h.title[:107] + "…"
         if h.link:
-            st.markdown(f"- [{title}]({h.link})  \n  {h.published} {('· ' + h.source) if h.source else ''}")
+            st.markdown(f"- [{title}]({h.link})  \n  {relabel(h.published, cfg)} {('· ' + h.source) if h.source else ''}")
         else:
             st.markdown(f"- {title}")
     if bundle.fetched_at:
-        st.caption(f"Source: Google News RSS · {bundle.fetched_at}")
+        st.caption(f"Source: Google News RSS · {relabel(bundle.fetched_at, cfg)}")
 
 
 def _watch_cache_key(pair: str, interval: str) -> str:
@@ -871,7 +881,7 @@ def _sync_watch_rows(wl, cfg, *, manual: bool, realtime: bool) -> tuple[list, st
         rows.append(row)
     for stale in [k for k in cache if k not in wanted]:
         del cache[stale]
-    st.session_state["board_last_refreshed"] = fmt_ts(clock, seconds=True)
+    st.session_state["board_last_refreshed"] = fmt_display(clock, cfg, seconds=True)
     return rows, rate_msg
 
 
@@ -945,12 +955,16 @@ def render_watch_board(cfg) -> None:
             st.warning(rate_msg)
         refreshed = st.session_state.get("board_last_refreshed")
         if refreshed:
-            st.caption(f"Board last refreshed at {refreshed} (local process clock, UTC).")
+            st.caption(
+                f"Board last refreshed at {relabel(refreshed, cfg, seconds=True)} "
+                f"({timezone_tag(cfg)} clock)."
+            )
         board_sess = classify_session(cfg=cfg)
         st.caption(
             f"Session **{board_sess.badge()}** · {board_sess.note}. "
             "Last is yfinance last/mid-ish — not broker bid/ask. "
-            "Spread is the config pip estimate (cost context)."
+            "Spread is the config pip estimate (cost context). "
+            f"{clock_note(cfg)}"
         )
 
         news_map: dict = {}
@@ -1028,7 +1042,7 @@ def render_watch_board(cfg) -> None:
             st.info("Watchlist is empty. Add a pair below.")
         else:
             with st.container(border=True):
-                _render_calendar_panel(calendar, [r.pair for r in rows])
+                _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
             for row in rows:
                 news = news_map.get(row.pair)
                 with st.container(border=True):
@@ -1086,7 +1100,7 @@ def render_watch_board(cfg) -> None:
                         ):
                             st.caption(f"Last model class (not live / MTF overlay): {row.raw_signal}")
                     with right:
-                        _render_news_lane(news)
+                        _render_news_lane(news, cfg)
                     sp, rk = st.columns([1.55, 1.45])
                     with sp:
                         _render_sparkline(row)
@@ -1133,7 +1147,7 @@ def render_watch_board(cfg) -> None:
                             _render_explanation(expl, heading="Why this math signal?")
                         if news is not None and news.headlines:
                             st.markdown("**Headlines used for the news note**")
-                            _render_news_lane(news)
+                            _render_news_lane(news, cfg)
                         if row.error:
                             st.caption(f"Status detail: {row.error}")
                         if row.validity_reason:
@@ -1146,7 +1160,7 @@ def render_watch_board(cfg) -> None:
 
             if broker is not None:
                 with st.expander("Paper portfolio (practice desk — not a broker)", expanded=False):
-                    _render_paper_journal(broker)
+                    _render_paper_journal(broker, cfg)
 
             table = board_table(rows)
             cols_help = " | ".join(BOARD_TABLE_COLS)
@@ -1328,7 +1342,9 @@ def render() -> None:
                 when = last.get("datetime", "")
                 close = last.get("close", "")
                 conf = last.get("confidence", "")
-                st.caption(f"{last.get('pair', '')}  {when}  close={close}  conf={conf}")
+                st.caption(
+                    f"{last.get('pair', '')}  {relabel(when, cfg)}  close={close}  conf={conf}"
+                )
             else:
                 st.metric("Latest signal", "—")
                 st.caption("No `signals/latest_signals.csv` yet.")

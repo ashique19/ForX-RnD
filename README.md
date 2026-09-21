@@ -69,7 +69,7 @@ The top of the page is the **signal screen** (primary): one flash card per watch
 
 **Realtime** (default **60s**, minimum 60s): rebuilds signals from the **local** cache each tick. yfinance is called only when a bar is due or the cache is approaching stale, **one pair per tick**, with exponential backoff after errors or 429-like responses. Yahoo’s download endpoint is unofficial and has no SLA — 60–120s is the practical band; do not set this like a broker stream. A **rate limited — backing off until …** banner appears if throttled. Realtime off: **Manual update** only.
 
-**Data validity:** each card shows `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last candle older than ~2× the timeframe is **STALE** and the flash is **—** plus “data stale — refresh required” (the last model class is kept as a note, not as a live call). Weekends / Friday after ~21:00 UTC show **CLOSED** with last bar time — not a false STALE alarm. Last bar, last fetch, and last signal times are on the card; the board shows **board last refreshed at …**.
+**Data validity:** each card shows `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last candle older than ~2× the timeframe is **STALE** and the flash is **—** plus “data stale — refresh required” (the last model class is kept as a note, not as a live call). Weekends / Friday after ~21:00 UTC show **CLOSED** with last bar time — not a false STALE alarm. Last bar, last fetch, and last signal times are on the card; the board shows **board last refreshed at …**. Clocks on the desk are **Asia/Dhaka** (`ui.timezone`, UTC+6) with an `Asia/Dhaka` tag; stored data stays UTC. Session windows remain UTC.
 
 **Last / mid:** each card and the table **Last** column show the cached yfinance **close** as **last/mid-ish**. Yahoo FX is not a bid/ask book and is **not** your broker’s executable quote. Mid from Bid/Ask is used only if those columns exist (they do not on the default yfinance path). Do not read this as live broker last.
 
@@ -170,6 +170,7 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `board.mtf_confirm` — UI badge (`agree` / `conflict` / `n/a`) from causal H4 (or D1) SMA slope. `conflict_flash: off|weaken|hold` (default **off**).
 - `board.sessions` — UTC windows for the watchlist **ASIA / LONDON / NY** clock badge (end exclusive; `asia: [21, 7]` wraps midnight). Independent of model `sess_*` columns.
 - `board.quote` — last/mid-ish label, source note, and whether to show last-bar High−Low as a labeled range proxy.
+- `ui.timezone` — display zone for desk clocks (default **Asia/Dhaka**). Session windows stay UTC.
 - `feature_extras.pandas_ta.enabled` — extra TA columns (default **off**). Native backend; optional `pandas_ta` if the package is installed.
 - `feature_extras.fred.enabled` — FRED as-of macro columns (default **off**). `FRED_API_KEY` is optional; CSV works without it. Fail-soft if offline.
 - `calendar` / `advice` — event calendar source URL, impact filter, cache TTL, before/during/after minutes, flatten keywords, and whether open positions get hold / close / tighten-SL cards. Advice never auto-submits.
@@ -216,7 +217,7 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 ## Config
 
-Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, and `board.quote`.
+Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, `board.quote`, and `ui.timezone`.
 
 ## Connecting a live broker later
 
@@ -237,7 +238,7 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, the pandas-ta subset (causal / default-off), and FRED as-of lag plus fail-soft when the cache is missing (no network).
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), Asia/Dhaka display-time formatting, data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, the pandas-ta subset (causal / default-off), and FRED as-of lag plus fail-soft when the cache is missing (no network).
 
 ## Project layout
 
@@ -257,6 +258,7 @@ forex_lab/
   advise.py      # no-new-open / hold / close / tighten-SL cards (not orders)
   mtf.py         # causal HTF SMA-slope badge + optional conflict flash
   session.py     # Asia/London/NY clock badge (configurable UTC windows)
+  clock.py       # store UTC, display Asia/Dhaka (ui.timezone)
   broker.py      # BrokerPort + PaperBroker (practice fills; no live venue)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report
