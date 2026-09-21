@@ -155,7 +155,7 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "signal screen" in low
     assert "news context, not a trade instruction" in low or "news context" in low
     assert "last bar" in low or "board last refreshed" in low or "validity" in low
-    assert "sparkline" in low or "risk" in low
+    assert "sparkline" in low or "spark" in low or "risk" in low
     assert "paper" in low
     assert "practice desk" in low or "brokerport" in low or "broker.port" in low
     assert "data health" in low or "awareness" in low
@@ -170,3 +170,60 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "asia/dhaka" in low or "dhaka" in low
     assert "alert sound" in low or "alerts" in low
     assert "not a live edge" in low or "paper right/wrong" in low
+    assert "data●" in low or "next event" in low
+    assert "disabled when" in low and "stale" in low
+    assert "detail" in low
+    buy_btns = [b for b in at.button if "BUY" in str(getattr(b, "label", "")).upper()]
+    sell_btns = [b for b in at.button if "SELL" in str(getattr(b, "label", "")).upper()]
+    assert buy_btns and sell_btns
+
+
+def test_stale_row_disables_paper_buy_sell_buttons(monkeypatch):
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    from forex_lab.calendar import CalendarBundle
+    from forex_lab.freshness import VALIDITY_STALE
+    from forex_lab.news import NewsBundle
+    from forex_lab.ui.board import build_board_row as real_build
+
+    def _stub_news(pair, cfg=None, **_kwargs):
+        return NewsBundle(pair=str(pair).upper(), bias="unclear", headlines=[], fetched_at="2026-09-21 00:00 UTC")
+
+    def _stub_cal(cfg=None, **_kwargs):
+        return CalendarBundle(events=[], source="fixture", fetched_at="2026-09-21 00:00 UTC")
+
+    def _stale(*a, **k):
+        row = real_build(*a, **k)
+        row.validity = VALIDITY_STALE
+        row.buy_sell = "—"
+        return row
+
+    monkeypatch.setattr("forex_lab.news.fetch_pair_news", _stub_news)
+    monkeypatch.setattr("forex_lab.calendar.fetch_calendar", _stub_cal)
+    monkeypatch.setattr("forex_lab.ui.board.build_board_row", _stale)
+
+    app = project_root() / "streamlit_app.py"
+    at = AppTest.from_file(str(app), default_timeout=60)
+    at.run()
+    assert not at.exception, f"Streamlit render failed: {at.exception}"
+    blobs = []
+    for attr in ("markdown", "warning", "caption", "text", "title", "subheader", "header"):
+        block = getattr(at, attr, None)
+        if block is None:
+            continue
+        for el in block:
+            val = getattr(el, "value", None) or getattr(el, "body", None)
+            if val:
+                blobs.append(str(val))
+    joined = "\n".join(blobs).lower()
+    assert "paper buy/sell disabled" in joined or "disabled when data● is stale" in joined
+    action_btns = [
+        b
+        for b in at.button
+        if str(getattr(b, "label", "")).upper() in {"BUY", "SELL", "PAPER BUY", "PAPER SELL"}
+    ]
+    assert action_btns, "expected paper BUY/SELL buttons on the dense board"
+    disabled_flags = [getattr(b, "disabled", None) for b in action_btns]
+    if any(flag is not None for flag in disabled_flags):
+        assert all(bool(flag) for flag in disabled_flags)

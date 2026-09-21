@@ -135,6 +135,80 @@ def events_affecting(events: list[CalendarEvent], pair: str) -> list[CalendarEve
     return [e for e in events if event_affects_pair(e, pair)]
 
 
+SHORT_EVENT_TITLES = (
+    ("non-farm", "NFP"),
+    ("nonfarm", "NFP"),
+    ("nfp", "NFP"),
+    ("fomc", "FOMC"),
+    ("core pce", "PCE"),
+    ("pce price", "PCE"),
+    ("cpi", "CPI"),
+    ("interest rate", "Rate"),
+    ("policy rate", "Rate"),
+    ("cash rate", "Rate"),
+    ("unemployment", "Unemp"),
+    ("employment change", "Emp"),
+    ("gdp", "GDP"),
+)
+
+
+def short_event_title(title: str) -> str:
+    """Compact name for the dense Next-event cell (NFP / FOMC / …)."""
+    t = str(title or "").lower()
+    for needle, short in SHORT_EVENT_TITLES:
+        if needle in t:
+            return short
+    cleaned = str(title or "").strip()
+    if not cleaned:
+        return "event"
+    return cleaned.split()[0][:10]
+
+
+def next_event_for_pair(
+    events: list[CalendarEvent] | None,
+    pair: str,
+    now: datetime | None = None,
+    *,
+    grace_minutes: int = 15,
+) -> CalendarEvent | None:
+    """Soonest upcoming (or just-released) high-impact event that hits this pair."""
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    clock = clock.astimezone(timezone.utc)
+    grace = timedelta(minutes=max(0, int(grace_minutes)))
+    best: CalendarEvent | None = None
+    best_key: tuple[int, float, int] | None = None
+    for e in events_affecting(list(events or []), pair):
+        ts = e.when_dt()
+        if ts is None:
+            continue
+        delta = ts - clock
+        if delta < -grace:
+            continue
+        upcoming = delta.total_seconds() >= 0
+        key = (0 if upcoming else 1, abs(delta.total_seconds()), 0 if e.highlight else 1)
+        if best_key is None or key < best_key:
+            best, best_key = e, key
+    return best
+
+
+def next_event_label(
+    event: CalendarEvent | None,
+    now: datetime | None = None,
+    *,
+    warn: bool = False,
+) -> str:
+    """Scan cell: ``USD NFP in 42m``. Prefix ⚠ when the pre-event window is live."""
+    if event is None:
+        return "—"
+    cd = countdown_label(event.when_dt(), now)
+    ccy = str(event.currency or "").upper()
+    short = short_event_title(event.title)
+    core = " ".join(p for p in (ccy, short, cd) if p)
+    return f"⚠ {core}" if warn else (core or "—")
+
+
 def is_highlight(title: str, keywords: list[str] | tuple[str, ...] | None = None) -> bool:
     t = str(title or "").lower()
     words = keywords if keywords is not None else DEFAULT_HIGHLIGHT

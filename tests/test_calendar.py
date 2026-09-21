@@ -167,3 +167,24 @@ def test_disabled_calendar():
 def test_event_window_none_without_timestamp():
     e = CalendarEvent(title="x", currency="USD", when="not-a-date", impact="High")
     assert event_window(e) == "none"
+
+
+def test_next_event_for_pair_picks_soonest_and_short_title():
+    from forex_lab.calendar import next_event_for_pair, next_event_label, short_event_title
+
+    events = parse_events(SAMPLE)
+    now = datetime(2026, 9, 21, 16, 0, tzinfo=timezone.utc)
+    nxt = next_event_for_pair(events, "EURUSD", now)
+    assert nxt is not None
+    assert "Non-Farm" in nxt.title
+    assert next_event_for_pair(events, "EURGBP", now) is None
+    assert short_event_title("Non-Farm Employment Change") == "NFP"
+    assert short_event_title("FOMC Statement") == "FOMC"
+    label = next_event_label(nxt, now, warn=True)
+    assert label.startswith("⚠")
+    assert "USD" in label and "NFP" in label
+    # Past the during-grace window → skip to CPI
+    after = datetime(2026, 9, 21, 17, 0, tzinfo=timezone.utc)
+    nxt2 = next_event_for_pair(events, "EURUSD", after, grace_minutes=15)
+    assert nxt2 is not None
+    assert "CPI" in nxt2.title

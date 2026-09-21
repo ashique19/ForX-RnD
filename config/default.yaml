@@ -175,7 +175,8 @@ calendar:
     - Employment Change
     - GDP
 
-# Advisory cards next to Paper Buy/Sell. Never auto-submit via BrokerPort.
+# Advisory cards in the detail drawer + Next-event ⚠ on the scan row.
+# Never auto-submit via BrokerPort.
 advice:
   enabled: true
   before_minutes: 60
