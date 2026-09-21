@@ -21,7 +21,7 @@ from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag, zone
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.advise import Suggestion, suggest_actions
-from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MtfStatus
+from forex_lab.mtf import MtfStatus
 from forex_lab.ui.board import (
     BOARD_TABLE_COLS,
     NEED_FETCH_TRAIN,
@@ -96,10 +96,19 @@ from forex_lab.ui.theme import (
     TEXT,
     TEXT_BRIGHT,
     WARN,
+    blocked_caption_html,
+    empty_state_html,
     inject_terminal_css,
-    session_fill,
-    signal_fill,
-    validity_tone,
+    masthead_html,
+    mtf_badge_html,
+    row_accent_html,
+    scan_legend_html,
+    scan_row_tone,
+    section_html,
+    session_badge_html,
+    signal_badge_html,
+    status_strip_html,
+    validity_badge_html,
 )
 from forex_lab.ui.workspace import (
     Workspace,
@@ -335,41 +344,14 @@ def _render_explanation(expl: SignalExplanation | None, *, heading: str = "Why t
 
 
 def _validity_badge(validity: str, *, compact: bool = False) -> None:
-    v = str(validity or "MISSING").upper()
-    tone = validity_tone(v)
-    if compact:
-        st.markdown(
-            f'<div title="{v}" style="text-align:center;line-height:1.05">'
-            f'<span style="color:{tone};font-size:0.95rem">●</span>'
-            f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.05em;color:{tone}">{v}</div>'
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        return
-    st.markdown(
-        f'<div style="background:{tone};color:#04140c;font-weight:800;'
-        f"font-size:0.72rem;letter-spacing:0.08em;text-align:center;padding:4px 8px;"
-        f'border-radius:3px;display:inline-block">{v}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(validity_badge_html(validity, compact=compact), unsafe_allow_html=True)
 
 
-def _signal_badge(sig: str, *, weak: bool = False, compact: bool = False) -> None:
-    s = str(sig).upper() if sig and str(sig).strip() not in {"—", "-", "n/a"} else "—"
-    bg, fg = signal_fill(s)
-    label = s if not weak or s in {"—", "HOLD"} else f"{s} (weak)"
-    if compact:
-        size = "0.76rem"
-        pad = "3px 4px"
-        radius = "3px"
-    else:
-        size = "1.05rem" if weak and s in {"BUY", "SELL"} else "1.28rem"
-        pad = "8px 10px"
-        radius = "4px"
+def _signal_badge(
+    sig: str, *, weak: bool = False, compact: bool = False, validity: str | None = None
+) -> None:
     st.markdown(
-        f'<div style="background:{bg};color:{fg};font-weight:800;font-size:{size};'
-        f"text-align:center;padding:{pad};border-radius:{radius};letter-spacing:0.1em;"
-        f'box-shadow:0 0 0 1px rgba(0,0,0,0.35);opacity:{0.7 if weak else 1}">{label}</div>',
+        signal_badge_html(sig, weak=weak, compact=compact, validity=validity),
         unsafe_allow_html=True,
     )
 
@@ -381,13 +363,7 @@ def _session_badge(session: SessionState | None, *, show_note: bool = False) -> 
     else:
         name = session.badge()
         note = session.note
-    bg = session_fill(name)
-    st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.68rem;'
-        f"letter-spacing:0.08em;text-align:center;padding:3px 6px;border-radius:3px;"
-        f'display:inline-block">{name}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(session_badge_html(name), unsafe_allow_html=True)
     if show_note and note:
         st.caption(note)
 
@@ -429,16 +405,7 @@ def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
     else:
         status = str(mtf.status or "n/a")
         note = status if compact else mtf.as_label()
-    colors = {MTF_AGREE: BUY, MTF_CONFLICT: WARN, "n/a": HOLD_BG}
-    fg = {MTF_AGREE: BUY_BG, MTF_CONFLICT: "#1a1204", "n/a": TEXT}
-    bg = colors.get(status, HOLD_BG)
-    color = fg.get(status, TEXT)
-    st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.66rem;'
-        f"letter-spacing:0.04em;text-align:center;padding:3px 5px;border-radius:3px;"
-        f'display:block">{note}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(mtf_badge_html(status, note, compact=compact), unsafe_allow_html=True)
     if not compact and mtf is not None and mtf.note:
         st.caption(mtf.note)
 
@@ -482,13 +449,12 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
     if shown:
         head, clear = st.columns([7.2, 1.1])
         with head:
-            st.markdown("**Alerts**")
+            st.markdown(section_html("Alerts"), unsafe_allow_html=True)
             st.caption(
                 "Flips and STALE vs last snapshot · dismissible · not orders. "
                 f"{'Sound on' if sound_on else 'Sound off'}."
             )
         with clear:
-            st.markdown("&nbsp;")
             if st.button("Clear", key="alert_clear_all", help="Dismiss every visible alert"):
                 for a in list(state.alerts):
                     dismiss_alert(state, a.id)
@@ -528,7 +494,7 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
 
 
 def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=None) -> None:
-    st.markdown("**Event calendar**")
+    st.markdown(section_html("Event calendar"), unsafe_allow_html=True)
     st.caption(
         "High-impact FX releases (NFP, FOMC, CPI, rate decisions, …). "
         "Free unofficial Forex Factory weekly JSON via nfs.faireconomy.media — no API key. "
@@ -536,7 +502,10 @@ def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=
         f"{clock_note(cfg)}"
     )
     if bundle is None:
-        st.info("Calendar not loaded this tick.")
+        st.markdown(
+            empty_state_html("Calendar not loaded", "This tick did not fetch events. Math board is unchanged."),
+            unsafe_allow_html=True,
+        )
         return
     if bundle.error and not bundle.events:
         st.warning(f"{bundle.error} — math board is unchanged.")
@@ -544,7 +513,13 @@ def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=
     if bundle.stale_cache:
         st.warning(bundle.error or "Showing stale calendar cache (live fetch failed).")
     if not bundle.events:
-        st.caption("No high-impact events in the look-ahead window.")
+        st.markdown(
+            empty_state_html(
+                "No high-impact events",
+                "Nothing in the look-ahead window. Not a trade instruction.",
+            ),
+            unsafe_allow_html=True,
+        )
         return
     wanted = {str(p).upper() for p in pairs}
     dhaka_now = datetime.now(zoneinfo_for(cfg))
@@ -868,7 +843,7 @@ def _render_paper_actions(
         help=help_txt,
     )
     if compact and blocked:
-        st.caption(block_reason)
+        st.markdown(blocked_caption_html(block_reason or PAPER_STALE_CAPTION), unsafe_allow_html=True)
     side = "BUY" if buy else ("SELL" if sell else None)
     if side is None:
         return
@@ -888,11 +863,11 @@ def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False, strong:
 
 
 def _render_dense_header() -> None:
+    st.markdown(scan_legend_html(), unsafe_allow_html=True)
     cols = st.columns(DENSE_WEIGHTS)
     for col, lab in zip(cols, DENSE_HEADERS):
         col.markdown(
-            f'<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.06em;'
-            f'color:{MUTED};text-transform:uppercase">{html.escape(lab)}</div>',
+            f'<div class="fx-section" style="margin:0">{html.escape(lab)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -907,7 +882,15 @@ def _render_dense_row(
     selected: bool,
 ) -> None:
     warn = bool(getattr(row, "next_event_warn", False))
-    with st.container(border=bool(selected or warn)):
+    stale = str(row.validity).upper() in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR}
+    tone = scan_row_tone(
+        row.buy_sell,
+        row.validity,
+        selected=selected,
+        event_warn=warn,
+    )
+    st.markdown(row_accent_html(tone), unsafe_allow_html=True)
+    with st.container(border=bool(selected or warn or stale)):
         c = st.columns(DENSE_WEIGHTS)
         pair_kwargs = {
             "key": f"board_open_{row.pair}_{row.timeframe}",
@@ -923,7 +906,12 @@ def _render_dense_row(
         with c[1]:
             _dense_cell(row.timeframe)
         with c[2]:
-            _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)), compact=True)
+            _signal_badge(
+                row.buy_sell,
+                weak=bool(getattr(row, "flash_weak", False)),
+                compact=True,
+                validity=row.validity,
+            )
         with c[3]:
             _dense_cell(conf_label(row.confidence), numeric=True, strong=True)
         with c[4]:
@@ -962,14 +950,24 @@ def _render_detail_drawer(
     with st.container(border=True):
         head, xbtn = st.columns([7.4, 1.0])
         with head:
-            st.markdown(f"**{row.pair}** detail · {row.timeframe} · {row.buy_sell} · {row.validity}")
+            st.markdown(
+                f'<div class="fx-drawer-head">'
+                f'<span class="fx-title">{html.escape(row.pair)}</span>'
+                f'<span class="fx-tz">{html.escape(row.timeframe)}</span>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            b1, b2, b3 = st.columns([1.1, 1.0, 4.0])
+            with b1:
+                _signal_badge(row.buy_sell, validity=row.validity)
+            with b2:
+                _validity_badge(row.validity)
             st.caption(
-                "Chart / SHAP / news / risk / rationale. "
+                f"{row.pair} detail · Chart / SHAP / news / risk / rationale. "
                 "News context, not a trade instruction. Advisory cards never auto-submit. "
                 f"{clock_note(cfg)}"
             )
         with xbtn:
-            st.markdown("&nbsp;")
             if st.button("Close", key=f"board_close_drawer_{row.pair}_{row.timeframe}"):
                 st.session_state["board_detail_pair"] = None
                 st.rerun()
@@ -1164,7 +1162,10 @@ def _render_daily_digest(
             st.markdown("**Signal flips (BUY/SELL/HOLD)**")
             st.dataframe(pd.DataFrame(flips), use_container_width=True, hide_index=True)
         else:
-            st.caption("No BUY/SELL/HOLD flips in the window.")
+            st.markdown(
+                empty_state_html("No BUY/SELL/HOLD flips", "Nothing flipped in yesterday/today (Asia/Dhaka)."),
+                unsafe_allow_html=True,
+            )
         by_w = list(paper.get("by_window") or [])
         if by_w:
             st.markdown("**Paper RIGHT/WRONG by day**")
@@ -1300,9 +1301,18 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
         conf=conf_pick,
     )
     if not all_rows:
-        st.info("No paper trades yet. Use BUY / SELL on the board.")
+        st.markdown(
+            empty_state_html(
+                "No paper trades yet",
+                "Use BUY / SELL on the board. Local journal only — not a live edge.",
+            ),
+            unsafe_allow_html=True,
+        )
     elif not rows:
-        st.info("No paper trades match these filters.")
+        st.markdown(
+            empty_state_html("No matching trades", "No paper trades match these filters."),
+            unsafe_allow_html=True,
+        )
     else:
         show = pd.DataFrame(
             [
@@ -1360,7 +1370,10 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
 def _render_news_lane(bundle: NewsBundle | None, cfg=None) -> None:
     st.caption("News context, not a trade instruction")
     if bundle is None:
-        st.info("No news yet.")
+        st.markdown(
+            empty_state_html("No news yet", "Headlines appear after a fetch. Math board is unchanged."),
+            unsafe_allow_html=True,
+        )
         return
     _news_bias_badge(bundle.bias)
     if bundle.error and not bundle.headlines:
@@ -1512,15 +1525,25 @@ def _render_workspace_bar(cfg, wl) -> None:
             "realtime interval, and min-confidence display. Does not wipe the "
             "paper journal or change BrokerPort.",
         )
-    apply_clicked = c2.button("Apply", disabled=not names, use_container_width=True)
-    reset_clicked = c3.button("Reset", disabled=not names, use_container_width=True)
+    apply_clicked = c2.button(
+        "Apply",
+        key="ws_apply",
+        disabled=not names,
+        use_container_width=True,
+    )
+    reset_clicked = c3.button(
+        "Reset",
+        key="ws_reset",
+        disabled=not names,
+        use_container_width=True,
+    )
     with c4:
         save_as = st.text_input(
             "Save as",
             key="ws_save_as",
             help="Slug for a custom preset under data/workspaces/. Not a broker store.",
         )
-    save_clicked = c5.button("Save current", use_container_width=True)
+    save_clicked = c5.button("Save current", key="ws_save", use_container_width=True)
     with c6:
         conf = float(
             st.number_input(
@@ -1599,22 +1622,9 @@ def _render_workspace_bar(cfg, wl) -> None:
 def _render_masthead(cfg) -> None:
     """Compact terminal header. Clocks stay Asia/Dhaka; paper BrokerPort unchanged."""
     now = datetime.now(zoneinfo_for(cfg))
-    clock = html.escape(fmt_display(now, cfg, seconds=True))
-    tz = html.escape(timezone_tag(cfg))
-    st.markdown(
-        f'<div class="fx-masthead">'
-        f'<div class="fx-masthead-left">'
-        f'<span class="fx-brand">FX</span>'
-        f'<span class="fx-title">SIGNAL SCREEN</span>'
-        f'<span class="fx-chip">PAPER</span>'
-        f'<span class="fx-chip muted">RESEARCH</span>'
-        f"</div>"
-        f'<div class="fx-masthead-right">'
-        f'<span class="fx-clock">{clock}</span>'
-        f'<span class="fx-tz">{tz}</span>'
-        f"</div></div>",
-        unsafe_allow_html=True,
-    )
+    clock = fmt_display(now, cfg, seconds=True)
+    tz = timezone_tag(cfg)
+    st.markdown(masthead_html(clock, tz), unsafe_allow_html=True)
 
 
 def render_watch_board(cfg) -> None:
@@ -1714,14 +1724,29 @@ def render_watch_board(cfg) -> None:
         _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
         refreshed = st.session_state.get("board_last_refreshed")
         board_sess = classify_session(cfg=cfg)
-        refresh_bit = (
-            f"Board last refreshed at {relabel(refreshed, cfg, seconds=True)} "
-            f"({timezone_tag(cfg)} clock). "
-            if refreshed
-            else ""
+        refresh_bit = relabel(refreshed, cfg, seconds=True) if refreshed else "n/a"
+        counts_ok = sum(1 for r in rows if r.validity == VALIDITY_OK)
+        counts_stale = sum(1 for r in rows if r.validity == VALIDITY_STALE)
+        counts_dead = sum(1 for r in rows if r.validity in {VALIDITY_MISSING, VALIDITY_ERROR})
+        tone = "bad" if counts_dead else ("warn" if counts_stale else "ok")
+        scan_bits = [f"{counts_ok} OK"]
+        if counts_stale:
+            scan_bits.append(f"{counts_stale} STALE")
+        if counts_dead:
+            scan_bits.append(f"{counts_dead} MISSING/ERROR")
+        st.markdown(
+            status_strip_html(
+                [
+                    ("Board", refresh_bit, ""),
+                    ("Clock", timezone_tag(cfg), ""),
+                    ("Session", board_sess.badge(), "warn" if "+" in board_sess.badge() else ""),
+                    ("Data●", " · ".join(scan_bits) if rows else "empty", tone if rows else "warn"),
+                ]
+            ),
+            unsafe_allow_html=True,
         )
         st.caption(
-            f"{refresh_bit}"
+            f"Board last refreshed at {refresh_bit} ({timezone_tag(cfg)} clock). "
             f"Session **{board_sess.badge()}** · {board_sess.note}. "
             "Last is yfinance last/mid-ish — not broker bid/ask. "
             "Spread is the config pip estimate (cost context). "
@@ -1803,7 +1828,13 @@ def render_watch_board(cfg) -> None:
             if health:
                 st.markdown(awareness_table_html(health), unsafe_allow_html=True)
             else:
-                st.info("Watchlist is empty — no sources to report.")
+                st.markdown(
+                    empty_state_html(
+                        "No sources",
+                        "Watchlist is empty — nothing to observe. Paper BrokerPort unchanged.",
+                    ),
+                    unsafe_allow_html=True,
+                )
 
         try:
             _render_daily_digest(
@@ -1818,7 +1849,13 @@ def render_watch_board(cfg) -> None:
             pass
 
         if not rows:
-            st.info("Watchlist is empty. Add a pair below.")
+            st.markdown(
+                empty_state_html(
+                    "Watchlist is empty",
+                    "Add a pair below. The scan line stays empty until you do. Paper BrokerPort unchanged.",
+                ),
+                unsafe_allow_html=True,
+            )
         else:
             clock = now_utc()
             cal_events = list(calendar.events) if calendar is not None else []
@@ -1891,7 +1928,7 @@ def render_watch_board(cfg) -> None:
 
     _board_fragment()
 
-    st.markdown("**Watchlist**")
+    st.markdown(section_html("Watchlist"), unsafe_allow_html=True)
     watched = wl.pair_symbols()
     addable = [p for p in available if p not in watched]
     a1, a2, a3, a4 = st.columns([1.3, 1.2, 1.4, 1.1])
@@ -1911,8 +1948,7 @@ def render_watch_board(cfg) -> None:
             key="watch_add_tf",
         )
     with a4:
-        st.markdown("&nbsp;")
-        add_clicked = st.button("Add to watchlist", use_container_width=True)
+        add_clicked = st.button("Add to watchlist", key="watch_add_btn", use_container_width=True)
     if add_clicked:
         symbol = (typed or "").strip() or (pick if addable else "")
         try:
@@ -1936,9 +1972,9 @@ def render_watch_board(cfg) -> None:
             key="watch_remove_" + "-".join(watched) if watched else "watch_remove_empty",
         )
     with d2:
-        st.markdown("&nbsp;")
         remove_clicked = st.button(
             "Remove from watchlist",
+            key="watch_remove_btn",
             disabled=not watched,
             use_container_width=True,
         )

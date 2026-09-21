@@ -9,10 +9,17 @@ from forex_lab.ui.theme import (
     BUY,
     HOLD,
     SELL,
+    WARN,
     alert_tone,
+    empty_state_html,
+    masthead_html,
+    scan_legend_html,
+    scan_row_tone,
+    signal_badge_html,
     signal_cell_style,
     signal_fill,
     terminal_css,
+    validity_badge_html,
     validity_cell_style,
 )
 
@@ -40,6 +47,13 @@ def test_buy_sell_hold_are_high_contrast():
     assert "st-key-paper_buy" in css
     assert "st-key-paper_sell" in css
     assert "fx-masthead" in css
+    assert "stDeployButton" in css
+    assert "fx-empty" in css
+    assert "fx-legend" in css
+    assert "st-key-ws_apply" in css
+    assert "--fx-kicker" in css
+    assert "fx-badge-hold" in css
+    assert "fx-badge-stale" in css
 
 
 def test_style_board_uses_dark_signal_colors():
@@ -83,3 +97,44 @@ def test_theme_does_not_touch_broker_or_timezone_defaults():
     source = Path(project_root() / "forex_lab" / "ui" / "theme.py").read_text(encoding="utf-8")
     assert "BrokerPort" in source
     assert "Asia/Dhaka" in source
+
+
+def test_scan_badges_make_buy_sell_hold_and_stale_obvious():
+    buy = signal_badge_html("BUY", compact=True)
+    sell = signal_badge_html("SELL", compact=True)
+    hold = signal_badge_html("HOLD", compact=True)
+    stale = signal_badge_html("BUY", compact=True, validity="STALE")
+    dash = signal_badge_html("—", compact=True, validity="STALE")
+    assert BUY in buy and "BUY" in buy
+    assert SELL in sell and "SELL" in sell
+    assert "fx-badge-hold" in hold and "HOLD" in hold
+    assert BUY not in hold
+    assert "fx-badge-stale" in stale
+    assert BUY not in stale
+    assert "—" in dash
+    assert WARN in validity_badge_html("STALE", compact=True)
+    assert "STALE" in validity_badge_html("STALE", compact=True)
+    assert scan_row_tone("BUY", "OK") == "buy"
+    assert scan_row_tone("SELL", "OK") == "sell"
+    assert scan_row_tone("HOLD", "OK") == "hold"
+    assert scan_row_tone("BUY", "STALE") == "stale"
+    assert scan_row_tone("HOLD", "MISSING") == "dead"
+    assert "sel" in scan_row_tone("BUY", "OK", selected=True)
+
+
+def test_empty_state_and_masthead_escape_and_legend():
+    html = empty_state_html("Watchlist is empty", "Add a pair <EURUSD>.")
+    assert "fx-empty" in html
+    assert "Watchlist is empty" in html
+    assert "<EURUSD>" not in html
+    assert "&lt;EURUSD&gt;" in html
+    legend = scan_legend_html()
+    for token in ("BUY", "SELL", "HOLD", "STALE"):
+        assert token in legend
+    head = masthead_html("21:00:00 Asia/Dhaka", "Asia/Dhaka")
+    assert "fx-masthead" in head
+    assert "SIGNAL SCREEN" in head
+    assert "PAPER" in head
+    assert "Asia/Dhaka" in head
+    assert "<script>" not in masthead_html("<script>x</script>", "tz")
+    assert "&lt;script&gt;" in masthead_html("<script>x</script>", "tz")
