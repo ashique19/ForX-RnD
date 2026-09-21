@@ -42,3 +42,16 @@ Reproduce screens: `python3 scripts/screen_variants.py` (not a user CLI command)
 ### HTF / extras / news (this PR)
 
 Optional *features* are on so a **retrained** model can use them: `feature_extras.higher_tf: [4h]`, `sess_ldn_ny`, `vol_pct`. The committed EURUSD joblib still predicts with its original columns (`signals.py` dropna is on model `feature_cols` only). `signals.htf_trend_filter` and London+NY *filters* stay **off** — prior screens were worse. Cross-pair is `null` (skip if CSV missing). Google News RSS is UI context only; it does not enter labels or the model.
+
+### pandas-ta / FRED feature packs (this PR)
+
+Same walk-forward protocol as the table above. Packs default **off** until the screen says they help (or clearly don't hurt) profit factor / total return / max drawdown vs the current champion feature set.
+
+Reproduce: `python3 scripts/screen_feature_packs.py` (writes `reports/feature_pack_screen.md`). FRED CSV does not need `FRED_API_KEY`; if download fails the FRED rows are skipped and the pack stays off.
+
+| Variant | Trades | Win rate | Total return | Max DD | Profit factor | vs baseline |
+|---|---:|---:|---:|---:|---:|---|
+| baseline (current extras, packs off) | — | — | — | — | — | screen pending |
+| + pandas-ta | — | — | — | — | — | screen pending |
+| + FRED | — | — | — | — | — | screen pending |
+| + both | — | — | — | — | — | screen pending |

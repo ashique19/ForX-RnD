@@ -36,7 +36,28 @@ FEATURE_HINTS = {
     "xpair_ret_1": "cross-pair 1-bar return",
     "xpair_ret_6": "cross-pair 6-bar return",
     "xpair_sma20_ratio": "cross-pair vs its SMA20",
+    "ta_stoch_k": "stochastic %K (causal)",
+    "ta_stoch_d": "stochastic %D (causal)",
+    "ta_adx": "ADX trend strength (causal)",
+    "ta_plus_di": "+DI (causal)",
+    "ta_minus_di": "-DI (causal)",
+    "ta_bb_pctb": "Bollinger %B (causal)",
+    "ta_bb_bw": "Bollinger bandwidth (causal)",
+    "ta_cci": "CCI (causal)",
+    "ta_willr": "Williams %R (causal, 0-1)",
+    "ta_roc": "rate of change (causal)",
+    "ta_kc_pos": "Keltner channel position (causal)",
 }
+
+
+def feature_hint(name: str) -> str:
+    if name in FEATURE_HINTS:
+        return FEATURE_HINTS[name]
+    if str(name).startswith("ta_"):
+        return "causal TA pack"
+    if str(name).startswith("fred_"):
+        return "FRED macro (as-of lagged)"
+    return ""
 
 
 @dataclass
@@ -183,7 +204,7 @@ def _importance_fallback(model, columns: list[str], X: pd.DataFrame) -> list[Dri
             v = float(val) if val is not None and pd.notna(val) else None
         except (TypeError, ValueError):
             v = None
-        out.append(Driver(feature=name, contribution=float(gain), value=v, hint=FEATURE_HINTS.get(name, "")))
+        out.append(Driver(feature=name, contribution=float(gain), value=v, hint=feature_hint(name)))
     return out
 
 
@@ -228,7 +249,7 @@ def local_drivers(
                 feature=name,
                 contribution=float(contrib),
                 value=v,
-                hint=FEATURE_HINTS.get(name, ""),
+                hint=feature_hint(name),
             )
         )
     return drivers, method

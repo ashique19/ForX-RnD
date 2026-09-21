@@ -14,6 +14,7 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 - News headlines (Google News RSS) can be **late, incomplete, or wrong**. The bias note is a keyword heuristic on fetched titles only — not a trade instruction.
 - The event calendar uses an **unofficial** weekly Forex Factory JSON dump (`nfs.faireconomy.media`). Times can be revised; confirm on Fed / BLS / ECB / BoE sources. Fail-soft if offline.
 - Advisory cards (no new opens / hold / close / tighten SL) are **decision support**. They never auto-submit via `BrokerPort`. MTF badges are causal SMA slope on the same CSV — not a live trend service.
+- Extra TA (`feature_extras.pandas_ta`) and FRED macro (`feature_extras.fred`) packs are **off by default** until a walk-forward screen says they help. FRED uses an as-of lag (not ALFRED vintages). A missing `FRED_API_KEY` is fine — public CSV is tried; if that fails the pack adds no columns.
 
 ## Install (Windows)
 
@@ -115,6 +116,7 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `config/watchlist.yaml` | Streamlit watch-board pairs (local; survives reruns) |
 | `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
 | `data/calendar_cache.json` | Forex Factory weekly JSON cache for the event calendar (local; gitignored) |
+| `data/fred_cache/` | FRED daily CSV cache when the macro pack is enabled (local; gitignored) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
 | `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
 | `reports/latest_metrics.json` | Same metrics as JSON |
@@ -158,6 +160,8 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `signals.sessions` — optional UTC session allow-list (`london`, `ny`, `asia`). Empty = all hours. London+NY-only **hurt** EURUSD vs the unfiltered model.
 - `signals.htf_trend_filter` — optional higher-timeframe SMA-slope agreement (`4h` / `1D`). **Default off**: session/vol-style filters hurt EURUSD in prior screens.
 - `board.mtf_confirm` — UI badge (`agree` / `conflict` / `n/a`) from causal H4 (or D1) SMA slope. `conflict_flash: off|weaken|hold` (default **off**).
+- `feature_extras.pandas_ta.enabled` — extra TA columns (default **off**). Native backend; optional `pandas_ta` if the package is installed.
+- `feature_extras.fred.enabled` — FRED as-of macro columns (default **off**). `FRED_API_KEY` is optional; CSV works without it. Fail-soft if offline.
 - `calendar` / `advice` — event calendar source URL, impact filter, cache TTL, before/during/after minutes, flatten keywords, and whether open positions get hold / close / tighten-SL cards. Advice never auto-submits.
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
 - `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
@@ -179,7 +183,13 @@ That legacy rule was: `BUY` if `Close[t+N]/Close[t]-1 > threshold`, `SELL` if be
 
 ## Features (causal)
 
-Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. Optional extras (`feature_extras`): 4h resample of the **same** pair (backward-filled completed bars), London∩NY overlap flag, short-vol percentile, optional cross-pair returns (skipped if that CSV is missing). The committed EURUSD joblib only uses columns it was trained with until you retrain. No column is built from future bars. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
+Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. Optional extras (`feature_extras`): 4h resample of the **same** pair (backward-filled completed bars), London∩NY overlap flag, short-vol percentile, optional cross-pair returns (skipped if that CSV is missing).
+
+**pandas-ta pack** (`feature_extras.pandas_ta`, default **off**): extra causal oscillators — stochastic, ADX ±DI, Bollinger %B/bandwidth, CCI, Williams %R, ROC, Keltner position. Default backend is a **native** subset in `forex_lab/ta_pack.py` so CI does not need numba. `pip install pandas-ta` is optional (`backend: pandas_ta`). No column uses future bars.
+
+**FRED pack** (`feature_extras.fred`, default **off**): daily macro series (Fed funds `DFF`, 10y `DGS10`, curve `T10Y2Y`, broad dollar `DTWEXBGS`, VIX `VIXCLS`) aligned to each 1h bar with `lag_days` (default 1): an observation dated calendar day `D` is first used at `D+lag` 00:00, then forward-filled. Same-day prints never enter features. Optional `FRED_API_KEY` uses `fredapi` when installed; otherwise a public FRED CSV is downloaded and cached in `data/fred_cache/` (gitignored, TTL 24h). If the key is missing **and** CSV fails, the pack adds **no columns** (train/backtest still run). Do not add the pair’s own FRED FX print (`DEXUSEU` on EURUSD) — it is skipped automatically.
+
+The committed EURUSD joblib only uses columns it was trained with until you retrain. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
 
 ## How to read success rate
 
@@ -196,7 +206,7 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 ## Config
 
-Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `calendar`, `advice`, and `board.mtf_confirm`.
+Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, and `board.mtf_confirm`.
 
 ## Connecting a live broker later
 
@@ -217,7 +227,7 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), and MTF agree/conflict/hold-flash.
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, the pandas-ta subset (causal / default-off), and FRED as-of lag plus fail-soft when the cache is missing (no network).
 
 ## Project layout
 
@@ -228,6 +238,8 @@ forex_lab/
   console.py     # ASCII-safe CLI prints + UTF-8 stdio
   data.py        # yfinance fetch + synthetic fallback
   features.py    # causal features + labels
+  ta_pack.py     # optional pandas-ta subset (native backend; no lookahead)
+  fred.py        # optional FRED as-of macro pack (CSV or FRED_API_KEY)
   explain.py     # local drivers / rule overlay / grounded rationale
   freshness.py   # OK/STALE/CLOSED vs last bar (UI; not a broker clock)
   news.py        # Google News RSS + keyword bias (UI context only)
@@ -244,4 +256,5 @@ config/default.yaml
 config/watchlist.yaml  # persisted research watchlist for the Streamlit board
 tests/
 scripts/screen_variants.py  # optional research screen (not a user command)
+scripts/screen_feature_packs.py  # pandas-ta / FRED walk-forward screen
 ```
