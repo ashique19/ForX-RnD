@@ -5,6 +5,7 @@ import {
   LineStyle,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -22,6 +23,14 @@ function digitsFor(pair: string): number {
   if (pair.includes("JPY")) return 3;
   if (pair.includes("XAU") || pair.includes("XAG")) return 1;
   return 5;
+}
+
+/** Right-scale precision. Majors 5dp, JPY 3, gold/silver 2. Volume stays separate. */
+export function priceFormatFor(pair: string): { type: "price"; precision: number; minMove: number } {
+  const symbol = pair.toUpperCase().replace(/[^A-Z]/g, "");
+  if (symbol.includes("JPY")) return { type: "price", precision: 3, minMove: 0.001 };
+  if (symbol.includes("XAU") || symbol.includes("XAG")) return { type: "price", precision: 2, minMove: 0.01 };
+  return { type: "price", precision: 5, minMove: 0.00001 };
 }
 
 function ema(values: number[], period: number): (number | null)[] {
@@ -80,14 +89,20 @@ export function ChartPanel({
   busy: boolean;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const emaRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const viewKey = useRef("");
   const bars = data?.bars ?? [];
   const quote = bars.length ? ohlcParts(bars, pair) : null;
   const stale = data && data.validity !== "OK" && data.validity !== "CLOSED";
 
   useEffect(() => {
     const el = host.current;
-    if (!el || bars.length === 0) return;
-    const chart: IChartApi = createChart(el, {
+    if (!el) return;
+    const format = priceFormatFor(pair);
+    const chart = createChart(el, {
       width: el.clientWidth,
       height: Math.max(el.clientHeight, 220),
       layout: {
@@ -106,31 +121,22 @@ export function ChartPanel({
       handleScroll: true,
       handleScale: true,
     });
-    const candle: ISeriesApi<"Candlestick"> = chart.addCandlestickSeries({
+    const candle = chart.addCandlestickSeries({
       upColor: "#12b76a",
       downColor: "#f04438",
       borderUpColor: "#12b76a",
       borderDownColor: "#f04438",
       wickUpColor: "#12b76a",
       wickDownColor: "#f04438",
+      priceFormat: format,
     });
-    candle.setData(
-      bars.map((bar) => ({
-        time: bar.time as UTCTimestamp,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-      })),
-    );
-    const emaLine = chart.addLineSeries({ color: "#1570ef", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
-    const emaValues = ema(bars.map((bar) => bar.close), 21);
-    emaLine.setData(
-      bars.flatMap((bar, i) => {
-        const value = emaValues[i];
-        return value == null ? [] : [{ time: bar.time as UTCTimestamp, value }];
-      }),
-    );
+    const emaLine = chart.addLineSeries({
+      color: "#1570ef",
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      priceFormat: format,
+    });
     chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.08, bottom: 0.18 } });
     const volume = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
@@ -138,34 +144,10 @@ export function ChartPanel({
       color: "#d0d5dd",
     });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    volume.setData(
-      bars.map((bar, i) => ({
-        time: bar.time as UTCTimestamp,
-        value: bar.volume,
-        color: i === bars.length - 1 ? "#98a2b3" : "#d0d5dd",
-      })),
-    );
-    if (target != null) {
-      candle.createPriceLine({
-        price: target,
-        color: "#12b76a",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: "TP",
-      });
-    }
-    if (stop != null) {
-      candle.createPriceLine({
-        price: stop,
-        color: "#f04438",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: "SL",
-      });
-    }
-    chart.timeScale().fitContent();
+    chartRef.current = chart;
+    candleRef.current = candle;
+    emaRef.current = emaLine;
+    volumeRef.current = volume;
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: el.clientWidth, height: Math.max(el.clientHeight, 180) });
     });
@@ -173,8 +155,110 @@ export function ChartPanel({
     return () => {
       ro.disconnect();
       chart.remove();
+      chartRef.current = null;
+      candleRef.current = null;
+      emaRef.current = null;
+      volumeRef.current = null;
     };
-  }, [bars, interval, stop, target]);
+    // Chart instance lives for the panel lifetime. Pair precision and bars update in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const format = priceFormatFor(pair);
+    candleRef.current?.applyOptions({ priceFormat: format });
+    emaRef.current?.applyOptions({ priceFormat: format });
+  }, [pair]);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      timeScale: { timeVisible: interval !== "1d", secondsVisible: false },
+    });
+  }, [interval]);
+
+  useEffect(() => {
+    const candle = candleRef.current;
+    const emaLine = emaRef.current;
+    const volume = volumeRef.current;
+    const chart = chartRef.current;
+    if (!candle || !emaLine || !volume || !chart) return;
+    const rows = data?.bars ?? [];
+    let atEdge = true;
+    try {
+      atEdge = Math.abs(chart.timeScale().scrollPosition()) < 1.5;
+    } catch {
+      atEdge = true;
+    }
+    candle.setData(
+      rows.map((bar) => ({
+        time: bar.time as UTCTimestamp,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      })),
+    );
+    const emaValues = ema(rows.map((bar) => bar.close), 21);
+    emaLine.setData(
+      rows.flatMap((bar, i) => {
+        const value = emaValues[i];
+        return value == null ? [] : [{ time: bar.time as UTCTimestamp, value }];
+      }),
+    );
+    volume.setData(
+      rows.map((bar, i) => ({
+        time: bar.time as UTCTimestamp,
+        value: bar.volume,
+        color: i === rows.length - 1 ? "#98a2b3" : "#d0d5dd",
+      })),
+    );
+    const key = `${data?.pair ?? ""}|${data?.interval ?? ""}`;
+    if (rows.length && viewKey.current !== key) {
+      chart.timeScale().fitContent();
+      viewKey.current = key;
+    } else if (rows.length && atEdge && realtime) {
+      chart.timeScale().scrollToRealTime();
+    }
+  }, [data, realtime]);
+
+  useEffect(() => {
+    const candle = candleRef.current;
+    if (!candle) return;
+    const lines: IPriceLine[] = [];
+    if (target != null) {
+      lines.push(
+        candle.createPriceLine({
+          price: target,
+          color: "#12b76a",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: "TP",
+        }),
+      );
+    }
+    if (stop != null) {
+      lines.push(
+        candle.createPriceLine({
+          price: stop,
+          color: "#f04438",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: "SL",
+        }),
+      );
+    }
+    return () => {
+      for (const line of lines) {
+        try {
+          candle.removePriceLine(line);
+        } catch {
+          /* series already removed */
+        }
+      }
+    };
+  }, [stop, target]);
 
   return (
     <section className="panel chart">
@@ -194,14 +278,14 @@ export function ChartPanel({
         <button
           className="switch"
           type="button"
-          title="Rebuild from the local cache on the watchlist interval. Not a broker stream."
+          title="Poll yfinance for this pair, then redraw from cache. Not a broker tick stream."
           onClick={() => onRealtime(!realtime)}
           aria-pressed={realtime}
         >
           <span className={realtime ? "track" : "track off"}><span className="thumb" /></span>
           Realtime
         </button>
-        <button className={`btn icon ${busy ? "spin" : ""}`} type="button" title="Reload chart" aria-label="Reload" onClick={onReload}>
+        <button className={`btn icon ${busy ? "spin" : ""}`} type="button" title="Reload chart" aria-label="Reload" aria-busy={busy} onClick={onReload}>
           <RefreshIcon />
         </button>
         {quote && (
@@ -225,10 +309,9 @@ export function ChartPanel({
           <span className="item"><span className="swatch" style={{ background: "#f04438" }} /> Bear candle</span>
         </div>
         {stale && data?.note && <div className="chart-note" title={data.note}>{data.validity}</div>}
-        {bars.length === 0 ? (
+        <div className="chart-canvas" ref={host} />
+        {bars.length === 0 && (
           <div className="chart-empty">{data?.note || "No cached bars for this timeframe."}</div>
-        ) : (
-          <div className="chart-canvas" ref={host} />
         )}
       </div>
     </section>

@@ -1,4 +1,4 @@
-import type { AssetOption, Board, Brief, Ohlcv, PaperState, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, Ohlcv, PaperState, Watchlist } from "./types";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
@@ -53,7 +53,14 @@ export const api = {
       `/ohlcv/${encodeURIComponent(pair)}?interval=${encodeURIComponent(interval)}&bars=${bars}`,
     ),
   refresh: (pair: string, interval?: string) =>
-    request<{ ok: boolean; rate_limited?: boolean; retry_after_s?: number; source?: string }>(
+    request<{
+      ok: boolean;
+      rate_limited?: boolean;
+      retry_after_s?: number;
+      source?: string;
+      fetch_failed?: boolean;
+      row?: BoardRow;
+    }>(
       `/refresh/${encodeURIComponent(pair)}${interval ? `?interval=${encodeURIComponent(interval)}` : ""}`,
       { method: "POST" },
     ),

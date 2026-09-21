@@ -123,11 +123,23 @@ export function WatchlistPanel({
                     </span>
                   </td>
                   <td className="mono">{row.target_text}</td>
-                  <td>
-                    <span className={dataClass(row.data.tone)}>{row.data.text}</span>
+                  <td className="wl-fresh">
+                    <span
+                      className={`fresh-pill ${dataClass(row.data.tone)}`}
+                      title={row.validity_reason || row.validity}
+                      aria-label={`Freshness ${row.data.text}`}
+                    >
+                      {row.data.text}
+                    </span>
                   </td>
-                  <td><span className={`session ${row.session.key}`}>{row.session.text}</span></td>
-                  <td className="last" title={row.last_bar_dhaka}>{row.age}</td>
+                  <td className="wl-session">
+                    <span className={`session ${row.session.key}`} aria-label={`Session ${row.session.text}`}>
+                      {row.session.text}
+                    </span>
+                  </td>
+                  <td className="wl-age last" title={row.last_bar_dhaka || undefined}>
+                    {row.age === "—" ? "—" : `${row.age} ago`}
+                  </td>
                   <td>
                     <button
                       className="wl-remove"

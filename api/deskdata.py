@@ -13,21 +13,24 @@ import pandas as pd
 
 from forex_lab.clock import fmt_display, parse_ts, timezone_name, timezone_tag
 from forex_lab.config_loader import load_config, pip_size_for_pair
-from forex_lab.data import load_cached_ohlcv
+from forex_lab.data import load_cached_ohlcv, try_yfinance_refresh
 from forex_lab.features import true_range_atr
 from forex_lab.freshness import (
+    DEFAULT_STALE_BARS,
     VALIDITY_CLOSED,
     VALIDITY_ERROR,
     VALIDITY_MISSING,
     VALIDITY_OK,
     VALIDITY_STALE,
     assess_ohlcv,
+    board_cfg,
     fx_session_open,
+    interval_seconds,
     now_utc,
 )
 from forex_lab.session import classify_session, session_windows
 from forex_lab.ui.alerts import process_watch, visible_alerts
-from forex_lab.ui.board import build_board_row, build_board_rows
+from forex_lab.ui.board import _barrier_levels, build_board_row, build_board_rows
 from forex_lab.ui.quote import quote_digits
 from forex_lab.ui.watchlist import (
     KNOWN_INTERVALS,
@@ -153,6 +156,23 @@ def _age_s(label: object, *, now: datetime | None = None) -> float | None:
     return (clock - ts).total_seconds()
 
 
+def _stale_limit_s(interval: str, cfg: dict[str, Any] | None) -> float:
+    """Same window as ``assess_ohlcv``: N × timeframe, plus a small slack."""
+    iv_s = interval_seconds(interval)
+    stale_bars = float(board_cfg(cfg).get("stale_bars") or DEFAULT_STALE_BARS)
+    stale_after = max(iv_s * stale_bars, iv_s + 60)
+    slack = min(900, max(60, iv_s * 0.15))
+    return stale_after + slack
+
+
+def agree_validity(validity: str, age_s: float | None, interval: str, cfg: dict[str, Any] | None) -> str:
+    """A bar older than the stale window is never labeled live."""
+    token = str(validity or VALIDITY_MISSING).upper().split()[0]
+    if token == VALIDITY_OK and age_s is not None and age_s > _stale_limit_s(interval, cfg):
+        return VALIDITY_STALE
+    return token
+
+
 def data_view(validity: str) -> dict[str, str]:
     token = str(validity or "").strip().upper().split()[0]
     if token == VALIDITY_OK:
@@ -201,10 +221,10 @@ def _stop_price(row: Any) -> float | None:
     return None
 
 
-def row_json(row: Any, *, now: datetime | None = None) -> dict[str, Any]:
+def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     pair = str(row.pair).upper()
     interval = str(row.timeframe or "1h")
-    validity = str(row.validity or VALIDITY_MISSING).upper().split()[0]
+    raw_validity = str(row.validity or VALIDITY_MISSING).upper().split()[0]
     signal = str(row.buy_sell or "—").upper()
     if signal not in {"BUY", "SELL", "HOLD"}:
         signal = "—"
@@ -214,6 +234,13 @@ def row_json(row: Any, *, now: datetime | None = None) -> dict[str, Any]:
         last_px = _num(getattr(quote, "last", None))
     target = _target_price(row)
     age = _age_s(getattr(row, "last_bar_at", None), now=now)
+    validity = agree_validity(raw_validity, age, interval, cfg)
+    reason = str(getattr(row, "validity_reason", "") or "")
+    if validity == VALIDITY_STALE and raw_validity == VALIDITY_OK:
+        signal = "—"
+        target = None
+        if not reason:
+            reason = "last bar is older than the freshness window"
     mtf = getattr(row, "mtf", None)
     return {
         "pair": pair,
@@ -226,7 +253,7 @@ def row_json(row: Any, *, now: datetime | None = None) -> dict[str, Any]:
         "last": last_px,
         "last_text": price_text(pair, last_px),
         "validity": validity,
-        "validity_reason": str(getattr(row, "validity_reason", "") or ""),
+        "validity_reason": reason,
         "data": data_view(validity),
         "session": session_view(row),
         "age": compact_age(age),
@@ -433,14 +460,14 @@ def board_payload(
         "refreshed_at_dhaka": fmt_display(datetime.now(timezone.utc), cfg, seconds=True),
         "refresh_seconds": int(wl.refresh_seconds),
         "count": len(rows),
-        "rows": [row_json(r, now=now) for r in rows],
+        "rows": [row_json(r, now=now, cfg=cfg) for r in rows],
         "alerts": alerts,
     }
 
 
-def _duration_text(interval: str, horizon_bars: int | None, *, live: bool) -> str:
-    if not live or not horizon_bars:
-        return "—"
+def _duration_text(interval: str, horizon_bars: int | None) -> str:
+    if not horizon_bars:
+        return ""
     bars = int(horizon_bars)
     unit = {"15m": "m", "1h": "h", "4h": "h", "1d": "d"}.get(interval, "bars")
     mult = {"15m": 15, "1h": 1, "4h": 4, "1d": 1}.get(interval, 1)
@@ -450,18 +477,50 @@ def _duration_text(interval: str, horizon_bars: int | None, *, live: bool) -> st
     return f"≤ {total} {unit}"
 
 
-def _scenario(pair: str, interval: str, row: Any, *, stop: float | None, live_signal: str | None) -> str:
+def _level_gap(row: Any, validity: str, *, has_price: bool) -> str:
+    """Why stop/target are absent. Never a silent dash when the brief can say why."""
+    status = str(getattr(row, "status", "") or "")
+    if not has_price:
+        return "need Train" if status == "need_train" else "need Fetch"
+    if status == "need_train":
+        return "need Train"
+    if validity == VALIDITY_STALE:
+        return "data stale"
+    if validity == VALIDITY_ERROR:
+        return "data error"
+    return "no barriers"
+
+
+def _scenario(
+    pair: str,
+    interval: str,
+    row: Any,
+    *,
+    stop: float | None,
+    target: float | None,
+    live_signal: str | None,
+) -> str:
     tf = tf_label(interval)
     validity = str(getattr(row, "validity", "") or "").upper().split()[0]
+    barriers = ""
+    if stop is not None and target is not None and not live_signal:
+        barriers = (
+            f" Research barriers (not an order): stop {price_text(pair, stop)}"
+            f" / target {price_text(pair, target)}."
+        )
     if validity in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR}:
         last = str(getattr(row, "raw_signal", "") or "").upper()
         note = str(getattr(row, "validity_reason", "") or validity).strip()
         extra = f" Last model {last} is not a live call." if last in {"BUY", "SELL", "HOLD"} else ""
-        return f"If scenario changes: n/a — {note}.{extra}".strip()
+        if validity == VALIDITY_STALE and "not a live call" not in extra:
+            extra += " not a live call."
+        return f"If scenario changes: n/a — {note}.{extra}{barriers}".strip()
     if not live_signal or stop is None:
         status = str(getattr(row, "status", "") or "no directional level")
         if status == "need_fetch" or status == "need_train":
-            return f"If scenario changes: n/a — need Fetch/Train ({interval})."
+            return f"If scenario changes: n/a — need Fetch/Train ({interval}).{barriers}"
+        if barriers:
+            return f"If scenario changes: n/a — HOLD has no directional call.{barriers}"
         return "If scenario changes: n/a — no live stop on this bar."
     level = price_text(pair, stop)
     if live_signal == "BUY":
@@ -495,17 +554,38 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     quote = getattr(row, "quote", None)
     if now_px is None and quote is not None:
         now_px = _num(getattr(quote, "last", None))
-    stop = _stop_price(row) if live else None
-    target = _target_price(row) if live else None
-    horizon = None
-    risk = getattr(row, "risk", None)
-    if risk is not None and getattr(risk, "horizon", None):
-        horizon = int(risk.horizon)
+    if now_px is None and ohlcv is not None and not ohlcv.empty and "Close" in ohlcv.columns:
+        now_px = _num(ohlcv["Close"].iloc[-1])
+    levels = _barrier_levels(ohlcv, cfg) if now_px is not None else None
+    side = flashed if flashed in {"BUY", "SELL"} else str(getattr(row, "raw_signal", "") or "").upper()
+    stop: float | None = None
+    target: float | None = None
+    horizon: int | None = None
+    if levels is not None and now_px is not None:
+        if side == "SELL":
+            stop, target = float(levels["short_sl"]), float(levels["short_tp"])
+        else:
+            # BUY uses the long barriers. HOLD / weak use the same ATR band
+            # around last close (lower = stop, upper = target). Not an order.
+            stop, target = float(levels["long_sl"]), float(levels["long_tp"])
+        horizon = int(levels["horizon"])
     else:
-        try:
-            horizon = int(cfg.get("horizon") or 0) or None
-        except (TypeError, ValueError):
-            horizon = None
+        risk = getattr(row, "risk", None)
+        if risk is not None and getattr(risk, "horizon", None):
+            try:
+                horizon = int(risk.horizon)
+            except (TypeError, ValueError):
+                horizon = None
+        if horizon is None:
+            try:
+                horizon = int(cfg.get("horizon") or 0) or None
+            except (TypeError, ValueError):
+                horizon = None
+    gap = ""
+    if stop is None or target is None:
+        stop = None
+        target = None
+        gap = _level_gap(row, validity, has_price=now_px is not None)
     if signal == "BUY":
         chip = "Potential BUY"
         tone = "buy"
@@ -527,10 +607,14 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     rationale = str(getattr(row, "rationale", "") or "").strip()
     if not rationale:
         rationale = str(getattr(row, "signal_details", "") or "").strip()
+    risk = getattr(row, "risk", None)
     atr_pips = _atr_pips(ohlcv, pair, cfg) if ohlcv is not None else _num(getattr(risk, "atr", None))
     if atr_pips is not None and ohlcv is None:
         pip = pip_size_for_pair(pair, cfg)
         atr_pips = float(atr_pips) / pip if pip else None
+    duration = _duration_text(interval, horizon if stop is not None else None)
+    if not duration:
+        duration = gap or "no barriers"
     return {
         "interval": interval,
         "tf": tf_label(interval),
@@ -542,11 +626,12 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         "now": now_px,
         "now_text": price_text(pair, now_px) if now_px is not None else "—",
         "stop": stop,
-        "stop_text": price_text(pair, stop),
+        "stop_text": price_text(pair, stop) if stop is not None else gap,
         "target": target,
-        "target_text": price_text(pair, target),
-        "duration": _duration_text(interval, horizon, live=live),
-        "scenario": _scenario(pair, interval, row, stop=stop, live_signal=signal),
+        "target_text": price_text(pair, target) if target is not None else gap,
+        "duration": duration,
+        "horizon_bars": horizon if stop is not None else None,
+        "scenario": _scenario(pair, interval, row, stop=stop, target=target, live_signal=signal),
         "rationale": rationale,
         "atr_pips": None if atr_pips is None else round(float(atr_pips), 1),
         "raw_signal": None if not getattr(row, "raw_signal", None) else str(row.raw_signal),
@@ -698,21 +783,44 @@ def ohlcv_payload(
     }
 
 
+def _note_failed_refresh(row: Any, reason: str) -> None:
+    """A failed poll must not stay Live. Keep the cached bar's real age."""
+    note = f"refresh failed ({str(reason or 'yfinance').strip()})"
+    has_bar = str(getattr(row, "last_bar_at", "") or "").strip().lower() not in {"", "n/a", "none"}
+    row.validity = VALIDITY_STALE if has_bar else VALIDITY_ERROR
+    prev = str(getattr(row, "validity_reason", "") or "").strip()
+    row.validity_reason = f"{note}. {prev}".strip() if prev else note
+    flashed = str(getattr(row, "buy_sell", "") or "").upper()
+    if flashed in {"BUY", "SELL"}:
+        row.raw_signal = getattr(row, "raw_signal", None) or row.buy_sell
+        row.buy_sell = "—"
+
+
 def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Rate-limited yfinance refresh + signal regen. Never writes synthetic bars."""
+    """Polled yfinance refresh + cache re-read. Never writes synthetic bars.
+
+    Not a broker tick stream. OHLCV is fetched even when no model is trained so
+    the chart's last bar can move. Signal regen still needs a model.
+    """
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
     iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
-    row = build_board_row(symbol, cfg, interval=iv, refresh_data=True, regenerate=True)
+    fetched, reason = try_yfinance_refresh(symbol, cfg, interval=iv, incremental=True)
+    row = build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=True)
+    fetch_failed = fetched is None
+    if fetch_failed:
+        _note_failed_refresh(row, reason)
     ensure_consensus(symbol, cfg)
     return {
         "ok": True,
         "rate_limited": False,
         "retry_after_s": 0,
+        "fetch_failed": fetch_failed,
+        "fetch_error": None if not fetch_failed else str(reason or ""),
         "pair": symbol,
         "interval": iv,
-        "row": row_json(row),
-        "source": str(getattr(row, "data_source", "") or ""),
+        "row": row_json(row, cfg=cfg),
+        "source": "yfinance" if fetched is not None else f"cache ({reason})",
     }
 
 

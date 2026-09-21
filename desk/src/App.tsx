@@ -1,12 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import type { Board, Brief, Mode, Ohlcv } from "./types";
+import type { Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
 import { Placeholder } from "./components/Placeholder";
 import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
 import { WatchlistPanel } from "./components/Watchlist";
+
+function sameBrief(cur: Brief | null, pair: string, tf: string): boolean {
+  if (!cur) return false;
+  return cur.pair === pair && (cur.interval === tf || cur.tf === tf);
+}
+
+function sameOhlcv(cur: Ohlcv | null, pair: string, interval: string): boolean {
+  return Boolean(cur && cur.pair === pair && cur.interval === interval);
+}
+
+function mergeBoardRow(board: Board | null, row: BoardRow): Board | null {
+  if (!board) return board;
+  const rows = board.rows.some((item) => item.pair === row.pair)
+    ? board.rows.map((item) => (item.pair === row.pair ? { ...item, ...row } : item))
+    : [...board.rows, row];
+  return { ...board, rows };
+}
 
 export function App() {
   const [mode, setMode] = useState<Mode>("decision");
@@ -23,6 +40,13 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
+  const [auxOpen, setAuxOpen] = useState(false);
+  const rowsRef = useRef<BoardRow[]>([]);
+  const nextNet = useRef(0);
+  const polls = useRef(0);
+  const extra = useRef(0);
+  const skipBoard = useRef(false);
+  rowsRef.current = board?.rows ?? [];
 
   const loadBoard = useCallback(async () => {
     const next = await api.board();
@@ -34,52 +58,139 @@ export function App() {
 
   useEffect(() => {
     let cancel = false;
-    loadBoard().catch((err: unknown) => {
-      if (!cancel) setError(err instanceof Error ? err.message : "Decision API is not reachable on port 8000.");
+    const pair = selected;
+    const briefTf = rowTf;
+    const iv = chartTf;
+    const jobs: Promise<unknown>[] = [];
+    if (!skipBoard.current) {
+      jobs.push(
+        loadBoard().catch((err: unknown) => {
+          if (!cancel) setError(err instanceof Error ? err.message : "Decision API is not reachable on port 8000.");
+        }),
+      );
+    } else {
+      skipBoard.current = false;
+    }
+    if (pair) {
+      jobs.push(
+        api
+          .brief(pair, briefTf)
+          .then((next) => {
+            if (!cancel) setBrief(next);
+          })
+          .catch(() => {
+            if (cancel) return;
+            setBrief((cur) => (sameBrief(cur, pair, briefTf) ? cur : null));
+          }),
+      );
+      jobs.push(
+        api
+          .ohlcv(pair, iv)
+          .then((next) => {
+            if (!cancel) setOhlcv(next);
+          })
+          .catch(() => {
+            if (cancel) return;
+            setOhlcv((cur) => (sameOhlcv(cur, pair, iv) ? cur : null));
+          }),
+      );
+    }
+    Promise.all(jobs).finally(() => {
+      if (!cancel) setBusy(false);
     });
     return () => {
       cancel = true;
     };
-  }, [loadBoard, tick]);
+  }, [loadBoard, tick, selected, rowTf, chartTf]);
 
-  useEffect(() => {
+  const reload = useCallback(async (opts?: { quiet?: boolean }) => {
+    const quiet = Boolean(opts?.quiet);
     if (!selected) return;
-    let cancel = false;
-    api
-      .brief(selected, rowTf)
-      .then((next) => {
-        if (!cancel) setBrief(next);
-      })
-      .catch(() => {
-        if (!cancel) setBrief(null);
-      });
-    return () => {
-      cancel = true;
-    };
-  }, [selected, rowTf, tick]);
+    if (quiet && Date.now() < nextNet.current) {
+      setTick((n) => n + 1);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api.refresh(selected, chartTf);
+      if (result.rate_limited) {
+        const wait = Number(result.retry_after_s ?? 18);
+        nextNet.current = Date.now() + Math.max(0, wait) * 1000;
+        if (!quiet) {
+          const pause = Number.isFinite(wait) && wait > 0 ? wait : 18;
+          setNoticeUntil(Date.now() + pause * 1000);
+          setNowMs(Date.now());
+          setError(null);
+        }
+      } else {
+        nextNet.current = 0;
+        if (!quiet) {
+          setNoticeUntil(null);
+          setError(null);
+        }
+        if (result.fetch_failed && result.row) {
+          const failed = result.row;
+          skipBoard.current = true;
+          setBoard((cur) =>
+            cur
+              ? mergeBoardRow(cur, failed)
+              : {
+                  timezone: "Asia/Dhaka",
+                  refreshed_at_dhaka: "",
+                  refresh_seconds: 60,
+                  count: 1,
+                  rows: [failed],
+                  alerts: [],
+                },
+          );
+        }
+      }
+    } catch (err) {
+      if (!quiet) {
+        const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : 0;
+        const payload =
+          err && typeof err === "object" && "payload" in err
+            ? (err as { payload?: { retry_after_s?: number; error?: string } }).payload
+            : undefined;
+        if (status === 429 || payload?.error === "rate_limited") {
+          const wait = Number(payload?.retry_after_s ?? 18);
+          nextNet.current = Date.now() + Math.max(0, wait) * 1000;
+          const pause = Number.isFinite(wait) && wait > 0 ? wait : 18;
+          setNoticeUntil(Date.now() + pause * 1000);
+          setNowMs(Date.now());
+          setError(null);
+        } else {
+          setError(err instanceof Error ? err.message : "Refresh failed");
+        }
+      }
+    } finally {
+      if (quiet) {
+        const n = ++polls.current;
+        const others = rowsRef.current.filter((row) => row.pair !== selected);
+        if (n % 3 === 0 && others.length) {
+          const row = others[extra.current % others.length];
+          extra.current += 1;
+          void api.refresh(row.pair, row.interval).catch(() => undefined);
+        }
+      }
+      setTick((n) => n + 1);
+    }
+  }, [selected, chartTf]);
 
   useEffect(() => {
-    if (!selected) return;
-    let cancel = false;
-    api
-      .ohlcv(selected, chartTf)
-      .then((next) => {
-        if (!cancel) setOhlcv(next);
-      })
-      .catch(() => {
-        if (!cancel) setOhlcv(null);
-      });
-    return () => {
-      cancel = true;
-    };
-  }, [selected, chartTf, tick]);
-
-  useEffect(() => {
-    if (!realtime || mode !== "decision") return;
+    if (!realtime || mode !== "decision" || !selected) return;
     const seconds = Math.max(60, board?.refresh_seconds ?? 60);
-    const id = window.setInterval(() => setTick((n) => n + 1), seconds * 1000);
-    return () => window.clearInterval(id);
-  }, [realtime, mode, board?.refresh_seconds]);
+    let cancel = false;
+    const run = () => {
+      if (!cancel) void reload({ quiet: true });
+    };
+    run();
+    const id = window.setInterval(run, seconds * 1000);
+    return () => {
+      cancel = true;
+      window.clearInterval(id);
+    };
+  }, [realtime, mode, selected, board?.refresh_seconds, reload]);
 
   useEffect(() => {
     if (!noticeUntil) return;
@@ -88,38 +199,6 @@ export function App() {
   }, [noticeUntil]);
 
   const noticeLeft = noticeUntil ? Math.max(0, Math.ceil((noticeUntil - nowMs) / 1000)) : 0;
-
-  function armCacheNotice(retryAfter: number) {
-    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 18;
-    setNoticeUntil(Date.now() + wait * 1000);
-    setNowMs(Date.now());
-    setError(null);
-  }
-
-  async function reload() {
-    setBusy(true);
-    try {
-      const result = await api.refresh(selected, chartTf);
-      if (result.rate_limited) {
-        armCacheNotice(Number(result.retry_after_s ?? 18));
-      } else {
-        setNoticeUntil(null);
-        setError(null);
-      }
-    } catch (err) {
-      const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : 0;
-      const payload =
-        err && typeof err === "object" && "payload" in err ? (err as { payload?: { retry_after_s?: number; error?: string } }).payload : undefined;
-      if (status === 429 || payload?.error === "rate_limited") {
-        armCacheNotice(Number(payload?.retry_after_s ?? 18));
-      } else {
-        setError(err instanceof Error ? err.message : "Refresh failed");
-      }
-    } finally {
-      setBusy(false);
-      setTick((n) => n + 1);
-    }
-  }
 
   const alerts = board?.alerts ?? [];
   const alertClass = error ? "alerts bad" : alerts.length ? "alerts" : "alerts quiet";
@@ -143,11 +222,9 @@ export function App() {
               <span className="tag">{error ? "API" : "Alert"}</span>
               <span>{alertText}</span>
             </div>
-            {noticeLeft > 0 && (
-              <div className="notice" role="status">
-                Updated from cache · next network refresh in {noticeLeft}s
-              </div>
-            )}
+            <div className={noticeLeft > 0 ? "notice-slot active" : "notice-slot"} role="status" aria-live="polite">
+              {noticeLeft > 0 ? `Updated from cache · next network refresh in ${noticeLeft}s` : ""}
+            </div>
             <div className="left-col">
               <WatchlistPanel
                 rows={board?.rows ?? []}
@@ -177,7 +254,7 @@ export function App() {
                   setTick((n) => n + 1);
                 }}
               />
-              <AuxHelp />
+              <AuxHelp open={auxOpen} onOpenChange={setAuxOpen} />
             </div>
             <div className="right-col">
               <SignalBrief
