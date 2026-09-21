@@ -250,6 +250,35 @@ def test_awareness_summary_and_html_tone():
     assert awareness_counts(stale + fail)["FAIL"] == 1
 
 
+def test_awareness_table_html_colors_stale_and_escapes():
+    from forex_lab.ui.health import awareness_table_html
+    from forex_lab.ui.theme import WARN, WARN_BG
+
+    rows = [
+        {
+            "Source": "<EURUSD> 1h OHLCV",
+            "Observing": "price",
+            "Cadence": "manual only (Realtime off)",
+            "Last OK": "2026-09-21 15:00:00 Asia/Dhaka",
+            "Status": "STALE · data stale — refresh required",
+        },
+        {
+            "Source": "FRED",
+            "Observing": "macro",
+            "Cadence": "off (feature pack disabled)",
+            "Last OK": "n/a",
+            "Status": "OFF",
+        },
+    ]
+    html = awareness_table_html(rows)
+    assert "Source" in html and "Observing" in html and "Last OK" in html
+    assert "&lt;EURUSD&gt;" in html
+    assert "<EURUSD>" not in html
+    assert WARN_BG in html and WARN in html
+    assert "STALE" in html
+    assert "OFF" in html
+
+
 def test_style_awareness_colors_status():
     import pandas as pd
 

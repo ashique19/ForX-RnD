@@ -54,12 +54,12 @@ from forex_lab.ui.alerts import (
 )
 from forex_lab.ui.health import (
     awareness_status_html,
+    awareness_table_html,
     build_health_rows,
     health_strip,
     health_unhealthy,
     model_status_map,
     status_token,
-    style_awareness,
 )
 from forex_lab.ui.pipeline import (
     artifact_status,
@@ -1669,7 +1669,7 @@ def render_watch_board(cfg) -> None:
                 f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
                 for r in unhealthy[:4]
             )
-        with st.expander(exp_label, expanded=bool(unhealthy)):
+        with st.expander(exp_label, expanded=True):
             st.caption(
                 "Every source this desk fetches or observes. "
                 "STALE / FAIL / MISSING never display as OK. "
@@ -1677,11 +1677,7 @@ def render_watch_board(cfg) -> None:
             )
             st.caption(health_strip(health))
             if health:
-                st.dataframe(
-                    style_awareness(pd.DataFrame(health)),
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                st.markdown(awareness_table_html(health), unsafe_allow_html=True)
             else:
                 st.info("Watchlist is empty — no sources to report.")
 

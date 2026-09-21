@@ -8,6 +8,7 @@ not a panic. Paper BrokerPort is unchanged.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -444,6 +445,70 @@ def awareness_status_html(rows: list[dict[str, str]]) -> str:
         f'<div class="fx-status fx-awareness-status">'
         f'<span class="fx-awareness-kicker">Awareness</span> '
         f'<b class="{cls}">{summary}</b></div>'
+    )
+
+
+def awareness_table_html(rows: list[dict[str, str]]) -> str:
+    """Dense HTML table so Status colors survive Streamlit's dataframe renderer."""
+    from forex_lab.ui.theme import (
+        BORDER,
+        BUY,
+        BUY_BG,
+        ELEVATED,
+        MUTED,
+        NEUTRAL_BG,
+        SELL,
+        SELL_BG,
+        SURFACE,
+        TEXT,
+        WARN,
+        WARN_BG,
+    )
+
+    tone = {
+        "OK": (BUY_BG, BUY),
+        "STALE": (WARN_BG, WARN),
+        "FAIL": (SELL_BG, SELL),
+        "ERROR": (SELL_BG, SELL),
+        "MISSING": (NEUTRAL_BG, MUTED),
+        "CLOSED": (NEUTRAL_BG, MUTED),
+        "OFF": (NEUTRAL_BG, MUTED),
+    }
+    head = "".join(
+        f'<th style="text-align:left;padding:3px 8px;color:{MUTED};'
+        f'font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;'
+        f'border-bottom:1px solid {BORDER}">{escape(col)}</th>'
+        for col in AWARENESS_COLS
+    )
+    body_parts: list[str] = []
+    for row in rows:
+        tok = status_token(row)
+        bg, fg = tone.get(tok, (SURFACE, TEXT))
+        cells: list[str] = []
+        for col in AWARENESS_COLS:
+            val = escape(str(row.get(col) or ""))
+            if col == "Status":
+                cells.append(
+                    f'<td style="padding:4px 8px;background:{bg};color:{fg};'
+                    f'font-weight:800">{val}</td>'
+                )
+            elif col == "Last OK":
+                cells.append(
+                    f'<td style="padding:4px 8px;color:{TEXT};font-variant-numeric:tabular-nums;'
+                    f'white-space:nowrap">{val}</td>'
+                )
+            else:
+                cells.append(f'<td style="padding:4px 8px;color:{TEXT}">{val}</td>')
+        body_parts.append(f"<tr>{''.join(cells)}</tr>")
+    body = "".join(body_parts) or (
+        f'<tr><td colspan="5" style="padding:8px;color:{MUTED}">No sources — watchlist empty.</td></tr>'
+    )
+    return (
+        f'<div class="fx-awareness-table" style="overflow-x:auto;border:1px solid {BORDER};'
+        f'background:{ELEVATED};border-radius:4px">'
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.78rem;'
+        f'font-variant-numeric:tabular-nums"><thead><tr>{head}</tr></thead>'
+        f"<tbody>{body}</tbody></table></div>"
     )
 
 
