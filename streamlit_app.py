@@ -24,10 +24,17 @@ from forex_lab.advise import Suggestion, suggest_actions
 from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MtfStatus
 from forex_lab.ui.board import (
     BOARD_TABLE_COLS,
+    NEED_FETCH_TRAIN,
+    PAPER_STALE_CAPTION,
+    attach_next_event,
     board_table,
     build_board_row,
-    research_risk,
+    conf_label,
+    paper_submit_allowed,
+    paper_submit_block_reason,
+    paper_submit_risk_defaults,
     research_target,
+    spark_ascii,
     style_board,
 )
 from forex_lab.session import SessionState, classify_session
@@ -111,85 +118,70 @@ DISCLAIMER = (
     "Paper RIGHT/WRONG is a local lookback vs cached bars (TP/SL or horizon), not a live edge. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
+    "**Paper BUY/SELL is disabled when Data● is STALE or MISSING** (caption on the board). "
     "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
     "it never auto-submits via BrokerPort. Optional alert sound is **off by default**. "
-    "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket."
+    "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket. "
+    "Click a board row for chart / SHAP / news / risk / rationale."
 )
 
 BOARD_HELP = """
-This is the **trader screen**: one flash card per watchlist pair.
+This is the **trader screen**: one dense scan board. Click a pair for the detail drawer.
 
-**Pair / Timeframe** — watchlist symbol and lab interval (`config/default.yaml`).
-A per-pair override can be set when adding.
+**Columns** — Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | actions.
 
-**Validity** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`.
-During a liquid FX session, a last bar older than ~2× the timeframe is **STALE**.
-Weekends / Friday after ~21:00 UTC show **CLOSED** (last bar + “market likely closed”),
-not a false STALE panic. STALE/MISSING flash **—** with a reason — not a live BUY/SELL.
+**Pair / TF** — watchlist symbol and lab interval. Click the pair to open chart / SHAP / news / risk / rationale.
 
-**Last** — cached yfinance close shown as **last/mid-ish**. Yahoo FX is not a bid/ask
-book; this is not your broker’s executable quote. Mid is labeled only when Bid/Ask
-columns exist (they do not on the default yfinance path).
+**Signal** — BUY green / SELL red / HOLD grey. Research label, **not** an order. STALE/MISSING flash **—**.
 
-**Spread** — `spread_pips` from `config/default.yaml` as **cost context** (same pip
-assumption as backtest). Optional last-bar High−Low is a **range proxy**, labeled
-as such — not a live spread.
+**Conf** — P(predicted class). Scan aid only.
 
-**Session** — Asia / London / NY from the **clock** (UTC windows under `board.sessions`,
-overlap shown as LONDON+NY). Weekend / Friday after ~21:00 UTC → CLOSED. Not a
-broker session calendar.
+**Data●** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last bar older than ~2× the timeframe is **STALE**. Weekends / Friday after ~21:00 UTC show **CLOSED**. **Paper BUY/SELL is disabled when STALE or MISSING** — refresh (Fetch) first.
 
-**Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`.
-Color badge is a research label, **not** an order. Only flashed when validity is OK or CLOSED.
-Optional `board.mtf_confirm.conflict_flash: hold|weaken` can flash HOLD or a weaker badge when higher-TF SMA slope conflicts (default **off** — badge only).
+**Last/mid** — cached yfinance close as **last/mid-ish**. Not broker bid/ask.
 
-**MTF** — causal higher-TF SMA slope (default 4h of the same pair CSV): **agree / conflict / n/a**. Not a live trend filter.
+**Spread** — config `spread_pips` as cost context, not a live broker spread.
 
-**Event calendar** — upcoming High-impact FX releases (NFP, FOMC, CPI, rate decisions, …) from the free unofficial Forex Factory weekly JSON (`nfs.faireconomy.media`). Cached locally; fail-soft if offline. Countdown + affected currencies/pairs. **Not a trade instruction.**
+**Session** — ASIA / LONDON / NY from UTC windows (`board.sessions`). Overlap LONDON+NY. Desk clocks are **Asia/Dhaka**.
 
-**Advice** — cards next to Paper Buy/Sell: no new opens / hold / close / tighten SL from event windows + open paper position + model/MTF. **Never auto-submitted.** Tighten SL uses the ATR risk box at `advice.tighten_sl_atr`. Click **Apply paper SL** or Paper CLOSE yourself.
+**MTF** — causal higher-TF SMA slope: agree / conflict / n/a. Not a live trend filter.
 
-**Target / Risk** — ATR SL and TP from the same `barrier.tp_atr` / `sl_atr` as labels and backtest,
-plus R:R and config spread. Entry is **last close as proxy** when `entry_timing=next_open`.
-Research suggestion only: **no lot size, no auto-submit, no live broker order**. HOLD or STALE/MISSING → n/a.
+**Next event** — next high-impact print that hits this pair (countdown). **⚠** when the pre-event window is live — keep that warning visible. Not a trade instruction. Full calendar is an expander.
 
-**Sparkline** — last 24–48 cached closes of the row timeframe. Missing/STALE: empty chart + validity badge (no invented prices).
+**Spark** — unicode spark of cached closes. Empty when STALE/MISSING (no invented prices). Sparkline chart lives in the drawer.
 
-**Paper desk** — Buy / Sell / Close talk only to `BrokerPort` (`broker.backend: paper`).
-Fills at the last cached close like a practice book: open position, uPnL, SL/TP hits.
-Lookback scores PENDING → RIGHT/WRONG when later bars hit TP/SL or the horizon
-(signed move at timeout). The journal shows hit rate by session / confidence /
-STALE-vs-OK, filters wrongs, and short “how to improve” notes. **Not** a live
-edge and **not** a broker order. A future `mt5` / `oanda` backend would implement
-the same four methods.
+**Actions** — Paper BUY / SELL / CLOSE via `BrokerPort` (`broker.backend: paper` only). Disabled on STALE/MISSING with a clear caption. SL/TP default from the ATR risk box when available. Practice desk — not a live order.
 
-**Alerts** — compact top strip when a watchlist pair **flips** BUY/SELL/HOLD vs the
-previous refresh, or validity becomes **STALE / MISSING**. Last-seen signals persist
-in `data/alert_state.json` (local; not a broker). Unchanged polls stay quiet; the same
-transition is rate-limited. Optional high-impact **event within 60m** uses the calendar.
-Sound is **off by default** (checkbox + `board.alerts.sound`). Times are **Asia/Dhaka**.
-Dismissible; never places orders.
+**Detail drawer** — chart, SHAP/drivers, news context, risk box, rationale, advisory cards (no new opens / hold / close / tighten SL). Advice **never auto-submitted**.
 
-**Awareness** — always-visible **Feeds:** line plus expander listing OHLCV + news
-with last update, cadence, and OK/STALE/FAIL. Opens itself when a feed is STALE/FAIL/MISSING.
+**Event calendar** — unofficial Forex Factory weekly JSON (`nfs.faireconomy.media`). Cached; fail-soft. **Not a trade instruction.**
 
-**Last update** — last candle time, last successful CSV write (fetch), last signal time.
-The board also shows a global **board last refreshed** timestamp. Desk clocks are **Asia/Dhaka** (`ui.timezone`) with an `Asia/Dhaka` tag. Session windows stay UTC.
+**Alerts** — compact top strip on BUY/SELL/HOLD flips or STALE/MISSING. Optional event-within-60m. Sound off by default. Times **Asia/Dhaka**. Never places orders.
 
-**Signal details** — confidence, probabilities, top feature drivers, rule overlay, short rationale.
+**Awareness** — **Feeds:** line plus expander. Opens itself when a feed is STALE/FAIL/MISSING.
 
-**News context** — Google News RSS headlines for that pair + a keyword bias
-(bullish / bearish / mixed / unclear). Labeled **news context, not a trade instruction**.
-Never invented articles. If the feed is down, the math board still works.
+**Realtime** (default 60s) rebuilds from **local** cache. yfinance at most one pair/tick. Not broker quotes.
 
-**Realtime** (default 60s) rebuilds signals from **local** cache every tick. yfinance is
-only called when a bar is due / data is approaching stale, **one pair per tick**, with
-cooldown after errors or 429-like failures. That is why the interval is 60–120s — Yahoo
-is unofficial and has no SLA. Realtime off: **Manual update** only.
+**Last bar / last fetch / last signal** — in the detail drawer. The board shows **board last refreshed**. Desk clocks are **Asia/Dhaka**.
 
-Fetch / Train / Backtest live in the sidebar **Lab** expander.
-Rows without cached data or a trained model show **need Fetch/Train** — the board will not invent prices.
+Fetch / Train / Backtest live in the sidebar **Lab** expander. Rows without data/model show **need Fetch/Train**.
 """
+
+DENSE_WEIGHTS = [1.05, 0.42, 0.78, 0.48, 0.55, 0.62, 0.72, 0.88, 0.48, 1.32, 0.95, 1.55]
+DENSE_HEADERS = [
+    "Pair",
+    "TF",
+    "Signal",
+    "Conf",
+    "Data●",
+    "MTF",
+    "Session",
+    "Last/mid",
+    "Spread",
+    "Next event",
+    "Spark",
+    "actions",
+]
 
 
 def _init_state() -> None:
@@ -282,7 +274,7 @@ def _render_explanation(expl: SignalExplanation | None, *, heading: str = "Why t
         st.dataframe(rule_df, use_container_width=True, hide_index=True)
 
 
-def _validity_badge(validity: str) -> None:
+def _validity_badge(validity: str, *, compact: bool = False) -> None:
     v = str(validity or "MISSING").upper()
     colors = {
         VALIDITY_OK: "#15803d",
@@ -291,23 +283,40 @@ def _validity_badge(validity: str) -> None:
         VALIDITY_MISSING: "#64748b",
         VALIDITY_ERROR: "#b91c1c",
     }
+    bg = colors.get(v, "#64748b")
+    if compact:
+        st.markdown(
+            f'<div title="{v}" style="text-align:center;line-height:1.05">'
+            f'<span style="color:{bg};font-size:1.05rem">●</span>'
+            f'<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.04em;color:{bg}">{v}</div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        return
     st.markdown(
-        f'<div style="background:{colors.get(v, "#64748b")};color:#fff;font-weight:700;'
+        f'<div style="background:{bg};color:#fff;font-weight:700;'
         f"font-size:0.8rem;letter-spacing:0.08em;text-align:center;padding:5px 8px;"
         f'border-radius:6px;display:inline-block">{v}</div>',
         unsafe_allow_html=True,
     )
 
 
-def _signal_badge(sig: str, *, weak: bool = False) -> None:
+def _signal_badge(sig: str, *, weak: bool = False, compact: bool = False) -> None:
     s = str(sig).upper() if sig and str(sig).strip() not in {"—", "-", "n/a"} else "—"
     colors = {"BUY": "#15803d", "SELL": "#b91c1c", "HOLD": "#57534e", "—": "#64748b"}
     bg = colors.get(s, "#64748b")
     label = s if not weak or s in {"—", "HOLD"} else f"{s} (weak)"
-    size = "1.15rem" if weak and s in {"BUY", "SELL"} else "1.55rem"
+    if compact:
+        size = "0.78rem"
+        pad = "5px 4px"
+        radius = "6px"
+    else:
+        size = "1.15rem" if weak and s in {"BUY", "SELL"} else "1.55rem"
+        pad = "14px 10px"
+        radius = "10px"
     st.markdown(
         f'<div style="background:{bg};color:#fff;font-weight:800;font-size:{size};'
-        f"text-align:center;padding:14px 10px;border-radius:10px;letter-spacing:0.12em;"
+        f"text-align:center;padding:{pad};border-radius:{radius};letter-spacing:0.08em;"
         f'box-shadow:0 0 0 1px rgba(0,0,0,0.08);opacity:{0.72 if weak else 1}">{label}</div>',
         unsafe_allow_html=True,
     )
@@ -372,22 +381,22 @@ def _render_quote_strip(row) -> None:
             st.caption(f"bar range {q.range_pips:.1f}p · {q.range_note}")
 
 
-def _mtf_badge(mtf: MtfStatus | None) -> None:
+def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
     if mtf is None:
         status = "n/a"
-        note = "MTF n/a"
+        note = "n/a" if compact else "MTF n/a"
     else:
         status = str(mtf.status or "n/a")
-        note = mtf.as_label()
+        note = status if compact else mtf.as_label()
     colors = {MTF_AGREE: "#166534", MTF_CONFLICT: "#9a3412", "n/a": "#57534e"}
     bg = colors.get(status, "#57534e")
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.75rem;'
-        f"letter-spacing:0.06em;text-align:center;padding:4px 8px;border-radius:6px;"
-        f'display:inline-block">{note}</div>',
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.72rem;'
+        f"letter-spacing:0.04em;text-align:center;padding:4px 6px;border-radius:6px;"
+        f'display:block">{note}</div>',
         unsafe_allow_html=True,
     )
-    if mtf is not None and mtf.note:
+    if not compact and mtf is not None and mtf.note:
         st.caption(mtf.note)
 
 
@@ -406,13 +415,13 @@ def _news_bias_badge(bias: str) -> None:
     )
 
 
-def _render_sparkline(row) -> None:
+def _render_sparkline(row, *, height: int = 90) -> None:
     st.caption("Sparkline (cached close)")
     if not getattr(row, "sparkline", None):
         st.caption(getattr(row, "sparkline_note", None) or "n/a")
         return
     chart = pd.DataFrame({"close": list(row.sparkline)})
-    st.line_chart(chart, height=90, use_container_width=True)
+    st.line_chart(chart, height=height, use_container_width=True)
     st.caption(row.sparkline_note)
 
 
@@ -644,75 +653,17 @@ def _driver_snapshot(row) -> str:
     return ", ".join(bits)
 
 
-def _render_paper_actions(
-    row,
-    cfg,
-    broker: BrokerPort,
-    news: NewsBundle | None = None,
-    calendar: CalendarBundle | None = None,
-) -> None:
-    st.markdown("**Practice desk**")
-    backend = str((cfg.get("broker") or {}).get("backend") or "paper")
-    st.caption(
-        f"backend=`{backend}` — practice in parallel with live markets. "
-        "Same submit/close a live venue would use; fills are local until a real backend exists. "
-        "Not a broker order. No auto-submit. Advisory cards never place fills."
-    )
-    flash = st.session_state.pop("paper_flash", None)
-    warn = st.session_state.pop("paper_flash_warn", None)
-    if flash:
-        st.success(flash)
-    if warn:
-        st.warning(warn)
-    price, entry_bar, ohlcv = _cached_quote(row, cfg)
-    open_pos = position_for_pair(broker, row.pair)
-    _render_suggestions(
-        row,
-        cfg,
-        broker,
-        calendar=calendar,
-        news=news,
-        price=price,
-        ohlcv=ohlcv,
-        position=open_pos,
-    )
-    if open_pos:
-        bars = open_pos.get("bars_held")
-        horizon = open_pos.get("horizon")
-        held = ""
-        if bars is not None and horizon:
-            held = f"  ·  lookback {int(bars)}/{int(horizon)} bars"
-        st.caption(
-            f"Open {open_pos['side']} {float(open_pos['size']):g} @ "
-            f"{_fmt_num(open_pos['entry_price'], 5)}  ·  "
-            f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  "
-            f"{open_pos.get('outcome') or 'PENDING'}{held}"
-        )
-        st.caption("paper mark vs last/mid-ish cache — not live broker PnL")
-        if st.button("Paper CLOSE", key=f"paper_close_{row.pair}_{row.timeframe}", use_container_width=True):
-            try:
-                if price is None:
-                    st.error("No cached price to close against.")
-                else:
-                    broker.close(open_pos["id"], price=price, reason="manual")
-                    st.session_state["paper_flash"] = "Paper position closed (local journal only)."
-                    st.rerun()
-            except BrokerError as exc:
-                st.error(str(exc))
+def _submit_paper_fill(row, cfg, broker: BrokerPort, side: str, news: NewsBundle | None) -> None:
+    """Local practice fill via BrokerPort. STALE/MISSING never submit."""
+    if not paper_submit_allowed(row.validity):
+        st.error(paper_submit_block_reason(row.validity) or PAPER_STALE_CAPTION)
         return
+    price, entry_bar, ohlcv = _cached_quote(row, cfg)
     if price is None:
-        st.caption("n/a — no cached price for a paper fill.")
+        st.error("No cached price for a paper fill.")
         return
     size = float((cfg.get("broker") or {}).get("default_size") or 1.0)
-    c1, c2 = st.columns(2)
-    buy = c1.button("Paper BUY", key=f"paper_buy_{row.pair}_{row.timeframe}", use_container_width=True)
-    sell = c2.button("Paper SELL", key=f"paper_sell_{row.pair}_{row.timeframe}", use_container_width=True)
-    side = "BUY" if buy else ("SELL" if sell else None)
-    if side is None:
-        return
-    box = research_risk(ohlcv, cfg, side, validity=VALIDITY_OK)
-    sl = box.sl if box.available else None
-    tp = box.tp if box.available else None
+    sl, tp = paper_submit_risk_defaults(ohlcv, cfg, side, row.validity)
     news_bias = ""
     news_note = ""
     if news is not None:
@@ -747,11 +698,293 @@ def _render_paper_actions(
             news_note=news_note,
         )
         st.session_state["paper_flash"] = f"Paper {side} recorded @ {_fmt_num(price, 5)} — local journal only."
-        if row.validity == VALIDITY_STALE:
-            st.session_state["paper_flash_warn"] = "Recorded on STALE data — scored later; not a live call."
         st.rerun()
     except BrokerError as exc:
         st.error(str(exc))
+
+
+def _render_paper_actions(
+    row,
+    cfg,
+    broker: BrokerPort | None,
+    news: NewsBundle | None = None,
+    calendar: CalendarBundle | None = None,  # noqa: ARG001 — compact board has no advice cards
+    *,
+    compact: bool = False,
+) -> None:
+    if broker is None:
+        return
+    if not compact:
+        flash = st.session_state.pop("paper_flash", None)
+        warn = st.session_state.pop("paper_flash_warn", None)
+        if flash:
+            st.success(flash)
+        if warn:
+            st.warning(warn)
+    price, _entry_bar, ohlcv = _cached_quote(row, cfg)
+    open_pos = position_for_pair(broker, row.pair)
+    blocked = not paper_submit_allowed(row.validity)
+    block_reason = paper_submit_block_reason(row.validity)
+    if not compact:
+        st.markdown("**Practice desk**")
+        backend = str((cfg.get("broker") or {}).get("backend") or "paper")
+        st.caption(
+            f"backend=`{backend}` — practice in parallel with live markets. "
+            "Same submit/close a live venue would use; fills are local until a real backend exists. "
+            "Not a broker order. No auto-submit. Advisory cards never place fills. "
+            + PAPER_STALE_CAPTION
+        )
+        _render_suggestions(
+            row,
+            cfg,
+            broker,
+            calendar=calendar,
+            news=news,
+            price=price,
+            ohlcv=ohlcv,
+            position=open_pos,
+        )
+    if open_pos:
+        if not compact:
+            bars = open_pos.get("bars_held")
+            horizon = open_pos.get("horizon")
+            held = ""
+            if bars is not None and horizon:
+                held = f"  ·  lookback {int(bars)}/{int(horizon)} bars"
+            st.caption(
+                f"Open {open_pos['side']} {float(open_pos['size']):g} @ "
+                f"{_fmt_num(open_pos['entry_price'], 5)}  ·  "
+                f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  "
+                f"{open_pos.get('outcome') or 'PENDING'}{held}"
+            )
+            st.caption("paper mark vs last/mid-ish cache — not live broker PnL")
+        close_key = f"paper_close_{row.pair}_{row.timeframe}"
+        if st.button(
+            "CLOSE" if compact else "Paper CLOSE",
+            key=close_key,
+            use_container_width=True,
+            help="Close the local paper position. Not a broker order.",
+        ):
+            try:
+                if price is None:
+                    st.error("No cached price to close against.")
+                else:
+                    broker.close(open_pos["id"], price=price, reason="manual")
+                    st.session_state["paper_flash"] = "Paper position closed (local journal only)."
+                    st.rerun()
+            except BrokerError as exc:
+                st.error(str(exc))
+        return
+    if price is None:
+        if not compact:
+            st.caption("n/a — no cached price for a paper fill.")
+        return
+    help_txt = (
+        block_reason
+        if blocked
+        else "Paper fill at last/mid — local journal only, not a live order. SL/TP from the ATR risk box when available."
+    )
+    c1, c2 = st.columns(2)
+    buy = c1.button(
+        "BUY" if compact else "Paper BUY",
+        key=f"paper_buy_{row.pair}_{row.timeframe}",
+        use_container_width=True,
+        disabled=blocked,
+        help=help_txt,
+    )
+    sell = c2.button(
+        "SELL" if compact else "Paper SELL",
+        key=f"paper_sell_{row.pair}_{row.timeframe}",
+        use_container_width=True,
+        disabled=blocked,
+        help=help_txt,
+    )
+    if compact and blocked:
+        st.caption(block_reason)
+    side = "BUY" if buy else ("SELL" if sell else None)
+    if side is None:
+        return
+    _submit_paper_fill(row, cfg, broker, side, news)
+
+
+def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False) -> None:
+    color = "#9a3412" if warn else "#0f172a"
+    weight = "800" if warn else "600"
+    variant = "font-variant-numeric:tabular-nums;" if numeric else ""
+    st.markdown(
+        f'<div style="font-size:0.78rem;font-weight:{weight};color:{color};'
+        f'line-height:1.2;{variant}">{html.escape(str(text))}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_dense_header() -> None:
+    cols = st.columns(DENSE_WEIGHTS)
+    for col, lab in zip(cols, DENSE_HEADERS):
+        col.markdown(
+            f'<div style="font-size:0.68rem;font-weight:800;letter-spacing:0.04em;'
+            f'color:#64748b;text-transform:uppercase">{html.escape(lab)}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def _render_dense_row(
+    row,
+    cfg,
+    broker: BrokerPort | None,
+    news: NewsBundle | None,
+    calendar: CalendarBundle | None,
+    *,
+    selected: bool,
+) -> None:
+    warn = bool(getattr(row, "next_event_warn", False))
+    with st.container(border=bool(selected or warn)):
+        c = st.columns(DENSE_WEIGHTS)
+        pair_kwargs = {
+            "key": f"board_open_{row.pair}_{row.timeframe}",
+            "use_container_width": True,
+            "help": "Open detail drawer (chart / SHAP / news / risk / rationale)",
+        }
+        if selected:
+            pair_kwargs["type"] = "primary"
+        if c[0].button(row.pair, **pair_kwargs):
+            cur = st.session_state.get("board_detail_pair")
+            st.session_state["board_detail_pair"] = None if cur == row.pair else row.pair
+            st.rerun()
+        with c[1]:
+            _dense_cell(row.timeframe)
+        with c[2]:
+            _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)), compact=True)
+        with c[3]:
+            _dense_cell(conf_label(row.confidence), numeric=True)
+        with c[4]:
+            _validity_badge(row.validity, compact=True)
+        with c[5]:
+            _mtf_badge(getattr(row, "mtf", None), compact=True)
+        with c[6]:
+            _session_badge(getattr(row, "session", None), show_note=False)
+        last = row.quote.last_label() if row.quote is not None else "n/a"
+        with c[7]:
+            _dense_cell(last, numeric=True)
+        spread = row.quote.spread_label() if row.quote is not None else "n/a"
+        with c[8]:
+            _dense_cell(spread, numeric=True)
+        with c[9]:
+            _dense_cell(row.next_event or "—", warn=warn)
+        with c[10]:
+            spark = spark_ascii(row.sparkline)
+            st.markdown(
+                f'<div style="font-size:0.85rem;letter-spacing:-0.08em;line-height:1.2;'
+                f'font-variant-numeric:tabular-nums">{html.escape(spark)}</div>',
+                unsafe_allow_html=True,
+            )
+        with c[11]:
+            _render_paper_actions(row, cfg, broker, news=news, calendar=calendar, compact=True)
+
+
+def _render_detail_drawer(
+    row,
+    cfg,
+    broker: BrokerPort | None,
+    news: NewsBundle | None,
+    calendar: CalendarBundle | None,
+) -> None:
+    """Row-click drawer: chart / SHAP / news / risk / rationale. Board stays clean."""
+    with st.container(border=True):
+        head, xbtn = st.columns([7.4, 1.0])
+        with head:
+            st.markdown(f"**{row.pair}** detail · {row.timeframe} · {row.buy_sell} · {row.validity}")
+            st.caption(
+                "Chart / SHAP / news / risk / rationale. "
+                "News context, not a trade instruction. Advisory cards never auto-submit. "
+                f"{clock_note(cfg)}"
+            )
+        with xbtn:
+            st.markdown("&nbsp;")
+            if st.button("Close", key=f"board_close_drawer_{row.pair}_{row.timeframe}"):
+                st.session_state["board_detail_pair"] = None
+                st.rerun()
+        if getattr(row, "next_event_warn", False):
+            st.warning(f"Pre-event warning: {row.next_event}")
+        if row.validity == VALIDITY_STALE:
+            st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
+        elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {"ready", "stale"}:
+            st.warning(row.signal_details or row.validity_reason or NEED_FETCH_TRAIN)
+        tabs = st.tabs(["Chart", "SHAP", "News", "Risk", "Rationale"])
+        with tabs[0]:
+            _render_sparkline(row, height=180)
+            st.caption(f"Last bar  {row.last_bar_at or 'n/a'}")
+            st.caption(f"Last fetch  {row.last_fetch_at or 'n/a'}")
+            st.caption(f"Last signal  {row.last_signal_at or row.datetime or 'n/a'}")
+            if row.quote is not None:
+                st.caption(row.quote.note)
+                if row.quote.range_note:
+                    st.caption(
+                        f"bar range "
+                        f"{'n/a' if row.quote.range_pips is None else f'{row.quote.range_pips:.1f}p'}"
+                        f" · {row.quote.range_note}"
+                    )
+            if row.session is not None and row.session.note:
+                st.caption(row.session.note)
+        with tabs[1]:
+            expl = None
+            if row.rationale or row.drivers or row.rules:
+                expl = SignalExplanation(
+                    pair=row.pair,
+                    signal=row.buy_sell,
+                    raw_signal=row.raw_signal or row.buy_sell,
+                    method=row.explain_method or "n/a",
+                    drivers=list(row.drivers),
+                    rules=list(row.rules),
+                    rationale=row.rationale or "",
+                    target=row.target,
+                )
+            _render_explanation(expl, heading="Why this math signal?")
+        with tabs[2]:
+            _render_news_lane(news, cfg)
+        with tabs[3]:
+            _render_risk(row)
+            if broker is not None:
+                price, _, ohlcv = _cached_quote(row, cfg)
+                open_pos = position_for_pair(broker, row.pair)
+                _render_suggestions(
+                    row,
+                    cfg,
+                    broker,
+                    calendar=calendar,
+                    news=news,
+                    price=price,
+                    ohlcv=ohlcv,
+                    position=open_pos,
+                )
+                if open_pos:
+                    st.caption(
+                        f"Open {open_pos['side']} @ {_fmt_num(open_pos['entry_price'], 5)} · "
+                        f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)} · "
+                        f"{open_pos.get('outcome') or 'PENDING'} — paper mark vs last/mid-ish, not live broker PnL"
+                    )
+            if not paper_submit_allowed(row.validity):
+                st.caption(paper_submit_block_reason(row.validity) or PAPER_STALE_CAPTION)
+        with tabs[4]:
+            st.caption(
+                f"conf={_fmt_num(row.confidence, 4)} · dir_edge={_fmt_num(row.dir_edge, 4)} · "
+                f"p_buy={_fmt_num(row.p_buy, 3)} / p_sell={_fmt_num(row.p_sell, 3)} / "
+                f"p_hold={_fmt_num(row.p_hold, 3)}"
+            )
+            if row.datetime:
+                st.caption(f"{row.model or ''} · {row.datetime}")
+            if row.target_note:
+                st.caption(row.target_note)
+            if row.rationale:
+                st.write(row.rationale)
+            if row.raw_signal and row.buy_sell in {"—", "HOLD"}:
+                st.caption(f"Last model class (not live / MTF overlay): {row.raw_signal}")
+            if row.validity_reason:
+                st.caption(f"Validity: {row.validity} — {row.validity_reason}")
+            if row.error:
+                st.caption(f"Status detail: {row.error}")
+            if row.status not in {"ready", "stale"}:
+                st.info("Open **Lab** in the sidebar: Fetch then Train. The board does not invent prices.")
 
 
 def _pct_label(value: object) -> str:
@@ -880,7 +1113,7 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
         conf=conf_pick,
     )
     if not all_rows:
-        st.info("No paper trades yet. Use Paper BUY / SELL on a card.")
+        st.info("No paper trades yet. Use BUY / SELL on the board.")
     elif not rows:
         st.info("No paper trades match these filters.")
     else:
@@ -1046,8 +1279,8 @@ def render_watch_board(cfg) -> None:
 
     st.subheader("Signal screen")
     st.caption(
-        f"Flash BUY / SELL / HOLD for your watchlist. Lab timeframe **{lab_iv}**. "
-        f"Watchlist file: `{watchlist_path()}`."
+        f"Dense board — seconds to decide. Lab timeframe **{lab_iv}**. "
+        f"Click a pair for the detail drawer. Watchlist: `{watchlist_path()}`."
     )
     with st.expander("Column help (research only)"):
         st.markdown(BOARD_HELP)
@@ -1209,122 +1442,44 @@ def render_watch_board(cfg) -> None:
         if not rows:
             st.info("Watchlist is empty. Add a pair below.")
         else:
-            with st.container(border=True):
+            clock = now_utc()
+            cal_events = list(calendar.events) if calendar is not None else []
+            for row in rows:
+                attach_next_event(row, cal_events, now=clock, cfg=cfg)
+            flash = st.session_state.pop("paper_flash", None)
+            if flash:
+                st.success(flash)
+            st.caption(
+                "Click a pair for chart / SHAP / news / risk / rationale. "
+                + PAPER_STALE_CAPTION
+            )
+            with st.expander("Event calendar", expanded=False):
                 _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
+            _render_dense_header()
+            selected = st.session_state.get("board_detail_pair")
+            if selected and selected not in {r.pair for r in rows}:
+                selected = None
+                st.session_state["board_detail_pair"] = None
             for row in rows:
                 news = news_map.get(row.pair)
-                with st.container(border=True):
-                    left, mid, right = st.columns([1.15, 1.55, 1.55])
-                    with left:
-                        st.markdown(f"### {row.pair}")
-                        st.caption(f"Timeframe **{row.timeframe}**")
-                        _render_quote_strip(row)
-                        _validity_badge(row.validity)
-                        _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)))
-                        _mtf_badge(getattr(row, "mtf", None))
-                        st.caption(f"Target  {row.target}")
-                        if row.validity == VALIDITY_STALE:
-                            st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
-                        elif row.validity == VALIDITY_CLOSED:
-                            st.caption(row.validity_reason)
-                        elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {
-                            "ready",
-                            "stale",
-                        }:
-                            st.warning(row.signal_details)
-                    with mid:
-                        st.markdown("**Math signal details**")
-                        st.caption(f"Last bar  {row.last_bar_at or 'n/a'}")
-                        st.caption(f"Last fetch  {row.last_fetch_at or 'n/a'}")
-                        st.caption(f"Last signal  {row.last_signal_at or row.datetime or 'n/a'}")
-                        st.caption(
-                            f"conf={_fmt_num(row.confidence, 4)} · dir_edge={_fmt_num(row.dir_edge, 4)}"
-                        )
-                        st.caption(
-                            f"p_buy={_fmt_num(row.p_buy, 3)} / "
-                            f"p_sell={_fmt_num(row.p_sell, 3)} / "
-                            f"p_hold={_fmt_num(row.p_hold, 3)}"
-                        )
-                        if row.datetime:
-                            st.caption(f"{row.model or ''} · {row.datetime}")
-                        if row.drivers:
-                            bits = ", ".join(
-                                f"{d.feature} {d.contribution:+.3f}" for d in row.drivers[:3]
-                            )
-                            st.caption(f"Drivers: {bits}")
-                        failed_rules = [
-                            r.name for r in (row.rules or []) if getattr(r, "enabled", False) and r.passed is False
-                        ]
-                        passed_rules = [
-                            r.name for r in (row.rules or []) if getattr(r, "enabled", False) and r.passed is True
-                        ]
-                        if failed_rules:
-                            st.caption("Rules blocked: " + ", ".join(failed_rules))
-                        elif passed_rules:
-                            st.caption("Rules passed: " + ", ".join(passed_rules))
-                        if row.raw_signal and row.buy_sell in {"—", "HOLD"} and (
-                            row.validity == VALIDITY_STALE or bool(getattr(row, "flash_weak", False))
-                            or (row.mtf is not None and row.mtf.status == "conflict")
-                        ):
-                            st.caption(f"Last model class (not live / MTF overlay): {row.raw_signal}")
-                    with right:
-                        _render_news_lane(news, cfg)
-                    sp, rk = st.columns([1.55, 1.45])
-                    with sp:
-                        _render_sparkline(row)
-                    with rk:
-                        _render_risk(row)
-                        if broker is not None:
-                            _render_paper_actions(row, cfg, broker, news=news, calendar=calendar)
-                    with st.expander("Drivers, rules, rationale, headlines"):
-                        st.markdown(
-                            f"- **Buy/Sell:** {row.buy_sell}  \n"
-                            f"- **Last:** {(row.quote.as_table_last() if row.quote else 'n/a')}  \n"
-                            f"- **Spread:** {(row.quote.as_table_spread() if row.quote else 'n/a')}  \n"
-                            f"- **Session:** {(row.session.badge() if row.session else 'n/a')}  \n"
-                            f"- **MTF:** {(row.mtf.as_label() if row.mtf else 'n/a')}  \n"
-                            f"- **Target:** {row.target}  \n"
-                            f"- **Confidence / edge:** conf={row.confidence} · dir_edge={row.dir_edge}  \n"
-                            f"- **p_buy / p_sell / p_hold:** {row.p_buy} / {row.p_sell} / {row.p_hold}"
-                        )
-                        if row.quote is not None:
-                            st.caption(row.quote.note)
-                            if row.quote.range_note:
-                                st.caption(
-                                    f"bar range "
-                                    f"{'n/a' if row.quote.range_pips is None else f'{row.quote.range_pips:.1f}p'}"
-                                    f" · {row.quote.range_note}"
-                                )
-                        if row.session is not None and row.session.note:
-                            st.caption(row.session.note)
-                        if row.target_note:
-                            st.caption(row.target_note)
-                        _render_risk(row)
-                        _render_sparkline(row)
-                        if row.rationale or row.drivers or row.rules:
-                            expl = SignalExplanation(
-                                pair=row.pair,
-                                signal=row.buy_sell,
-                                raw_signal=row.raw_signal or row.buy_sell,
-                                method=row.explain_method or "n/a",
-                                drivers=list(row.drivers),
-                                rules=list(row.rules),
-                                rationale=row.rationale or "",
-                                target=row.target,
-                            )
-                            _render_explanation(expl, heading="Why this math signal?")
-                        if news is not None and news.headlines:
-                            st.markdown("**Headlines used for the news note**")
-                            _render_news_lane(news, cfg)
-                        if row.error:
-                            st.caption(f"Status detail: {row.error}")
-                        if row.validity_reason:
-                            st.caption(f"Validity: {row.validity} — {row.validity_reason}")
-                        if row.status not in {"ready", "stale"}:
-                            st.info(
-                                "Open **Lab** in the sidebar: Fetch then Train. "
-                                "The board does not invent prices."
-                            )
+                _render_dense_row(
+                    row,
+                    cfg,
+                    broker,
+                    news,
+                    calendar,
+                    selected=bool(selected == row.pair),
+                )
+            if selected:
+                open_row = next((r for r in rows if r.pair == selected), None)
+                if open_row is not None:
+                    _render_detail_drawer(
+                        open_row,
+                        cfg,
+                        broker,
+                        news_map.get(open_row.pair),
+                        calendar,
+                    )
 
             if broker is not None:
                 closed_n = list(getattr(broker, "list_closed", lambda: [])())
@@ -1332,7 +1487,7 @@ def render_watch_board(cfg) -> None:
                 with st.expander("Paper portfolio (practice desk — not a broker)", expanded=has_book):
                     _render_paper_journal(broker, cfg)
 
-            table = board_table(rows)
+            table = board_table(rows, events=cal_events, now=clock, cfg=cfg)
             cols_help = " | ".join(BOARD_TABLE_COLS)
             with st.expander(f"Table view ({cols_help})"):
                 try:

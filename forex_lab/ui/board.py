@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.calendar import CalendarEvent, event_window, next_event_for_pair, next_event_label
 from forex_lab.clock import fmt_display, relabel_in_text
 from forex_lab.config_loader import load_config
 from forex_lab.data import csv_mtime_utc, load_cached_ohlcv, try_yfinance_refresh
@@ -45,6 +46,9 @@ STATUS_NEED_TRAIN = "need_train"
 STATUS_ERROR = "error"
 STATUS_STALE = "stale"
 SPARKLINE_BARS = 48
+SPARK_CHARS = "▁▂▃▄▅▆▇█"
+PAPER_BLOCKED_VALIDITIES = frozenset({VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR})
+PAPER_STALE_CAPTION = "Paper BUY/SELL is disabled when Data● is STALE or MISSING — refresh (Fetch) first."
 
 
 @dataclass
@@ -103,25 +107,134 @@ class BoardRow:
     flash_weak: bool = False
     quote: QuoteView | None = None
     session: SessionState | None = None
+    next_event: str = "—"
+    next_event_warn: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
         mtf_label = self.mtf.status if self.mtf is not None else "n/a"
         q = self.quote
         sess = self.session.badge() if self.session is not None else "n/a"
+        last = q.last_label() if q is not None else "n/a"
+        spread = q.spread_label() if q is not None else "n/a"
         return {
             "Pair": self.pair,
-            "Timeframe": self.timeframe,
-            "Validity": self.validity,
-            "Last": q.as_table_last() if q is not None else "n/a",
-            "Spread": q.as_table_spread() if q is not None else "n/a",
-            "Session": sess,
-            "Buy/Sell": self.buy_sell,
+            "TF": self.timeframe,
+            "Signal": self.buy_sell,
+            "Conf": conf_label(self.confidence),
+            "Data●": self.validity,
             "MTF": mtf_label,
-            "Target": self.target,
-            "Last bar": self.last_bar_at or "n/a",
-            "Signal details": self.signal_details,
+            "Session": sess,
+            "Last/mid": last,
+            "Spread": spread,
+            "Next event": self.next_event or "—",
+            "Spark": spark_ascii(self.sparkline),
+            "Actions": paper_actions_label(self),
         }
+
+
+def paper_submit_allowed(validity: str | None) -> bool:
+    """OK/CLOSED can paper-submit. STALE/MISSING/ERROR cannot — block bad clicks."""
+    return str(validity or "").upper() not in PAPER_BLOCKED_VALIDITIES
+
+
+def paper_submit_block_reason(validity: str | None) -> str:
+    v = str(validity or "").upper()
+    if v == VALIDITY_STALE:
+        return "Paper BUY/SELL disabled — data STALE, refresh required"
+    if v == VALIDITY_MISSING:
+        return "Paper BUY/SELL disabled — data MISSING, Fetch required"
+    if v == VALIDITY_ERROR:
+        return "Paper BUY/SELL disabled — data ERROR"
+    return ""
+
+
+def paper_actions_label(row: BoardRow, *, has_open: bool = False) -> str:
+    if has_open:
+        return "CLOSE"
+    if not paper_submit_allowed(row.validity):
+        return f"disabled ({row.validity})"
+    return "BUY/SELL"
+
+
+def conf_label(conf: object) -> str:
+    if conf is None or (isinstance(conf, float) and pd.isna(conf)):
+        return "—"
+    try:
+        v = float(conf)
+    except (TypeError, ValueError):
+        return "—"
+    if pd.isna(v):
+        return "—"
+    if 0.0 <= v <= 1.0:
+        return f"{100.0 * v:.0f}%"
+    return f"{v:.0f}%"
+
+
+def spark_ascii(values: list[float] | None, n: int = 16) -> str:
+    """Tiny unicode spark for the dense scan row. Empty when STALE/MISSING."""
+    pts = [float(x) for x in (values or []) if x is not None and pd.notna(x)]
+    if len(pts) < 2:
+        return "—"
+    width = max(2, int(n))
+    if len(pts) > width:
+        last = width - 1
+        pts = [pts[int(round(i * (len(pts) - 1) / last))] for i in range(width)]
+    lo, hi = min(pts), max(pts)
+    span = hi - lo
+    top = len(SPARK_CHARS) - 1
+    if span <= 0:
+        return SPARK_CHARS[0] * len(pts)
+    out = []
+    for x in pts:
+        idx = int(round((x - lo) / span * top))
+        out.append(SPARK_CHARS[max(0, min(top, idx))])
+    return "".join(out)
+
+
+def paper_submit_risk_defaults(
+    ohlcv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+    side: str,
+    validity: str,
+) -> tuple[float | None, float | None]:
+    """ATR SL/TP for a paper submit when the row is allowed and barriers exist."""
+    if not paper_submit_allowed(validity):
+        return None, None
+    box = research_risk(ohlcv, cfg, side, validity=validity)
+    if not box.available:
+        return None, None
+    return box.sl, box.tp
+
+
+def _event_window_minutes(cfg: dict[str, Any] | None) -> tuple[int, int, int]:
+    block = dict((cfg or {}).get("advice") or {})
+    cal = dict((cfg or {}).get("calendar") or {})
+    before = int(block.get("before_minutes") or cal.get("before_minutes") or 60)
+    during = int(block.get("during_minutes") or cal.get("during_minutes") or 15)
+    after = int(block.get("after_minutes") or cal.get("after_minutes") or 30)
+    return before, during, after
+
+
+def attach_next_event(
+    row: BoardRow,
+    events: list[CalendarEvent] | None,
+    now: Any = None,
+    cfg: dict[str, Any] | None = None,
+) -> BoardRow:
+    """Compact Next-event cell + pre-event warning flag. Not a trade instruction."""
+    ev = next_event_for_pair(events, row.pair, now)
+    if ev is None:
+        row.next_event = "—"
+        row.next_event_warn = False
+        return row
+    before, during, after = _event_window_minutes(cfg)
+    win = event_window(
+        ev, now, before_minutes=before, during_minutes=during, after_minutes=after
+    )
+    row.next_event_warn = win in {"before", "during"}
+    row.next_event = next_event_label(ev, now, warn=row.next_event_warn)
+    return row
 
 
 def _fmt(x: object, digits: int = 4) -> str:
@@ -720,28 +833,40 @@ def build_board_rows(
 
 BOARD_TABLE_COLS = [
     "Pair",
-    "Timeframe",
-    "Validity",
-    "Last",
-    "Spread",
-    "Session",
-    "Buy/Sell",
+    "TF",
+    "Signal",
+    "Conf",
+    "Data●",
     "MTF",
-    "Target",
-    "Last bar",
-    "Signal details",
+    "Session",
+    "Last/mid",
+    "Spread",
+    "Next event",
+    "Spark",
+    "Actions",
 ]
 
 
-def board_table(rows: list[BoardRow]) -> pd.DataFrame:
+def board_table(
+    rows: list[BoardRow],
+    *,
+    events: list[CalendarEvent] | None = None,
+    now: Any = None,
+    cfg: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     cols = list(BOARD_TABLE_COLS)
     if not rows:
         return pd.DataFrame(columns=cols)
-    return pd.DataFrame([r.as_table_dict() for r in rows])
+    records = []
+    for r in rows:
+        if events is not None:
+            attach_next_event(r, events, now=now, cfg=cfg)
+        records.append(r.as_table_dict())
+    return pd.DataFrame(records)
 
 
 def style_board(df: pd.DataFrame):
-    """Color Buy/Sell and Validity when pandas Styler is available."""
+    """Color Signal, Data●, MTF, Session, and pre-event Next event cells."""
     if df is None or df.empty:
         return df
 
@@ -773,10 +898,12 @@ def style_board(df: pd.DataFrame):
         styler = df.style
         mapper = getattr(styler, "map", None) or getattr(styler, "applymap", None)
         if mapper is not None:
-            if "Buy/Sell" in df.columns:
-                styler = mapper(_sig, subset=["Buy/Sell"])
-            if "Validity" in df.columns:
-                styler = mapper(_val, subset=["Validity"])
+            sig_col = "Signal" if "Signal" in df.columns else ("Buy/Sell" if "Buy/Sell" in df.columns else None)
+            if sig_col:
+                styler = mapper(_sig, subset=[sig_col])
+            data_col = "Data●" if "Data●" in df.columns else ("Validity" if "Validity" in df.columns else None)
+            if data_col:
+                styler = mapper(_val, subset=[data_col])
             if "MTF" in df.columns:
 
                 def _mtf(val: object) -> str:
@@ -805,6 +932,26 @@ def style_board(df: pd.DataFrame):
                     return "background-color: #e2e8f0; color: #334155; font-weight: 700"
 
                 styler = mapper(_sess, subset=["Session"])
+            if "Next event" in df.columns:
+
+                def _ev(val: object) -> str:
+                    v = str(val)
+                    if v.startswith("⚠"):
+                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
+                    return ""
+
+                styler = mapper(_ev, subset=["Next event"])
+            if "Actions" in df.columns:
+
+                def _act(val: object) -> str:
+                    v = str(val).lower()
+                    if v.startswith("disabled"):
+                        return "background-color: #f1f5f9; color: #64748b"
+                    if v == "buy/sell":
+                        return "font-weight: 700"
+                    return ""
+
+                styler = mapper(_act, subset=["Actions"])
         return styler
     except Exception:
         return df

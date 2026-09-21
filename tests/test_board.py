@@ -13,12 +13,20 @@ from forex_lab.data import generate_synthetic_ohlcv, try_yfinance_refresh
 from forex_lab.ui.board import (
     BOARD_TABLE_COLS,
     NEED_FETCH_TRAIN,
+    PAPER_STALE_CAPTION,
+    attach_next_event,
     board_table,
     build_board_row,
     build_board_rows,
+    conf_label,
+    paper_actions_label,
+    paper_submit_allowed,
+    paper_submit_block_reason,
+    paper_submit_risk_defaults,
     research_risk,
     research_target,
     row_from_signal,
+    spark_ascii,
     sparkline_closes,
 )
 from forex_lab.ui.quote import quote_from_ohlcv
@@ -93,9 +101,12 @@ def test_row_from_signal_fills_table_fields():
     assert "xgboost" in row.signal_details
     table = board_table([row])
     assert list(table.columns) == BOARD_TABLE_COLS
-    assert table.iloc[0]["Buy/Sell"] == "SELL"
-    assert "last/mid-ish" in table.iloc[0]["Last"]
-    assert "pip (config)" in table.iloc[0]["Spread"]
+    assert table.iloc[0]["Signal"] == "SELL"
+    assert table.iloc[0]["TF"] == "1h"
+    assert table.iloc[0]["Conf"] == "51%"
+    assert table.iloc[0]["Data●"] in {"OK", "CLOSED", "STALE", "MISSING", "ERROR"}
+    assert table.iloc[0]["Last/mid"] not in {"", "n/a"}
+    assert table.iloc[0]["Spread"].endswith("p")
     assert table.iloc[0]["Session"] in {
         "ASIA",
         "LONDON",
@@ -107,6 +118,9 @@ def test_row_from_signal_fills_table_fields():
         "CLOSED",
         "OFF",
     }
+    assert table.iloc[0]["Next event"] == "—"
+    assert table.iloc[0]["Spark"]
+    assert table.iloc[0]["Actions"] == "BUY/SELL"
     assert row.quote is not None and row.quote.available
     assert row.quote.bid is None and row.quote.ask is None
     assert row.quote.mid == row.quote.last
@@ -331,4 +345,110 @@ def test_build_board_rows_mixed_status(tmp_path):
     table = board_table(rows)
     assert list(table["Pair"]) == ["GBPUSD", "AUDUSD"]
     assert list(table.columns) == BOARD_TABLE_COLS
-    assert "Last" in table.columns and "Spread" in table.columns and "Session" in table.columns
+    assert "Last/mid" in table.columns and "Spread" in table.columns and "Session" in table.columns
+    assert "Next event" in table.columns and "Spark" in table.columns
+    assert "disabled" in table.iloc[0]["Actions"]
+
+
+def test_paper_submit_gate_blocks_stale_missing_error():
+    assert paper_submit_allowed("OK") is True
+    assert paper_submit_allowed("CLOSED") is True
+    assert paper_submit_allowed("STALE") is False
+    assert paper_submit_allowed("MISSING") is False
+    assert paper_submit_allowed("ERROR") is False
+    assert "STALE" in paper_submit_block_reason("STALE")
+    assert "MISSING" in paper_submit_block_reason("MISSING")
+    assert "refresh" in paper_submit_block_reason("STALE").lower()
+    assert "disabled" in PAPER_STALE_CAPTION.lower()
+    assert "STALE" in PAPER_STALE_CAPTION
+
+
+def test_spark_ascii_conf_label_and_actions():
+    assert spark_ascii([]) == "—"
+    assert spark_ascii([1.0]) == "—"
+    up = spark_ascii([1, 2, 3, 4, 5], n=5)
+    assert len(up) == 5
+    assert up[0] < up[-1]
+    flat = spark_ascii([1.0, 1.0, 1.0], n=3)
+    assert flat == "▁▁▁"
+    assert conf_label(0.51) == "51%"
+    assert conf_label(None) == "—"
+    df = generate_synthetic_ohlcv(bars=80, seed=3)
+    last = {
+        "datetime": "2024-01-02 15:00:00",
+        "signal": "BUY",
+        "confidence": 0.4,
+        "p_buy": 0.4,
+        "p_sell": 0.3,
+        "p_hold": 0.3,
+        "model": "xgboost",
+        "close": float(df["Close"].iloc[-1]),
+    }
+    row = row_from_signal("EURUSD", "1h", last, df, load_config())
+    assert paper_actions_label(row) == "BUY/SELL"
+    row.validity = "STALE"
+    assert paper_actions_label(row).startswith("disabled")
+    assert paper_actions_label(row, has_open=True) == "CLOSE"
+
+
+def test_paper_submit_risk_defaults_use_atr_box_unless_stale():
+    df = generate_synthetic_ohlcv(bars=80, seed=3)
+    cfg = {
+        "label_scheme": "triple_barrier",
+        "horizon": 8,
+        "entry_timing": "next_open",
+        "atr_period": 14,
+        "barrier": {"tp_atr": 2.0, "sl_atr": 2.0},
+        "spread_pips": 1.0,
+    }
+    sl, tp = paper_submit_risk_defaults(df, cfg, "BUY", "OK")
+    assert sl is not None and tp is not None
+    assert tp > sl
+    sl_s, tp_s = paper_submit_risk_defaults(df, cfg, "BUY", "STALE")
+    assert sl_s is None and tp_s is None
+    sl_m, tp_m = paper_submit_risk_defaults(df, cfg, "SELL", "MISSING")
+    assert sl_m is None and tp_m is None
+    hold_sl, hold_tp = paper_submit_risk_defaults(df, cfg, "HOLD", "OK")
+    assert hold_sl is None and hold_tp is None
+
+
+def test_attach_next_event_warns_inside_pre_event_window():
+    from datetime import datetime, timezone
+
+    from forex_lab.calendar import parse_events
+
+    events = parse_events(
+        [
+            {
+                "title": "Non-Farm Employment Change",
+                "country": "USD",
+                "date": "2026-09-21T12:30:00-04:00",
+                "impact": "High",
+            }
+        ]
+    )
+    df = generate_synthetic_ohlcv(bars=80, seed=3)
+    last = {
+        "datetime": "2026-09-21 15:00:00",
+        "signal": "HOLD",
+        "confidence": 0.4,
+        "p_buy": 0.34,
+        "p_sell": 0.33,
+        "p_hold": 0.33,
+        "model": "xgboost",
+        "close": float(df["Close"].iloc[-1]),
+    }
+    row = row_from_signal("EURUSD", "1h", last, df, load_config())
+    now = datetime(2026, 9, 21, 16, 0, tzinfo=timezone.utc)
+    attach_next_event(row, events, now=now, cfg={"advice": {"before_minutes": 60}})
+    assert row.next_event_warn is True
+    assert row.next_event.startswith("⚠")
+    assert "NFP" in row.next_event
+    assert "USD" in row.next_event
+    table = board_table([row], events=events, now=now, cfg={"advice": {"before_minutes": 60}})
+    assert table.iloc[0]["Next event"].startswith("⚠")
+    later = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    attach_next_event(row, events, now=later, cfg={"advice": {"before_minutes": 60}})
+    assert row.next_event_warn is False
+    assert "NFP" in row.next_event
+    assert not row.next_event.startswith("⚠")
