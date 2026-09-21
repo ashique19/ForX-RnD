@@ -37,6 +37,7 @@ from forex_lab.ui.board import (
     research_target,
     spark_ascii,
     style_board,
+    validity_token,
 )
 from forex_lab.session import SessionState, classify_session
 from forex_lab.ui.quote import QuoteView
@@ -610,6 +611,8 @@ def _render_advice_card(
             f"{when_bit} · window {card.window}"
         )
     st.caption(card.disclaimer)
+    if card.auto_submit:
+        card.auto_submit = False
     if card.action == "tighten_sl" and card.suggested_sl is not None and broker is not None:
         apply_fn = getattr(broker, "modify_sl", None)
         key = f"paper_sl_{row.pair}_{row.timeframe}_{index}"
@@ -894,7 +897,7 @@ def _render_dense_row(
     selected: bool,
 ) -> None:
     warn = bool(getattr(row, "next_event_warn", False))
-    blocked = str(getattr(row, "validity", "") or "").upper() in {
+    blocked = validity_token(getattr(row, "validity", "")) in {
         VALIDITY_STALE,
         VALIDITY_MISSING,
         VALIDITY_ERROR,

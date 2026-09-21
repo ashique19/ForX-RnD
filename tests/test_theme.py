@@ -120,10 +120,20 @@ def test_stale_outranks_buy_sell_hold():
         ]
     )
     assert counts["BUY"] == 1
-    assert counts["SELL"] == 1
+    assert counts["SELL"] == 0  # leftover SELL on a STALE row is not a live call
     assert counts["HOLD"] == 1
     assert counts["STALE"] == 1
     assert counts["MISSING"] == 1
+    strip_counts = scan_strip_html(
+        session="LONDON",
+        refreshed="2026-09-21 20:00:00",
+        tz="Asia/Dhaka",
+        counts=counts,
+    )
+    assert ">STALE <b>1</b>" in strip_counts.replace("\n", "")
+    assert "MISSING" in strip_counts
+    assert "fx-count missing" in strip_counts
+    assert ">STALE <b>2</b>" not in strip_counts.replace("\n", "")
 
     buy = signal_badge_html("BUY", compact=True)
     hold = signal_badge_html("HOLD", compact=True)

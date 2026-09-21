@@ -50,6 +50,14 @@ SPARKLINE_BARS = 48
 SPARK_CHARS = "▁▂▃▄▅▆▇█"
 PAPER_BLOCKED_VALIDITIES = frozenset({VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR})
 PAPER_STALE_CAPTION = "Paper BUY/SELL is disabled when Data● is STALE or MISSING — refresh (Fetch) first."
+
+
+def validity_token(validity: object) -> str:
+    """OK / STALE / … even when a caller passes ``STALE · reason``."""
+    raw = str(validity or "").strip().upper()
+    return raw.split()[0] if raw else ""
+
+
 PAPER_GATE_CAPTION = (
     "Paper BUY/SELL can also be disabled by selective gates "
     "(MTF agree / min confidence / event window) when gates.enabled is true. "
@@ -155,7 +163,7 @@ def paper_submit_allowed(
     open gates (MTF / confidence / event window). Missing calendar or MTF
     fail-softs (does not block). Validity-only calls keep the old signature.
     """
-    if str(validity or "").upper() in PAPER_BLOCKED_VALIDITIES:
+    if validity_token(validity) in PAPER_BLOCKED_VALIDITIES:
         return False
     if row is None:
         return True
@@ -170,7 +178,7 @@ def paper_open_allowed(
     now: Any = None,
 ) -> bool:
     """Validity + optional selective gates. CLOSE is not gated here."""
-    if str(row.validity or "").upper() in PAPER_BLOCKED_VALIDITIES:
+    if validity_token(row.validity) in PAPER_BLOCKED_VALIDITIES:
         return False
     if getattr(row, "gate_blocked", False):
         return False
@@ -190,7 +198,7 @@ def paper_submit_block_reason(
     events: list[CalendarEvent] | None = None,
     now: Any = None,
 ) -> str:
-    v = str(validity or "").upper()
+    v = validity_token(validity)
     if v == VALIDITY_STALE:
         return "Paper BUY/SELL disabled — data STALE, refresh required"
     if v == VALIDITY_MISSING:

@@ -125,7 +125,12 @@ def scan_emphasis(signal: object, validity: object) -> str:
 
 
 def scan_counts(rows) -> dict[str, int]:
-    """BUY/SELL/HOLD plus validity tallies for the masthead scan strip."""
+    """BUY/SELL/HOLD plus validity tallies for the masthead scan strip.
+
+    Unusable data (STALE / MISSING / ERROR) outranks the flash: those rows
+    increment the validity chip only, never BUY/SELL/HOLD, even if a leftover
+    class is still on the row.
+    """
     counts = {
         "BUY": 0,
         "SELL": 0,
@@ -144,15 +149,18 @@ def scan_counts(rows) -> dict[str, int]:
         else:
             s = getattr(row, "buy_sell", None)
             v = getattr(row, "validity", None)
-        sn = normalize_signal(s)
         vn = str(v or "").strip().upper()
         token = vn.split()[0] if vn else ""
+        if token in {"FAIL", "ERROR"}:
+            token = VALIDITY_ERROR
+        if token in DATA_BLOCKS:
+            counts[token] += 1
+            continue
+        sn = normalize_signal(s)
         if sn in counts:
             counts[sn] += 1
         if token in counts:
             counts[token] += 1
-        elif token in {"FAIL", "ERROR"}:
-            counts[VALIDITY_ERROR] += 1
     return counts
 
 
@@ -278,11 +286,8 @@ def scan_strip_html(
     counts: dict[str, int] | None = None,
 ) -> str:
     counts = counts or {}
-    blocked = (
-        int(counts.get(VALIDITY_STALE, 0))
-        + int(counts.get(VALIDITY_MISSING, 0))
-        + int(counts.get(VALIDITY_ERROR, 0))
-    )
+    n_stale = int(counts.get(VALIDITY_STALE, 0))
+    n_missing = int(counts.get(VALIDITY_MISSING, 0)) + int(counts.get(VALIDITY_ERROR, 0))
 
     def _count(label: str, n: int, cls: str) -> str:
         on = " on" if int(n) else ""
@@ -296,9 +301,11 @@ def scan_strip_html(
             _count("BUY", counts.get("BUY", 0), "buy"),
             _count("SELL", counts.get("SELL", 0), "sell"),
             _count("HOLD", counts.get("HOLD", 0), "hold"),
-            _count("STALE", blocked, "stale"),
+            _count("STALE", n_stale, "stale"),
         ]
     )
+    if n_missing:
+        chips += _count("MISSING", n_missing, "missing")
     return (
         f'<div class="fx-scan">'
         f'<div class="fx-scan-meta">'
@@ -662,6 +669,8 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 .fx-count.hold.on b { color: var(--fx-hold); }
 .fx-count.stale.on { background: #3a2a0c; color: var(--fx-warn); border-color: #6b4a12; }
 .fx-count.stale.on b { color: var(--fx-warn); }
+.fx-count.missing.on { background: #1a222c; color: var(--fx-muted); border-color: #3a4450; }
+.fx-count.missing.on b { color: var(--fx-muted); }
 .fx-board-head {
   font-size: 0.62rem;
   font-weight: 800;
