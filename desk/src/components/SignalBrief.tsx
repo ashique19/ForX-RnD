@@ -51,11 +51,11 @@ function Card({ title, suggestion, consensus, pair }: { title: string; suggestio
           </div>
           <div className="lvl">
             <div className="lbl">Stop</div>
-            <div className="val stop">{suggestion.stop_text}</div>
+            <div className={suggestion.stop != null ? "val stop" : "val"}>{suggestion.stop_text}</div>
           </div>
           <div className="lvl">
             <div className="lbl">Target</div>
-            <div className="val tgt">{suggestion.target_text}</div>
+            <div className={suggestion.target != null ? "val tgt" : "val"}>{suggestion.target_text}</div>
           </div>
           <div className="lvl">
             <div className="lbl">Duration</div>

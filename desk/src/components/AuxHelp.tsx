@@ -1,6 +1,10 @@
-export function AuxHelp() {
+export function AuxHelp({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
-    <details className="aux">
+    <details
+      className="aux"
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
       <summary>
         <svg className="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M6 4l4 4-4 4" />
