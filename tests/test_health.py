@@ -4,7 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from forex_lab.news import Headline, NewsBundle
-from forex_lab.ui.health import build_health_rows
+from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
 
 
 def test_health_rows_ohlcv_and_news():
@@ -38,3 +38,10 @@ def test_health_rows_ohlcv_and_news():
     rows2 = build_health_rows([row], news_map={"EURUSD": fail}, realtime=False)
     assert rows2[1]["Status"] == "FAIL"
     assert "manual only" in rows2[0]["Cadence"]
+    bad = health_unhealthy(rows)
+    assert [r["Status"] for r in bad] == ["STALE"]
+    assert "OHLCV EURUSD 1h STALE" in health_strip(rows)
+    assert "News EURUSD OK" in health_strip(rows)
+    closed_only = [{"Feed": "OHLCV EURUSD 1h", "Status": "CLOSED"}]
+    assert health_unhealthy(closed_only) == []
+    assert health_strip([]) == "No feeds — watchlist empty."

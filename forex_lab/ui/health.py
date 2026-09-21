@@ -113,3 +113,22 @@ def build_health_rows(
             },
         )
     return out
+
+
+UNHEALTHY = frozenset({"STALE", "FAIL", "ERROR", "MISSING"})
+
+
+def health_unhealthy(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Feeds that should be obvious: stale, failed, missing, or error.
+
+    CLOSED is expected on the weekend — not treated as a panic.
+    """
+    return [r for r in rows if str(r.get("Status") or "").upper() in UNHEALTHY]
+
+
+def health_strip(rows: list[dict[str, str]]) -> str:
+    """One-line feed status, always visible above the expander."""
+    if not rows:
+        return "No feeds — watchlist empty."
+    bits = [f"{r.get('Feed', '?')} {r.get('Status', '?')}" for r in rows]
+    return "Feeds: " + " · ".join(bits)

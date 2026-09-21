@@ -20,7 +20,7 @@ from forex_lab.ui.board import (
     research_target,
     style_board,
 )
-from forex_lab.ui.health import build_health_rows
+from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
 from forex_lab.ui.pipeline import (
     artifact_status,
     equity_from_trades,
@@ -106,7 +106,8 @@ Research suggestion only: **no lot size, no auto-submit, no live broker order**.
 Fills at the last cached close, stores a local JSON journal, and scores RIGHT/WRONG when
 later bars hit the same ATR barriers. **Not** a live order. One open paper position per pair.
 
-**Awareness** — expander listing OHLCV + news feeds with last update, cadence, and OK/STALE/FAIL.
+**Awareness** — always-visible **Feeds:** line plus expander listing OHLCV + news
+with last update, cadence, and OK/STALE/FAIL. Opens itself when a feed is STALE/FAIL/MISSING.
 
 **Last update** — last candle time, last successful CSV write (fetch), last signal time.
 The board also shows a global **board last refreshed** timestamp.
@@ -669,7 +670,19 @@ def render_watch_board(cfg) -> None:
             news_ttl_s=news_ttl,
             yf_min_interval_s=int(bcfg.get("yf_min_interval_s") or YF_MIN_INTERVAL_S),
         )
-        with st.expander("Awareness / data health", expanded=False):
+        unhealthy = health_unhealthy(health)
+        st.caption(health_strip(health))
+        if unhealthy:
+            st.warning(
+                "Obsolete or failing inputs: "
+                + " · ".join(f"{r.get('Feed')} {r.get('Status')}" for r in unhealthy)
+            )
+        exp_label = "Awareness / data health"
+        if unhealthy:
+            exp_label += " — " + ", ".join(
+                f"{r.get('Feed')} {r.get('Status')}" for r in unhealthy[:4]
+            )
+        with st.expander(exp_label, expanded=bool(unhealthy)):
             st.caption(
                 "v0 — active feeds this board can see (OHLCV per pair + news). "
                 "Full registry / daily digest / weekly retrain stay later."
