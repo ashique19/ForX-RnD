@@ -145,6 +145,22 @@ export interface Bar {
   volume: number;
 }
 
+export interface IndicatorSeries {
+  ema21: (number | null)[];
+  ema50: (number | null)[];
+  sma200: (number | null)[];
+  bb_mid: (number | null)[];
+  bb_upper: (number | null)[];
+  bb_lower: (number | null)[];
+  rsi: (number | null)[];
+  macd: (number | null)[];
+  macd_signal: (number | null)[];
+  macd_hist: (number | null)[];
+  stoch_k: (number | null)[];
+  stoch_d: (number | null)[];
+  atr: (number | null)[];
+}
+
 export interface Ohlcv {
   pair: string;
   interval: string;
@@ -154,6 +170,8 @@ export interface Ohlcv {
   bars: Bar[];
   note: string;
   last_bar_dhaka?: string;
+  digits?: number;
+  indicators?: IndicatorSeries;
 }
 
 export type Mode = "decision" | "calendar" | "paper" | "lab" | "awareness";
