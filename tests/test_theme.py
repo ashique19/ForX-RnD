@@ -17,6 +17,28 @@ from forex_lab.ui.theme import (
 )
 
 
+def _rel_lum(hex_color: str) -> float:
+    h = hex_color.lstrip("#")
+    rgb = [int(h[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+
+    def _f(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (_f(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(fg: str, bg: str) -> float:
+    l1, l2 = _rel_lum(fg), _rel_lum(bg)
+    hi, lo = max(l1, l2), min(l1, l2)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
 def test_theme_config_is_dark_terminal():
     cfg = (project_root() / ".streamlit" / "config.toml").read_text(encoding="utf-8")
     assert 'base = "dark"' in cfg
@@ -24,6 +46,11 @@ def test_theme_config_is_dark_terminal():
     assert "#16c784" in cfg
     assert "toolbarMode" in cfg and "minimal" in cfg
     assert "backgroundColor" in cfg
+    assert "baseFontSize = 16" in cfg
+    assert "textColor = \"#f2f5f8\"" in cfg
+    assert "showWidgetBorder = true" in cfg
+    assert "borderColor = \"#4a5d73\"" in cfg
+    assert "secondaryBackgroundColor = \"#1c2734\"" in cfg
 
 
 def test_buy_sell_hold_are_high_contrast():
@@ -45,6 +72,90 @@ def test_buy_sell_hold_are_high_contrast():
     assert "fx-scan" in css
     assert "flex-end" in css
     assert "st-key-paper_close" in css
+    assert BUY == "#16c784" and SELL == "#ea3943"
+
+
+def test_muted_captions_and_labels_are_readable():
+    """Body 16px, captions 14px, secondary #c8d0db+ — not dark grey on dark."""
+    from forex_lab.ui.health import awareness_table_html
+    from forex_lab.ui.theme import (
+        BG,
+        FONT_BODY,
+        FONT_CAPTION,
+        FONT_CELL,
+        FONT_EXPANDER,
+        FONT_LABEL,
+        MUTED,
+        NEUTRAL,
+        TEXT,
+        validity_badge_html,
+    )
+
+    assert FONT_BODY == "16px"
+    assert FONT_CAPTION == "14px"
+    assert FONT_LABEL == "14px"
+    assert FONT_CELL == "15px"
+    assert FONT_EXPANDER == "16px"
+    assert min(_rgb(MUTED)) >= 200
+    assert MUTED.lower() >= "#c8d0db"
+    assert _contrast(MUTED, BG) >= 10.0
+    assert _contrast(TEXT, BG) >= 12.0
+    assert _contrast(NEUTRAL, BG) >= 8.0
+    css = terminal_css()
+    assert MUTED in css
+    assert TEXT in css
+    assert "--fx-muted" in css
+    assert "stSidebar" in css
+    assert "stTooltipContent" in css
+    assert "font-size: 16px" in css
+    assert "font-size: 14px" in css
+    # Old too-small caption / widget-label rem sizes must not remain.
+    assert "font-size: 0.70rem !important" not in css
+    assert "font-size: 0.62rem !important" not in css
+    stale = validity_badge_html("STALE", compact=True)
+    assert "14px" in stale
+    table = awareness_table_html(
+        [
+            {
+                "Source": "EURUSD 1h OHLCV",
+                "Observing": "price",
+                "Cadence": "manual",
+                "Last OK": "2026-09-21 15:00:00 Asia/Dhaka",
+                "Status": "STALE · data stale — refresh required",
+            }
+        ]
+    )
+    assert MUTED in table
+    assert "15px" in table
+    assert "data stale" in table
+
+
+def test_theme_css_applies_to_captions_markdown_dataframe_expanders():
+    """CSS must actually target Streamlit caption / markdown / grid / expander nodes."""
+    from forex_lab.ui.theme import FONT_CAPTION, FONT_BODY, MUTED, TEXT
+
+    css = terminal_css()
+    for needle in (
+        '[data-testid="stCaptionContainer"]',
+        '[data-testid="stMarkdownContainer"]',
+        '[data-testid="stDataFrame"]',
+        '[data-testid="stExpander"]',
+        '[data-testid="stWidgetLabel"]',
+        '[data-testid="stHeading"]',
+        "stCaption",
+    ):
+        assert needle in css, f"missing selector {needle}"
+    # Forced sizes (px) so Streamlit cannot mix captions back to ~11px.
+    assert f"font-size: {FONT_BODY}" in css
+    assert f"font-size: {FONT_CAPTION}" in css
+    assert f"color: var(--fx-muted)" in css
+    assert f"color: var(--fx-text)" in css
+    assert MUTED in css and TEXT in css
+    # Masthead clock / title are large and bold.
+    assert "font-size: 22px" in css
+    assert ".fx-clock" in css and ".fx-title" in css
+    source = Path(project_root() / "forex_lab" / "ui" / "theme.py").read_text(encoding="utf-8")
+    assert "data-fx-theme" in source
 
 
 def test_style_board_uses_dark_signal_colors():
@@ -166,3 +277,62 @@ def test_stale_outranks_buy_sell_hold():
     assert "fx-empty" in empty
     assert "Watchlist is empty. Add a pair below." in empty
     assert "<script" not in empty_state_html("<script>x</script>", "body")
+
+
+def test_chrome_cards_borders_and_section_heads():
+    """Elevated cards, visible borders, masthead/nav, clickable drawer tabs."""
+    from forex_lab.ui.theme import (
+        BG,
+        BORDER,
+        BORDER_STRONG,
+        CARD,
+        ELEVATED,
+        card_html,
+        section_head_html,
+        terminal_css,
+    )
+
+    css = terminal_css()
+    for needle in (
+        "--fx-card",
+        "--fx-border-strong",
+        "--fx-radius",
+        ".fx-section-head",
+        ".fx-section-title",
+        ".fx-card",
+        ".fx-card-title",
+        ".fx-masthead-top",
+        '[data-testid="stTabs"]',
+        '[data-testid="stVerticalBlockBorderWrapper"]',
+        '[data-testid="stExpander"]',
+        "cursor: pointer",
+        "min-height: 2.65rem",
+    ):
+        assert needle in css, f"missing chrome selector {needle}"
+    assert BORDER in css and BORDER_STRONG in css
+    assert CARD in css and ELEVATED in css
+    assert CARD.lower() != BG.lower()
+    assert BORDER_STRONG.lower() != BG.lower()
+    # Card / elevated surfaces sit above the page, not dark-on-dark.
+    assert min(_rgb(CARD)) > min(_rgb(BG))
+    assert min(_rgb(ELEVATED)) > min(_rgb(BG))
+    assert min(_rgb(BORDER_STRONG)) >= 100
+
+    card = card_html("Tighten stop", "Advisory only.", kicker="WARN", tone="warn")
+    assert "fx-card" in card and "fx-card-warn" in card
+    assert "Tighten stop" in card
+    assert "<script" not in card_html("<script>x</script>", "<img>")
+    head = section_head_html("Scan", "Board", note="pair row → detail drawer")
+    assert "fx-section-kicker" in head and "Scan" in head
+    assert "Board" in head and "pair row" in head
+    source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
+    assert 'section_head_html("Scan", "Board"' in source
+    assert 'section_head_html("Detail"' in source
+    assert 'section_head_html("Health", "Alerts, awareness, digest")' in source
+    scan_at = source.find('section_head_html("Scan", "Board"')
+    detail_at = source.find('section_head_html("Detail"')
+    health_at = source.find('section_head_html("Health", "Alerts, awareness, digest")')
+    assert 0 < scan_at < detail_at < health_at
+    # Duplicate scan board must not return after Health.
+    assert source.count('section_head_html("Scan", "Board"') == 1
+    assert "fx-masthead-top" in source

@@ -229,7 +229,8 @@ board:
   stale_bars: 2            # STALE if last bar older than N × timeframe in-session
   incremental_period: "5d" # short Yahoo window; merged into the existing CSV
   incremental_min_bars: 20
-  sparkline_bars: 48        # cached closes on each watchlist card
+  sparkline_bars: 48        # cached closes on each watchlist card (mini spark)
+  candle_bars: 150          # Plotly OHLC in the detail Chart tab (100–200)
   quote:
     last_label: last/mid-ish   # yfinance FX has no bid/ask
     source_note: "yfinance last/mid-ish — not broker bid/ask"

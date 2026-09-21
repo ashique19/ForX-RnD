@@ -103,10 +103,13 @@ from forex_lab.ui.theme import (
     scan_counts,
     scan_legend_html,
     scan_strip_html,
+    section_head_html,
+    card_html,
     session_fill,
     signal_badge_html,
     validity_badge_html,
 )
+from forex_lab.ui.chart import candle_bar_count, candlestick_figure, chart_blocked_reason
 from forex_lab.ui.workspace import (
     Workspace,
     WorkspaceError,
@@ -365,8 +368,8 @@ def _session_badge(session: SessionState | None, *, show_note: bool = False) -> 
         note = session.note
     bg = session_fill(name)
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.68rem;'
-        f"letter-spacing:0.08em;text-align:center;padding:3px 6px;border-radius:3px;"
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:13px;'
+        f"letter-spacing:0.08em;text-align:center;padding:4px 8px;border-radius:3px;"
         f'display:inline-block">{name}</div>',
         unsafe_allow_html=True,
     )
@@ -383,14 +386,14 @@ def _render_quote_strip(row) -> None:
     st.markdown(
         f'<div style="font-variant-numeric:tabular-nums;line-height:1.15">'
         f'<div style="font-size:1.2rem;font-weight:800;letter-spacing:0.02em;color:{TEXT_BRIGHT}">{last_txt}</div>'
-        f'<div style="font-size:0.68rem;color:{MUTED};font-weight:600">{kind}</div>'
+        f'<div style="font-size:14px;color:{MUTED};font-weight:600">{kind}</div>'
         f"</div>",
         unsafe_allow_html=True,
     )
     s1, s2 = st.columns(2)
     with s1:
         st.markdown(
-            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:0.68rem;'
+            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:13px;'
             f"letter-spacing:0.04em;text-align:center;padding:3px 6px;border-radius:3px;"
             f'border:1px solid #243040">'
             f"SPR {spr} cfg</div>",
@@ -416,7 +419,7 @@ def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
     bg = colors.get(status, HOLD_BG)
     color = fg.get(status, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.66rem;'
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:13px;'
         f"letter-spacing:0.04em;text-align:center;padding:3px 5px;border-radius:3px;"
         f'display:block">{note}</div>',
         unsafe_allow_html=True,
@@ -442,7 +445,7 @@ def _news_bias_badge(bias: str) -> None:
     st.markdown(
         f'<div style="background:{colors.get(b, HOLD_BG)};color:{fg.get(b, TEXT)};font-weight:800;'
         f'padding:4px 8px;border-radius:3px;display:inline-block;letter-spacing:0.08em;'
-        f'font-size:0.72rem">{b.upper()}</div>',
+        f'font-size:13px">{b.upper()}</div>',
         unsafe_allow_html=True,
     )
 
@@ -455,6 +458,49 @@ def _render_sparkline(row, *, height: int = 90) -> None:
     chart = pd.DataFrame({"close": list(row.sparkline)})
     st.line_chart(chart, height=height, use_container_width=True)
     st.caption(row.sparkline_note)
+
+
+def _render_price_chart(row, cfg) -> None:
+    """Detail Chart tab: interactive Plotly candlestick from cached OHLCV.
+
+    Scan-board sparkline stays a mini close spark. STALE/MISSING/ERROR never
+    invent candles. Not a broker chart.
+    """
+    blocked = chart_blocked_reason(getattr(row, "validity", None))
+    if blocked:
+        _empty_state(
+            "No candlestick — data is not OK",
+            blocked + " The board sparkline stays empty too. Research only — not a broker chart.",
+            kicker="CHART",
+        )
+        return
+    _price, _ts, ohlcv = _cached_quote(row, cfg)
+    title = f"{row.pair}  {row.timeframe}"
+    fig, note = candlestick_figure(
+        ohlcv,
+        n=candle_bar_count(cfg),
+        title=title,
+        timeframe=row.timeframe,
+        cfg=cfg,
+        validity=row.validity,
+    )
+    if fig is None:
+        _empty_state(
+            "No candlestick for this pair",
+            f"{note}. Fetch OHLCV first. Research only — not a broker chart.",
+            kicker="CHART",
+        )
+        return
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        },
+    )
+    st.caption(note)
 
 
 def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
@@ -483,7 +529,7 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
                 when = format_alert_time(alert, cfg)
                 st.markdown(
                     f'<div style="display:flex;gap:10px;align-items:center;background:{bg};'
-                    f"color:#fff;font-size:0.78rem;font-weight:700;padding:5px 8px;"
+                    f"color:#fff;font-size:15px;font-weight:700;padding:7px 10px;"
                     f'border-radius:6px;letter-spacing:0.02em;line-height:1.2">'
                     f"<span>{html.escape(alert.message)}</span>"
                     f'<span style="margin-left:auto;font-weight:600;opacity:.9;white-space:nowrap">'
@@ -593,16 +639,15 @@ def _render_advice_card(
     price: float | None,
     index: int,
 ) -> None:
-    colors = {"warn": SELL, "caution": WARN, "info": "#334155"}
-    fg = {"warn": "#fff", "caution": "#1a1204", "info": TEXT}
-    bg = colors.get(card.severity, "#334155")
-    color = fg.get(card.severity, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.78rem;'
-        f'padding:5px 8px;border-radius:3px;margin-bottom:3px;letter-spacing:0.04em">{card.title}</div>',
+        card_html(
+            card.title,
+            card.detail,
+            kicker=str(card.severity or "info"),
+            tone=str(card.severity or "info"),
+        ),
         unsafe_allow_html=True,
     )
-    st.caption(card.detail)
     if card.countdown or card.event_title:
         when_txt = relabel(getattr(card, "event_when", None), cfg)
         when_bit = f" · {when_txt}" if when_txt != "n/a" else ""
@@ -642,21 +687,22 @@ def _render_advice_card(
 
 
 def _render_risk(row) -> None:
-    st.markdown("**Risk**")
-    st.caption("Research suggestion only — not an order. No lot size, no auto-submit, no broker ticket.")
-    risk = getattr(row, "risk", None)
-    if risk is None or not risk.available:
-        reason = getattr(risk, "reason", None) if risk is not None else "n/a"
-        st.info(f"n/a — {reason}")
-        return
-    st.caption(f"Entry  {_fmt_num(risk.entry, 5)}  ·  {risk.entry_ref}")
-    st.caption(f"SL  {_fmt_num(risk.sl, 5)}   TP  {_fmt_num(risk.tp, 5)}")
-    rr = "n/a" if risk.rr is None else f"{risk.rr:.2f}"
-    st.caption(f"R:R  {rr}   (tp_atr={risk.tp_atr} / sl_atr={risk.sl_atr})")
-    if risk.spread_pips is not None:
-        st.caption(
-            f"Spread assumption  {risk.spread_pips:g} pips from config — not your broker’s spread."
-        )
+    with st.container(border=True):
+        st.markdown("**Risk**")
+        st.caption("Research suggestion only — not an order. No lot size, no auto-submit, no broker ticket.")
+        risk = getattr(row, "risk", None)
+        if risk is None or not risk.available:
+            reason = getattr(risk, "reason", None) if risk is not None else "n/a"
+            st.info(f"n/a — {reason}")
+            return
+        st.caption(f"Entry  {_fmt_num(risk.entry, 5)}  ·  {risk.entry_ref}")
+        st.caption(f"SL  {_fmt_num(risk.sl, 5)}   TP  {_fmt_num(risk.tp, 5)}")
+        rr = "n/a" if risk.rr is None else f"{risk.rr:.2f}"
+        st.caption(f"R:R  {rr}   (tp_atr={risk.tp_atr} / sl_atr={risk.sl_atr})")
+        if risk.spread_pips is not None:
+            st.caption(
+                f"Spread assumption  {risk.spread_pips:g} pips from config — not your broker’s spread."
+            )
 
 
 def _paper_broker(cfg) -> BrokerPort:
@@ -869,7 +915,7 @@ def _render_paper_actions(
 def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False, strong: bool = False) -> None:
     color = WARN if warn else (TEXT_BRIGHT if strong else TEXT)
     weight = "800" if warn or strong else "600"
-    size = "0.86rem" if strong else "0.74rem"
+    size = "16px" if strong else "15px"
     variant = "font-variant-numeric:tabular-nums;" if numeric else ""
     st.markdown(
         f'<div style="font-size:{size};font-weight:{weight};color:{color};'
@@ -938,7 +984,7 @@ def _render_dense_row(
         with c[10]:
             spark = spark_ascii(row.sparkline)
             st.markdown(
-                f'<div style="font-size:0.82rem;letter-spacing:-0.08em;line-height:1.15;'
+                f'<div style="font-size:15px;letter-spacing:-0.06em;line-height:1.25;'
                 f'color:{MUTED};font-variant-numeric:tabular-nums">{html.escape(spark)}</div>',
                 unsafe_allow_html=True,
             )
@@ -983,7 +1029,7 @@ def _render_detail_drawer(
             st.warning(row.signal_details or row.validity_reason or NEED_FETCH_TRAIN)
         tabs = st.tabs(["Chart", "SHAP", "News", "Risk", "Rationale"])
         with tabs[0]:
-            _render_sparkline(row, height=180)
+            _render_price_chart(row, cfg)
             st.caption(f"Last bar  {row.last_bar_at or 'n/a'}")
             st.caption(f"Last fetch  {row.last_fetch_at or 'n/a'}")
             st.caption(f"Last signal  {row.last_signal_at or row.datetime or 'n/a'}")
@@ -1613,6 +1659,7 @@ def _render_masthead(cfg) -> None:
     tz = html.escape(timezone_tag(cfg))
     st.markdown(
         f'<div class="fx-masthead">'
+        f'<div class="fx-masthead-top">'
         f'<div class="fx-masthead-left">'
         f'<span class="fx-brand">FX</span>'
         f'<span class="fx-title">SIGNAL SCREEN</span>'
@@ -1622,10 +1669,12 @@ def _render_masthead(cfg) -> None:
         f'<div class="fx-masthead-right">'
         f'<span class="fx-clock">{clock}</span>'
         f'<span class="fx-tz">{tz}</span>'
-        f"</div></div>",
+        f"</div>"
+        f"</div>"
+        f"{scan_legend_html()}"
+        f"</div>",
         unsafe_allow_html=True,
     )
-    st.markdown(scan_legend_html(), unsafe_allow_html=True)
 
 
 def render_watch_board(cfg) -> None:
@@ -1636,56 +1685,60 @@ def render_watch_board(cfg) -> None:
     lab_iv = wl.lab_interval(cfg)
     available = ui_pairs(cfg)
 
-    st.caption(
-        f"Dense board — seconds to decide. BUY green / SELL red / HOLD grey. "
-        f"Lab timeframe **{lab_iv}**. "
-        f"Click a pair for the detail drawer. Watchlist: `{watchlist_path()}`."
+    st.markdown(
+        section_head_html("Nav", "Workspace", note=f"lab TF {lab_iv} · click a pair for the drawer"),
+        unsafe_allow_html=True,
     )
-    _render_workspace_bar(cfg, wl)
-    with st.expander("Column help (research only)"):
-        st.markdown(BOARD_HELP)
+    with st.container(border=True):
+        st.caption(
+            "BUY green / SELL red / HOLD grey. "
+            f"Watchlist: `{watchlist_path()}`. Presets do not wipe the paper journal."
+        )
+        _render_workspace_bar(cfg, wl)
+        with st.expander("Column help (research only)"):
+            st.markdown(BOARD_HELP)
 
-    c_real, c_secs, c_sound, c_note = st.columns([1.0, 1.0, 1.15, 2.1])
-    realtime = c_real.checkbox(
-        "Realtime",
-        value=False,
-        help="Rebuild signals from local cache on a timer. yfinance only when a bar is due. "
-        "Not broker quotes and not streaming.",
-    )
-    if "alert_sound" not in st.session_state:
-        st.session_state["alert_sound"] = bool(load_alert_state(cfg).sound)
-    sound_on = c_sound.checkbox(
-        "Alert sound",
-        key="alert_sound",
-        help="Off by default. Short beep when a watchlist pair flips BUY/SELL/HOLD or goes "
-        "STALE/MISSING. Never places orders.",
-    )
-    bcfg = board_cfg(cfg)
-    default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
-    if "board_refresh_s" not in st.session_state:
-        st.session_state["board_refresh_s"] = max(60, int(wl.refresh_seconds) or default_rt)
-    seconds = int(
-        c_secs.number_input(
-            "Refresh (s)",
-            min_value=60,
-            max_value=3600,
-            step=30,
-            key="board_refresh_s",
-            help="Realtime poll interval. Default 60s so yfinance is not hammered "
-            "(unofficial API, no SLA; 1h bars do not need faster OHLCV). "
-            "Workspace presets can switch this.",
+        c_real, c_secs, c_sound, c_note = st.columns([1.0, 1.0, 1.15, 2.1])
+        realtime = c_real.checkbox(
+            "Realtime",
+            value=False,
+            help="Rebuild signals from local cache on a timer. yfinance only when a bar is due. "
+            "Not broker quotes and not streaming.",
         )
-    )
-    if seconds != int(wl.refresh_seconds):
-        wl.refresh_seconds = seconds
-        save_watchlist(wl)
-    if realtime:
-        c_note.caption(
-            f"Auto-refresh every {seconds}s: signals from cache; OHLCV at most one pair/tick, "
-            "only if due. Research timer — not executable prices."
+        if "alert_sound" not in st.session_state:
+            st.session_state["alert_sound"] = bool(load_alert_state(cfg).sound)
+        sound_on = c_sound.checkbox(
+            "Alert sound",
+            key="alert_sound",
+            help="Off by default. Short beep when a watchlist pair flips BUY/SELL/HOLD or goes "
+            "STALE/MISSING. Never places orders.",
         )
-    else:
-        c_note.caption("Realtime off: the board stays put until **Manual update**.")
+        bcfg = board_cfg(cfg)
+        default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
+        if "board_refresh_s" not in st.session_state:
+            st.session_state["board_refresh_s"] = max(60, int(wl.refresh_seconds) or default_rt)
+        seconds = int(
+            c_secs.number_input(
+                "Refresh (s)",
+                min_value=60,
+                max_value=3600,
+                step=30,
+                key="board_refresh_s",
+                help="Realtime poll interval. Default 60s so yfinance is not hammered "
+                "(unofficial API, no SLA; 1h bars do not need faster OHLCV). "
+                "Workspace presets can switch this.",
+            )
+        )
+        if seconds != int(wl.refresh_seconds):
+            wl.refresh_seconds = seconds
+            save_watchlist(wl)
+        if realtime:
+            c_note.caption(
+                f"Auto-refresh every {seconds}s: signals from cache; OHLCV at most one pair/tick, "
+                "only if due. Research timer — not executable prices."
+            )
+        else:
+            c_note.caption("Realtime off: the board stays put until **Manual update**.")
 
     run_every = seconds if realtime else None
 
@@ -1722,31 +1775,14 @@ def render_watch_board(cfg) -> None:
             now=now_utc(),
             sound=bool(sound_on),
         )
-        _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
         refreshed = st.session_state.get("board_last_refreshed")
         board_sess = classify_session(cfg=cfg)
         refresh_label = relabel(refreshed, cfg, seconds=True) if refreshed else "—"
-        st.markdown(
-            scan_strip_html(
-                session=board_sess.badge(),
-                refreshed=refresh_label,
-                tz=timezone_tag(cfg),
-                counts=scan_counts(rows),
-            ),
-            unsafe_allow_html=True,
-        )
         refresh_bit = (
             f"Board last refreshed at {relabel(refreshed, cfg, seconds=True)} "
             f"({timezone_tag(cfg)} clock). "
             if refreshed
             else ""
-        )
-        st.caption(
-            f"{refresh_bit}"
-            f"Session **{board_sess.badge()}** · {board_sess.note}. "
-            "Last is yfinance last/mid-ish — not broker bid/ask. "
-            "Spread is the config pip estimate (cost context). "
-            f"{clock_note(cfg)}"
         )
 
         news_map: dict = {}
@@ -1800,111 +1836,146 @@ def render_watch_board(cfg) -> None:
             models=models,
         )
         unhealthy = health_unhealthy(health)
-        st.markdown(awareness_status_html(health), unsafe_allow_html=True)
-        if unhealthy:
-            st.warning(
-                "Obsolete or failing inputs: "
-                + " · ".join(
-                    f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy
-                )
-            )
+        clock = now_utc()
+        cal_events = list(calendar.events) if calendar is not None else []
 
-        if not rows:
-            _empty_state(
-                "Watchlist is empty. Add a pair below.",
-                "The board will not invent prices. Fetch / Train live in the Lab sidebar.",
-                kicker="BOARD",
+        st.markdown(
+            section_head_html("Scan", "Board", note="pair row → detail drawer"),
+            unsafe_allow_html=True,
+        )
+        with st.container(border=True):
+            st.markdown(
+                scan_strip_html(
+                    session=board_sess.badge(),
+                    refreshed=refresh_label,
+                    tz=timezone_tag(cfg),
+                    counts=scan_counts(rows),
+                ),
+                unsafe_allow_html=True,
             )
-        else:
-            clock = now_utc()
-            cal_events = list(calendar.events) if calendar is not None else []
-            for row in rows:
-                attach_next_event(row, cal_events, now=clock, cfg=cfg)
-            flash = st.session_state.pop("paper_flash", None)
-            if flash:
-                st.success(flash)
             st.caption(
-                "Click a pair for chart / SHAP / news / risk / rationale. "
-                + PAPER_STALE_CAPTION
-                + " "
-                + PAPER_GATE_CAPTION
+                f"{refresh_bit}"
+                f"Session **{board_sess.badge()}** · {board_sess.note}. "
+                "Last is yfinance last/mid-ish — not broker bid/ask. "
+                "Spread is the config pip estimate (cost context). "
+                f"{clock_note(cfg)}"
             )
-            _render_dense_header()
-            selected = st.session_state.get("board_detail_pair")
-            if selected and selected not in {r.pair for r in rows}:
-                selected = None
-                st.session_state["board_detail_pair"] = None
-            for row in rows:
-                news = news_map.get(row.pair)
-                _render_dense_row(
-                    row,
-                    cfg,
-                    broker,
-                    news,
-                    calendar,
-                    selected=bool(selected == row.pair),
+            if not rows:
+                _empty_state(
+                    "Watchlist is empty. Add a pair below.",
+                    "The board will not invent prices. Fetch / Train live in the Lab sidebar.",
+                    kicker="BOARD",
                 )
-            if selected:
-                open_row = next((r for r in rows if r.pair == selected), None)
-                if open_row is not None:
-                    _render_detail_drawer(
-                        open_row,
+            else:
+                for row in rows:
+                    attach_next_event(row, cal_events, now=clock, cfg=cfg)
+                flash = st.session_state.pop("paper_flash", None)
+                if flash:
+                    st.success(flash)
+                st.caption(
+                    "Click a pair for chart / SHAP / news / risk / rationale. "
+                    + PAPER_STALE_CAPTION
+                    + " "
+                    + PAPER_GATE_CAPTION
+                )
+                _render_dense_header()
+                selected = st.session_state.get("board_detail_pair")
+                if selected and selected not in {r.pair for r in rows}:
+                    selected = None
+                    st.session_state["board_detail_pair"] = None
+                for row in rows:
+                    news = news_map.get(row.pair)
+                    _render_dense_row(
+                        row,
                         cfg,
                         broker,
-                        news_map.get(open_row.pair),
+                        news,
                         calendar,
+                        selected=bool(selected == row.pair),
                     )
 
+        selected = st.session_state.get("board_detail_pair") if rows else None
+        if selected and selected not in {r.pair for r in rows}:
+            selected = None
+        if selected:
+            st.markdown(
+                section_head_html("Detail", str(selected), note="Chart / SHAP / News / Risk / Rationale"),
+                unsafe_allow_html=True,
+            )
+            open_row = next((r for r in rows if r.pair == selected), None)
+            if open_row is not None:
+                _render_detail_drawer(
+                    open_row,
+                    cfg,
+                    broker,
+                    news_map.get(open_row.pair),
+                    calendar,
+                )
+
+        st.markdown(
+            section_head_html("Health", "Alerts, awareness, digest"),
+            unsafe_allow_html=True,
+        )
+        with st.container(border=True):
+            _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
+            st.markdown(awareness_status_html(health), unsafe_allow_html=True)
+            if unhealthy:
+                st.warning(
+                    "Obsolete or failing inputs: "
+                    + " · ".join(
+                        f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy
+                    )
+                )
+            exp_label = "Awareness"
+            if unhealthy:
+                exp_label += " — " + ", ".join(
+                    f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
+                    for r in unhealthy[:4]
+                )
+            with st.expander(exp_label, expanded=False):
+                st.caption(
+                    "Every source this desk fetches or observes. "
+                    "STALE / FAIL / MISSING never display as OK. "
+                    f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
+                )
+                st.caption(health_strip(health))
+                if health:
+                    st.markdown(awareness_table_html(health), unsafe_allow_html=True)
+                else:
+                    _empty_state(
+                        "Watchlist is empty — no sources to report",
+                        "Add a pair below. Awareness lists every feed this desk observes.",
+                        kicker="AWARENESS",
+                    )
+            try:
+                _render_daily_digest(
+                    cfg,
+                    health=health,
+                    calendar=calendar,
+                    broker=broker,
+                    alert_state=alert_state,
+                    board_rows=rows,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        st.markdown(section_head_html("More", "Calendar, paper, table"), unsafe_allow_html=True)
+        with st.container(border=True):
             with st.expander("Event calendar", expanded=False):
                 _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
-
             if broker is not None:
                 closed_n = list(getattr(broker, "list_closed", lambda: [])())
                 has_book = bool(broker.list_positions() or closed_n)
                 with st.expander("Paper portfolio (practice desk — not a broker)", expanded=has_book):
                     _render_paper_journal(broker, cfg)
-
-            table = board_table(rows, events=cal_events, now=clock, cfg=cfg)
-            cols_help = " | ".join(BOARD_TABLE_COLS)
-            with st.expander(f"Table view ({cols_help})"):
-                try:
-                    st.dataframe(style_board(table), use_container_width=True, hide_index=True)
-                except Exception:
-                    st.dataframe(table, use_container_width=True, hide_index=True)
-
-        exp_label = "Awareness"
-        if unhealthy:
-            exp_label += " — " + ", ".join(
-                f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
-                for r in unhealthy[:4]
-            )
-        with st.expander(exp_label, expanded=False):
-            st.caption(
-                "Every source this desk fetches or observes. "
-                "STALE / FAIL / MISSING never display as OK. "
-                f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
-            )
-            st.caption(health_strip(health))
-            if health:
-                st.markdown(awareness_table_html(health), unsafe_allow_html=True)
-            else:
-                _empty_state(
-                    "Watchlist is empty — no sources to report",
-                    "Add a pair below. Awareness lists every feed this desk observes.",
-                    kicker="AWARENESS",
-                )
-
-        try:
-            _render_daily_digest(
-                cfg,
-                health=health,
-                calendar=calendar,
-                broker=broker,
-                alert_state=alert_state,
-                board_rows=rows,
-            )
-        except Exception:  # noqa: BLE001
-            pass
+            if rows:
+                table = board_table(rows, events=cal_events, now=clock, cfg=cfg)
+                cols_help = " | ".join(BOARD_TABLE_COLS)
+                with st.expander(f"Table view ({cols_help})"):
+                    try:
+                        st.dataframe(style_board(table), use_container_width=True, hide_index=True)
+                    except Exception:
+                        st.dataframe(table, use_container_width=True, hide_index=True)
 
         ok_n = sum(1 for r in rows if r.validity == VALIDITY_OK)
         closed_n = sum(1 for r in rows if r.validity == VALIDITY_CLOSED)
@@ -1922,62 +1993,66 @@ def render_watch_board(cfg) -> None:
 
     _board_fragment()
 
-    st.markdown("**Watchlist**")
-    watched = wl.pair_symbols()
-    addable = [p for p in available if p not in watched]
-    a1, a2, a3, a4 = st.columns([1.3, 1.2, 1.4, 1.1])
-    with a1:
-        pick = st.selectbox(
-            "Add pair",
-            options=addable or ["(all config pairs are listed)"],
-            disabled=not addable,
-            key="watch_add_pick",
-        )
-    with a2:
-        typed = st.text_input("Or type a pair", placeholder="EURUSD", key="watch_typed_pair")
-    with a3:
-        tf_choice = st.selectbox(
-            "Pair timeframe",
-            options=["lab default (" + lab_iv + ")"] + list(KNOWN_INTERVALS),
-            key="watch_add_tf",
-        )
-    with a4:
-        add_clicked = st.button("Add to watchlist", use_container_width=True)
-    if add_clicked:
-        symbol = (typed or "").strip() or (pick if addable else "")
-        try:
-            iv = None if str(tf_choice).startswith("lab default") else str(tf_choice)
-            add_pair(wl, symbol, interval=iv)
+    st.markdown(
+        section_head_html("Watch", "Watchlist", note="add / remove pairs"),
+        unsafe_allow_html=True,
+    )
+    with st.container(border=True):
+        watched = wl.pair_symbols()
+        addable = [p for p in available if p not in watched]
+        a1, a2, a3, a4 = st.columns([1.3, 1.2, 1.4, 1.1])
+        with a1:
+            pick = st.selectbox(
+                "Add pair",
+                options=addable or ["(all config pairs are listed)"],
+                disabled=not addable,
+                key="watch_add_pick",
+            )
+        with a2:
+            typed = st.text_input("Or type a pair", placeholder="EURUSD", key="watch_typed_pair")
+        with a3:
+            tf_choice = st.selectbox(
+                "Pair timeframe",
+                options=["lab default (" + lab_iv + ")"] + list(KNOWN_INTERVALS),
+                key="watch_add_tf",
+            )
+        with a4:
+            add_clicked = st.button("Add to watchlist", use_container_width=True)
+        if add_clicked:
+            symbol = (typed or "").strip() or (pick if addable else "")
+            try:
+                iv = None if str(tf_choice).startswith("lab default") else str(tf_choice)
+                add_pair(wl, symbol, interval=iv)
+                save_watchlist(wl)
+                st.session_state["watch_clear_typed"] = True
+                st.session_state.pop("watch_rows", None)
+                st.rerun()
+            except WatchlistError as exc:
+                st.error(str(exc))
+
+        d1, d2, d3 = st.columns([1.6, 1.2, 2.2])
+        with d1:
+            rm_index = max(len(watched) - 1, 0) if watched else 0
+            rm = st.selectbox(
+                "Remove pair",
+                options=watched or ["(watchlist empty)"],
+                index=rm_index,
+                disabled=not watched,
+                key="watch_remove_" + "-".join(watched) if watched else "watch_remove_empty",
+            )
+        with d2:
+            remove_clicked = st.button(
+                "Remove from watchlist",
+                disabled=not watched,
+                use_container_width=True,
+            )
+        with d3:
+            st.caption("Persisted to disk so the list survives reruns.")
+        if remove_clicked and watched:
+            remove_pair(wl, str(rm))
             save_watchlist(wl)
-            st.session_state["watch_clear_typed"] = True
             st.session_state.pop("watch_rows", None)
             st.rerun()
-        except WatchlistError as exc:
-            st.error(str(exc))
-
-    d1, d2, d3 = st.columns([1.6, 1.2, 2.2])
-    with d1:
-        rm_index = max(len(watched) - 1, 0) if watched else 0
-        rm = st.selectbox(
-            "Remove pair",
-            options=watched or ["(watchlist empty)"],
-            index=rm_index,
-            disabled=not watched,
-            key="watch_remove_" + "-".join(watched) if watched else "watch_remove_empty",
-        )
-    with d2:
-        remove_clicked = st.button(
-            "Remove from watchlist",
-            disabled=not watched,
-            use_container_width=True,
-        )
-    with d3:
-        st.caption("Persisted to disk so the list survives reruns.")
-    if remove_clicked and watched:
-        remove_pair(wl, str(rm))
-        save_watchlist(wl)
-        st.session_state.pop("watch_rows", None)
-        st.rerun()
 
     st.divider()
 

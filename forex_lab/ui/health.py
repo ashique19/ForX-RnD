@@ -475,8 +475,8 @@ def awareness_table_html(rows: list[dict[str, str]]) -> str:
         "OFF": (NEUTRAL_BG, MUTED),
     }
     head = "".join(
-        f'<th style="text-align:left;padding:3px 8px;color:{MUTED};'
-        f'font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;'
+        f'<th style="text-align:left;padding:6px 10px;color:{MUTED};'
+        f'font-size:13px;letter-spacing:0.08em;text-transform:uppercase;'
         f'border-bottom:1px solid {BORDER}">{escape(col)}</th>'
         for col in AWARENESS_COLS
     )
@@ -489,16 +489,18 @@ def awareness_table_html(rows: list[dict[str, str]]) -> str:
             val = escape(str(row.get(col) or ""))
             if col == "Status":
                 cells.append(
-                    f'<td style="padding:4px 8px;background:{bg};color:{fg};'
-                    f'font-weight:800">{val}</td>'
+                    f'<td style="padding:7px 10px;background:{bg};color:{fg};'
+                    f'font-weight:800;font-size:15px">{val}</td>'
                 )
             elif col == "Last OK":
                 cells.append(
-                    f'<td style="padding:4px 8px;color:{TEXT};font-variant-numeric:tabular-nums;'
-                    f'white-space:nowrap">{val}</td>'
+                    f'<td style="padding:7px 10px;color:{TEXT};font-variant-numeric:tabular-nums;'
+                    f'white-space:nowrap;font-size:15px">{val}</td>'
                 )
             else:
-                cells.append(f'<td style="padding:4px 8px;color:{TEXT}">{val}</td>')
+                cells.append(
+                    f'<td style="padding:7px 10px;color:{TEXT};font-size:15px">{val}</td>'
+                )
         body_parts.append(f"<tr>{''.join(cells)}</tr>")
     body = "".join(body_parts) or (
         f'<tr><td colspan="5" style="padding:8px;color:{MUTED}">No sources — watchlist empty.</td></tr>'
@@ -506,8 +508,8 @@ def awareness_table_html(rows: list[dict[str, str]]) -> str:
     return (
         f'<div class="fx-awareness-table" style="overflow-x:auto;border:1px solid {BORDER};'
         f'background:{ELEVATED};border-radius:4px">'
-        f'<table style="width:100%;border-collapse:collapse;font-size:0.78rem;'
-        f'font-variant-numeric:tabular-nums"><thead><tr>{head}</tr></thead>'
+        f'<table style="width:100%;border-collapse:collapse;font-size:15px;'
+        f'font-variant-numeric:tabular-nums;color:{TEXT}"><thead><tr>{head}</tr></thead>'
         f"<tbody>{body}</tbody></table></div>"
     )
 

@@ -7,6 +7,7 @@ pyyaml>=6.0
 matplotlib>=3.7
 joblib>=1.3
 streamlit>=1.32
+plotly>=5.18
 # Optional extras — not required. The lab ships a causal TA subset in
 # forex_lab/ta_pack.py (backend: native) so CI does not need numba.
 # `pip install pandas-ta` enables feature_extras.pandas_ta.backend: pandas_ta.
