@@ -580,38 +580,40 @@ def ohlc_header_html(text: str, *, up: bool = True) -> str:
     return f'<div class="fx-ohlc-bar {tone}">{_esc(text)}</div>'
 
 
+def _view_block_html(block: object) -> str:
+    title = str(getattr(block, "title", "") or "")
+    tone = str(getattr(block, "tone", "") or "hold")
+    bullets = list(getattr(block, "bullets", None) or [])
+    if not title and not bullets:
+        return ""
+    items = "".join(f"<li>{_esc(str(b))}</li>" for b in bullets)
+    return (
+        f'<section class="fx-view {_esc(tone)}">'
+        f'<h2 class="fx-view-title">{_esc(title)}</h2>'
+        f'<ul class="fx-view-list fx-advice-list">{items}</ul>'
+        f"</section>"
+    )
+
+
 def _advice_card_html(view: object) -> str:
-    kicker = _esc(str(getattr(view, "kicker", "") or ""))
+    """Fallback one-block card when only a HorizonCard / AdviceView is passed."""
+    kicker = str(getattr(view, "kicker", "") or "")
     side = str(getattr(view, "side", "") or "HOLD").upper()
     tone = {"BUY": "buy", "SELL": "sell"}.get(side, "hold")
+    title = {"BUY": "Bullish view", "SELL": "Bearish view"}.get(side, kicker or "View")
     line = str(getattr(view, "line", "") or "")
-    if not line:
-        action = _esc(str(getattr(view, "action", "") or ""))
-        tp = _esc(str(getattr(view, "take_profit", "n/a") or "n/a"))
-        sl = _esc(str(getattr(view, "stop_loss", "n/a") or "n/a"))
-        timeline = _esc(str(getattr(view, "timeline", "") or ""))
-        now_at = _esc(str(getattr(view, "now_at", "") or ""))
-        duration = timeline.replace("duration ", "") if timeline else ""
-        if now_at:
-            line = (
-                f"{kicker}: {action}: now at {now_at}, stop loss {sl}, "
-                f"target {tp}, duration {duration}."
-            )
-        else:
-            line = f"{kicker}: {action}: stop loss {sl}, target {tp}, {timeline}."
+    duration = str(getattr(view, "duration", "") or "")
+    bullets: list[str] = []
+    if line:
+        bullets.append(line)
+    if duration and "Timeline:" not in line:
+        bullets.append(f"Timeline: {duration}.")
     missing = str(getattr(view, "missing_reason", "") or "")
     available = bool(getattr(view, "available", True))
-    body = _esc(line)
-    extra = ""
-    if not available and missing and "need Fetch" in missing:
-        extra = f'<div class="fx-advice-note">{_esc(missing)}</div>'
-    return (
-        f'<article class="fx-advice-card {tone}">'
-        f'<div class="fx-advice-kicker">{kicker}</div>'
-        f'<p class="fx-advice-line">{body}</p>'
-        f"{extra}"
-        f"</article>"
-    )
+    if not available and missing and "need Fetch" in missing and missing not in bullets:
+        bullets.append(missing)
+    block = type("Block", (), {"title": title, "tone": tone, "bullets": bullets})()
+    return _view_block_html(block)
 
 
 def _invalidation_html(lines: list[str] | tuple[str, ...] | None) -> str:
@@ -619,43 +621,90 @@ def _invalidation_html(lines: list[str] | tuple[str, ...] | None) -> str:
         return ""
     items = "".join(f"<li>{_esc(str(x))}</li>" for x in lines)
     return (
-        f'<div class="fx-invalid">'
-        f'<div class="fx-invalid-kicker">If scenario changes</div>'
+        f'<section class="fx-prose fx-invalid">'
+        f'<h2 class="fx-prose-title">If scenario changes</h2>'
         f'<ul class="fx-invalid-list">{items}</ul>'
+        f"</section>"
+    )
+
+
+def signal_brief_lead_html(
+    *,
+    headline: str,
+    byline: str = "",
+    blocks: list | tuple | None = None,
+    primary: object | None = None,
+    alternate: object | None = None,
+    horizons: list | tuple | None = None,
+) -> str:
+    """Headline + Bearish/Bullish blocks — chart belongs under this in the reading column."""
+    views = ""
+    if blocks:
+        for block in blocks:
+            views += _view_block_html(block)
+    else:
+        cards = list(horizons or [])
+        if not cards:
+            if primary is not None:
+                cards.append(primary)
+            if alternate is not None:
+                cards.append(alternate)
+        for view in cards:
+            views += _advice_card_html(view)
+    by = f'<p class="fx-brief-byline">{_esc(byline)}</p>' if byline else ""
+    return (
+        f'<div class="fx-brief-lead">'
+        f'<h1 class="fx-brief-title">{_esc(headline)}</h1>'
+        f"{by}"
+        f"{views}"
         f"</div>"
     )
+
+
+def signal_brief_prose_html(
+    *,
+    why: str = "",
+    invalidation: list[str] | tuple[str, ...] | None = None,
+    disclaimer: str = "",
+) -> str:
+    why_bit = ""
+    if why:
+        why_bit = (
+            f'<section class="fx-prose fx-why-block">'
+            f'<h2 class="fx-prose-title">Why this label</h2>'
+            f'<p class="fx-why">{_esc(why)}</p>'
+            f"</section>"
+        )
+    disc = f'<p class="fx-brief-disc">{_esc(disclaimer)}</p>' if disclaimer else ""
+    return f'<div class="fx-brief-prose">{why_bit}{_invalidation_html(invalidation)}{disc}</div>'
 
 
 def signal_brief_html(
     *,
     headline: str,
+    byline: str = "",
     primary: object | None = None,
     alternate: object | None = None,
     horizons: list | tuple | None = None,
+    blocks: list | tuple | None = None,
     why: str = "",
     invalidation: list[str] | tuple[str, ...] | None = None,
     disclaimer: str = "",
 ) -> str:
-    cards = ""
-    views = list(horizons or [])
-    if not views:
-        if primary is not None:
-            views.append(primary)
-        if alternate is not None:
-            views.append(alternate)
-    for view in views:
-        cards += _advice_card_html(view)
-    why_bit = f'<p class="fx-why">{_esc(why)}</p>' if why else ""
-    disc = f'<div class="fx-brief-disc">{_esc(disclaimer)}</div>' if disclaimer else ""
-    return (
-        f'<div class="fx-brief">'
-        f'<h2 class="fx-brief-title">{_esc(headline)}</h2>'
-        f'<div class="fx-advice-grid">{cards}</div>'
-        f"{why_bit}"
-        f"{_invalidation_html(invalidation)}"
-        f"{disc}"
-        f"</div>"
+    lead = signal_brief_lead_html(
+        headline=headline,
+        byline=byline,
+        blocks=blocks,
+        primary=primary,
+        alternate=alternate,
+        horizons=horizons,
     )
+    prose = signal_brief_prose_html(
+        why=why,
+        invalidation=invalidation,
+        disclaimer=disclaimer,
+    )
+    return f'<article class="fx-brief">{lead}{prose}</article>'
 
 
 def tech_bullets_html(bullets: list[str] | tuple[str, ...]) -> str:
@@ -663,10 +712,10 @@ def tech_bullets_html(bullets: list[str] | tuple[str, ...]) -> str:
         return ""
     items = "".join(f"<li>{_esc(str(b))}</li>" for b in bullets)
     return (
-        f'<div class="fx-tech">'
-        f'<div class="fx-tech-kicker">Technical notes</div>'
+        f'<section class="fx-prose fx-tech">'
+        f'<h2 class="fx-prose-title">Technical notes</h2>'
         f'<ul class="fx-tech-list">{items}</ul>'
-        f"</div>"
+        f"</section>"
     )
 
 TERMINAL_CSS = """
@@ -1508,114 +1557,127 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
   font-size: 16px !important;
 }
 .fx-brief {
-  padding: 6px 2px 8px;
+  padding: 4px 2px 12px;
   margin: 0 0 8px;
-  max-width: 58rem;
+  max-width: 46rem;
 }
+.fx-brief-lead { margin: 0 0 8px; }
 .fx-brief-title {
-  font-size: 24px;
+  font-size: 32px;
   font-weight: 800;
-  line-height: 1.28;
-  letter-spacing: 0.01em;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
   color: var(--fx-text-bright);
-  margin: 4px 0 16px;
+  margin: 10px 0 14px;
+  max-width: 40rem;
 }
-.fx-advice-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin: 0 0 18px;
-}
-.fx-advice-card {
-  background: var(--fx-elev);
-  border: 1px solid var(--fx-border-strong);
-  border-radius: 10px;
-  padding: 16px 18px 16px;
-}
-.fx-advice-card.buy { border-color: var(--fx-buy); }
-.fx-advice-card.sell { border-color: var(--fx-sell); }
-.fx-advice-kicker {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fx-muted);
-  margin-bottom: 8px;
-}
-.fx-advice-line {
-  font-size: 17px;
-  line-height: 1.5;
-  color: var(--fx-text);
-  margin: 0;
+.fx-brief-byline {
+  font-size: 15px;
   font-weight: 600;
+  color: var(--fx-muted);
+  margin: 0 0 32px;
+  line-height: 1.4;
 }
-.fx-invalid {
-  margin: 4px 0 16px;
-  padding: 12px 14px 10px;
-  border: 1px solid var(--fx-border);
-  border-radius: 10px;
-  background: var(--fx-card);
-  max-width: 48rem;
+.fx-view {
+  margin: 0 0 28px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  max-width: 40rem;
 }
-.fx-invalid-kicker {
-  font-size: 12px;
+.fx-view-title {
+  font-size: 22px;
   font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fx-warn);
-  margin-bottom: 6px;
+  letter-spacing: -0.015em;
+  color: var(--fx-text-bright);
+  margin: 0 0 12px;
+  line-height: 1.25;
 }
-.fx-invalid-list {
-  margin: 0;
-  padding: 0 0 0 1.15rem;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--fx-text);
-}
+.fx-view.sell .fx-view-title { box-shadow: inset 0 -3px 0 var(--fx-sell); display: inline-block; padding-bottom: 4px; }
+.fx-view.buy .fx-view-title { box-shadow: inset 0 -3px 0 var(--fx-buy); display: inline-block; padding-bottom: 4px; }
+.fx-view-list,
 .fx-advice-list {
   margin: 0;
-  padding: 0 0 0 1.1rem;
-  font-size: 16px;
-  line-height: 1.55;
+  padding: 0 0 0 1.25rem;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--fx-text);
+  font-weight: 500;
+}
+.fx-view-list li,
+.fx-advice-list li {
+  margin: 0 0 8px;
+}
+.fx-advice-grid { display: block; }
+.fx-advice-card { background: transparent; border: 0; padding: 0; }
+.fx-advice-kicker { display: none; }
+.fx-advice-line {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--fx-text);
+  margin: 0;
+  font-weight: 500;
+}
+.fx-prose {
+  margin: 28px 0 0;
+  padding: 0;
+  max-width: 40rem;
+  background: transparent;
+  border: 0;
+}
+.fx-prose-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--fx-text-bright);
+  margin: 0 0 12px;
+  line-height: 1.25;
+}
+.fx-invalid {
+  margin: 28px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  max-width: 40rem;
+}
+.fx-invalid-kicker { display: none; }
+.fx-invalid-list {
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  font-size: 17px;
+  line-height: 1.7;
   color: var(--fx-text);
 }
-.fx-advice-list b { color: var(--fx-text-bright); font-variant-numeric: tabular-nums; }
 .fx-advice-note {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--fx-muted);
-  margin-top: 10px;
-  line-height: 1.4;
+  margin-top: 8px;
+  line-height: 1.45;
 }
 .fx-why {
   font-size: 17px;
-  line-height: 1.55;
+  line-height: 1.7;
   color: var(--fx-text);
-  margin: 0 0 10px;
-  max-width: 48rem;
+  margin: 0 0 8px;
+  max-width: 40rem;
 }
 .fx-brief-disc {
   font-size: 14px;
   color: var(--fx-muted);
-  margin: 0 0 18px;
-  line-height: 1.4;
+  margin: 22px 0 8px;
+  line-height: 1.45;
+  max-width: 40rem;
 }
 .fx-tech {
-  padding: 8px 2px 4px;
-  max-width: 48rem;
+  padding: 28px 2px 4px;
+  max-width: 40rem;
 }
-.fx-tech-kicker {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fx-buy);
-  margin-bottom: 6px;
-}
+.fx-tech-kicker { display: none; }
 .fx-tech-list {
   margin: 0;
-  padding: 0 0 0 1.15rem;
-  font-size: 16px;
-  line-height: 1.5;
+  padding: 0 0 0 1.25rem;
+  font-size: 17px;
+  line-height: 1.7;
   color: var(--fx-text);
 }
 .fx-ohlc-bar {
@@ -1662,8 +1724,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
     padding-right: 0.12rem !important;
   }
   .fx-title, .fx-clock { font-size: 20px; }
-  .fx-brief-title { font-size: 22px; }
-  .fx-advice-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fx-brief-title { font-size: 26px; }
+  .fx-view-title, .fx-prose-title { font-size: 20px; }
 }
 """
 

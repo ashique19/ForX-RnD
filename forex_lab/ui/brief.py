@@ -62,6 +62,15 @@ class AdviceView:
 
 
 @dataclass
+class AdviceBlock:
+    """Bearish / Bullish reading block — heading + bullets, DailyForex-like hierarchy."""
+
+    title: str
+    tone: str
+    bullets: list[str] = field(default_factory=list)
+
+
+@dataclass
 class SignalBrief:
     pair: str
     pair_slash: str
@@ -70,7 +79,9 @@ class SignalBrief:
     clock: str
     blocked: bool
     block_reason: str
+    byline: str = ""
     horizons: list[HorizonCard] = field(default_factory=list)
+    blocks: list[AdviceBlock] = field(default_factory=list)
     primary: AdviceView | None = None
     alternate: AdviceView | None = None
     why: str = ""
@@ -342,6 +353,48 @@ def _horizon_card(
     )
 
 
+def advice_blocks(
+    cards: list[HorizonCard],
+    *,
+    pair_slash: str = "",
+    board_side: str = "",
+) -> list[AdviceBlock]:
+    """Bearish view then Bullish view. Opposite side reuses the same ATR pair, swapped.
+
+    Does not invent levels: missing TF stays ``need Fetch/Train`` with n/a.
+    """
+    del pair_slash, board_side
+    out: list[AdviceBlock] = []
+    for title, want, tone in (
+        ("Bearish view", "SELL", "sell"),
+        ("Bullish view", "BUY", "buy"),
+    ):
+        bullets: list[str] = []
+        for card in cards or []:
+            kicker = card.kicker or "Hourly"
+            if card.side == "HOLD" and (not card.available or card.stop_loss in {"", "n/a"}):
+                bullets.append(f"{kicker}: No trade (HOLD) at {card.now_at}.")
+                bullets.append(f"Timeline: {card.duration}.")
+                continue
+            if not card.available or card.stop_loss in {"", "n/a"} or card.target in {"", "n/a"}:
+                reason = card.missing_reason or f"need Fetch/Train for {card.interval}"
+                bullets.append(f"{kicker}: {reason}.")
+                continue
+            if card.side == want:
+                sl, tp, act_side = card.stop_loss, card.target, card.side
+            else:
+                sl, tp, act_side = card.target, card.stop_loss, want
+            action = potential_action(act_side)
+            bullets.append(
+                f"{kicker}: {action}: now at {card.now_at}, stop loss {sl}, target {tp}."
+            )
+            bullets.append(f"Timeline: {card.duration}.")
+        if not bullets:
+            bullets.append(f"No {title.lower()} on this cache.")
+        out.append(AdviceBlock(title=title, tone=tone, bullets=bullets))
+    return out
+
+
 def _as_advice_view(card: HorizonCard | None) -> AdviceView | None:
     if card is None:
         return None
@@ -535,7 +588,8 @@ def build_signal_brief(
     token = validity.strip().upper().split()[0] if validity else ""
     clock = clock_label or "Asia/Dhaka"
     bias = bias_label(getattr(row, "buy_sell", None), validity=validity)
-    headline = f"{slash} · {bias} · {clock}"
+    headline = f"{slash} Forex Signal: {bias}"
+    byline = f"Cached research note · {clock} · not an order"
     if token in _BLOCKED:
         reason = (
             str(getattr(row, "validity_reason", "") or "")
@@ -548,6 +602,7 @@ def build_signal_brief(
             headline=headline,
             bias=bias,
             clock=clock,
+            byline=byline,
             blocked=True,
             block_reason=reason,
             why="",
@@ -597,9 +652,15 @@ def build_signal_brief(
         headline=headline,
         bias=bias,
         clock=clock,
+        byline=byline,
         blocked=False,
         block_reason="",
         horizons=horizons,
+        blocks=advice_blocks(
+            horizons,
+            pair_slash=slash,
+            board_side=str(getattr(row, "buy_sell", "") or ""),
+        ),
         primary=_as_advice_view(hourly),
         alternate=_as_advice_view(daily),
         why=synthesize_why(row, news=news, clock_label=clock),

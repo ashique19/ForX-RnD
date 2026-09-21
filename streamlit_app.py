@@ -130,6 +130,8 @@ from forex_lab.ui.theme import (
     session_fill,
     signal_badge_html,
     signal_brief_html,
+    signal_brief_lead_html,
+    signal_brief_prose_html,
     signal_stack_html,
     tech_bullets_html,
     validity_badge_html,
@@ -1230,17 +1232,16 @@ def _render_detail_drawer(
             )
             return
         st.markdown(
-            signal_brief_html(
+            signal_brief_lead_html(
                 headline=brief.headline,
+                byline=brief.byline,
+                blocks=brief.blocks,
                 horizons=brief.horizons,
-                why=brief.why,
-                invalidation=brief.invalidation,
-                disclaimer=brief.disclaimer,
             ),
             unsafe_allow_html=True,
         )
         st.markdown(
-            section_head_html("Technical", "Cached chart", note="yfinance OHLCV — not a live feed"),
+            '<h2 class="fx-prose-title">Technical chart</h2>',
             unsafe_allow_html=True,
         )
         chart_tf, ema200, show_rsi = _render_chart_toolbar(row, cfg)
@@ -1250,6 +1251,14 @@ def _render_detail_drawer(
             chart_tf=chart_tf,
             show_rsi=show_rsi,
             show_ema200=ema200,
+        )
+        st.markdown(
+            signal_brief_prose_html(
+                why=brief.why,
+                invalidation=brief.invalidation,
+                disclaimer=brief.disclaimer,
+            ),
+            unsafe_allow_html=True,
         )
         if brief.tech_bullets:
             st.markdown(tech_bullets_html(brief.tech_bullets), unsafe_allow_html=True)

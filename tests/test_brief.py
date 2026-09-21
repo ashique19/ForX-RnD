@@ -11,6 +11,7 @@ from forex_lab.freshness import VALIDITY_MISSING, VALIDITY_OK, VALIDITY_STALE
 from forex_lab.news import NewsBundle
 from forex_lab.ui.brief import (
     DISCLAIMER,
+    advice_blocks,
     bias_label,
     build_signal_brief,
     duration_phrase,
@@ -21,7 +22,7 @@ from forex_lab.ui.brief import (
     synthesize_why,
     tech_bullets,
 )
-from forex_lab.ui.theme import signal_brief_html, tech_bullets_html
+from forex_lab.ui.theme import signal_brief_html, signal_brief_lead_html, tech_bullets_html
 
 
 def _row(**kw):
@@ -114,8 +115,9 @@ def test_brief_hourly_and_daily_from_atr_not_vendor_copy():
         clock_label="2026-09-21 21:42 Asia/Dhaka",
     )
     assert not brief.blocked
-    assert brief.headline.startswith("EUR/USD · Bullish outlook ·")
-    assert "Asia/Dhaka" in brief.headline
+    assert brief.headline.startswith("EUR/USD Forex Signal: Bullish outlook")
+    assert "Asia/Dhaka" in brief.byline
+    assert "Asia/Dhaka" in brief.clock or "Asia/Dhaka" in brief.byline
     assert len(brief.horizons) == 2
     hourly, daily_card = brief.horizons
     assert hourly.kicker == "Hourly"
@@ -139,15 +141,28 @@ def test_brief_hourly_and_daily_from_atr_not_vendor_copy():
     assert any("STALE" in x for x in brief.invalidation)
     html = signal_brief_html(
         headline=brief.headline,
+        byline=brief.byline,
+        blocks=brief.blocks,
         horizons=brief.horizons,
         why=brief.why,
         invalidation=brief.invalidation,
         disclaimer=DISCLAIMER,
     )
     assert "Potential buy" in html
+    assert "Bearish view" in html
+    assert "Bullish view" in html
+    assert "Timeline:" in html
     assert "If scenario changes" in html
+    assert "Why this label" in html
     assert "now at" in html
+    assert "DailyForex" not in html
+    assert "Crispus" not in html
     assert "<script" not in html
+    lead = signal_brief_lead_html(
+        headline=brief.headline, byline=brief.byline, blocks=brief.blocks
+    )
+    assert "fx-brief-title" in lead and "Bearish view" in lead
+    assert "Why this label" not in lead
 
 
 def test_missing_daily_says_need_fetch_not_fake_levels(monkeypatch):
@@ -182,7 +197,8 @@ def test_why_and_html_escape():
     why = synthesize_why(row, news=None, clock_label="Asia/Dhaka")
     assert "research label" in why.lower()
     html = signal_brief_html(
-        headline="EUR/USD · Bearish outlook · Asia/Dhaka",
+        headline="EUR/USD Forex Signal: Bearish outlook",
+        byline="Cached research note · Asia/Dhaka · not an order",
         primary=None,
         why="<script>alert(1)</script>",
         invalidation=["<script>x</script>"],
@@ -192,6 +208,7 @@ def test_why_and_html_escape():
     assert "fx-brief-title" in html
     assert "fx-why" in html
     assert "If scenario changes" in html
+    assert "fx-brief-byline" in html
     tech = tech_bullets_html(["Last close is below EMA(50) at 1.14."])
     assert "EMA(50)" in tech
     assert "<script" not in tech_bullets_html(["<script>x</script>"])
@@ -203,3 +220,26 @@ def test_tech_bullets_need_cache():
     df = pd.DataFrame({"Close": [1.1, 1.2]})
     out = tech_bullets(row, df, {"rsi_period": 14})
     assert out
+
+
+def test_bearish_bullish_blocks_swap_same_atr_levels():
+    df = generate_synthetic_ohlcv(bars=800, seed=7)
+    daily = generate_synthetic_ohlcv(bars=80, interval="1d", seed=7)
+    brief = build_signal_brief(
+        _row(buy_sell="SELL"),
+        cfg=_cfg(),
+        ohlcv=df,
+        daily_ohlcv=daily,
+        clock_label="2026-09-21 21:42 Asia/Dhaka",
+    )
+    assert [b.title for b in brief.blocks] == ["Bearish view", "Bullish view"]
+    bear, bull = brief.blocks
+    hourly = next(c for c in brief.horizons if c.kicker == "Hourly")
+    assert hourly.available
+    bear_line = next(x for x in bear.bullets if x.startswith("Hourly: Potential sell"))
+    bull_line = next(x for x in bull.bullets if x.startswith("Hourly: Potential buy"))
+    assert hourly.stop_loss in bear_line and hourly.target in bear_line
+    assert hourly.target in bull_line and hourly.stop_loss in bull_line
+    assert "now at 1.14863" in bear_line
+    rebuilt = advice_blocks(brief.horizons, board_side="SELL")
+    assert rebuilt[0].title == "Bearish view"
