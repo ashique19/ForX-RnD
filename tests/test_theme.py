@@ -391,11 +391,14 @@ def test_chrome_cards_borders_and_section_heads():
     detail_at = source.find('section_head_html("Detail"')
     assert 0 < scan_at < detail_at
     assert source.count('section_head_html("Scan", "Board"') == 1
-    assert "fx-masthead-top" in source
     assert "nav_clock_html" in source
     assert "_render_mode_nav(cfg)" in source
     assert "_nav_clock_fragment" in source
-    # Clock is in the slim nav, not a standalone masthead-right block.
+    # Hero title card and disclaimer expander are gone — clock + theme live in the slim nav.
+    assert "_render_masthead" not in source
+    assert "SIGNAL SCREEN" not in source
+    assert "Disclaimer (research only" not in source
+    assert "fx-masthead" not in source
     assert "fx-masthead-right" not in source
     # Decision default — Calendar/Paper/Lab/Awareness are exclusive destinations.
     assert "render_calendar_mode(cfg)" in source

@@ -164,33 +164,25 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     for name in ("Decision", "Calendar", "Paper", "Lab", "Awareness"):
         assert name in nav_labels, f"missing top-level nav {name}"
 
-    assert "decision-support" in low or "research only" in low or "research label" in low
     assert "yfinance" in low or "broker" in low
-    assert "signal screen" in low
     assert "news context, not a trade instruction" in low or "news context" in low
-    assert "last bar" in low or "board last refreshed" in low or "validity" in low
-    assert "sparkline" in low or "spark" in low or "risk" in low or "candle" in low
+    assert "last bar" in low or "board last refreshed" in low or "last/mid-ish" in low
     assert "paper" in low
-    assert "practice desk" in low or "brokerport" in low or "broker.port" in low
     assert "mtf" in low
-    assert "advisory" in low or "not an order" in low or "never auto-submitted" in low
     assert "last/mid-ish" in low or "mid-ish" in low
     assert "spread" in low
-    assert "session" in low
+    assert "session" in low or "fx-scan-sess" in joined
     assert "not broker bid/ask" in low or "not broker" in low
     assert "asia/dhaka" in low or "dhaka" in low
     assert "fx-nav-clock" in joined
-    assert "alert sound" in low or "alerts" in low
     assert "not a live edge" in low or "paper right/wrong" in low
     assert "data●" in low or "next event" in low
     assert "disabled when" in low and "stale" in low
-    assert "detail" in low
     assert "workspace" in low
-    assert "scalp" in low or "swing" in low
-    assert "paper journal" in low or "brokerport" in low
-    assert "fx-masthead" in joined or "data-fx-theme" in joined or "--fx-buy" in joined
-    assert "fx-legend" in joined or "stale outranks" in low
+    assert "data-fx-theme" in joined or "--fx-buy" in joined
     assert "fx-scan" in joined or "fx-empty" in joined or "seconds to decide" in low
+    assert "signal screen" not in low
+    assert "disclaimer (research only" not in low
     buy_btns = [b for b in at.button if "BUY" in str(getattr(b, "label", "")).upper()]
     sell_btns = [b for b in at.button if "SELL" in str(getattr(b, "label", "")).upper()]
     assert buy_btns and sell_btns

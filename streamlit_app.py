@@ -120,7 +120,6 @@ from forex_lab.ui.theme import (
     inject_terminal_css,
     nav_clock_html,
     scan_counts,
-    scan_legend_html,
     scan_strip_html,
     section_head_html,
     card_html,
@@ -183,37 +182,6 @@ st.set_page_config(
         "Report a bug": None,
         "About": "FX signal screen — research only. Paper BrokerPort. No live orders.",
     },
-)
-
-DISCLAIMER = (
-    "**Decision-support only — not financial advice, not auto-trading.** "
-    "No live broker APIs. **Paper Buy/Sell/Close** records a local practice fill only "
-    "— not a vendor order, not auto-submit, not linked to a real account. "
-    "yfinance quotes are **not** executable broker prices. "
-    "News can be late, incomplete, or wrong; the bias note is a keyword heuristic on fetched headlines, not a call. "
-    "The event calendar is an unofficial Forex Factory weekly dump (cached; fail-soft if offline) — "
-    "not an official Fed/BLS/ECB schedule, not a trade instruction. "
-    "Advisory cards (no new opens / hold / close / tighten SL) never auto-submit via BrokerPort. "
-    "MTF badges use causal higher-TF SMA slope on the same CSV — not a live trend service. "
-    "Last on the board is yfinance **last/mid-ish**, not executable bid/ask. "
-    "Spread is the **config pip estimate** (cost context), not your broker’s live spread. "
-    "Session is a UTC-window clock badge (Asia/London/NY); times on the desk are **Asia/Dhaka**. "
-    "Paper uPnL is a local mark vs that last/mid-ish cache — **not** live broker PnL. "
-    "Paper RIGHT/WRONG is a local lookback vs cached bars (TP/SL or horizon), not a live edge. "
-    "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
-    "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
-    "**Paper BUY/SELL is disabled when Data● is STALE or MISSING** (caption on the board). "
-    "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
-    "it never auto-submits via BrokerPort. Optional alert sound is **off by default**. "
-    "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket. "
-    "Click a board row for a **signal brief** (bias headline, primary + alternate TP/SL, short why, then chart). "
-    "**Workspace** presets (scalp / swing / save-as) switch watchlist pairs, TF, "
-    "realtime interval, and min-confidence display only — they do **not** wipe the "
-    "paper journal or change BrokerPort. "
-    "The **daily digest** is yesterday/today in Asia/Dhaka (freshness, flips, paper "
-    "RIGHT/WRONG, calendar, Awareness FAIL/STALE) — not a live edge. "
-    "The **champion/challenger retrain gate** promotes a walk-forward challenger only "
-    "if PF / total return / max DD improve (else null). Not a live edge."
 )
 
 BOARD_HELP = """
@@ -305,7 +273,7 @@ def _mark_board_reload() -> None:
 
 
 def _render_mode_nav(cfg) -> str:
-    """Slim destinations + Asia/Dhaka clock on the right. Only the active mode renders below."""
+    """Slim destinations + Asia/Dhaka clock + theme on the right. Only the active mode renders below."""
     active = _active_mode()
     n_modes = len(DESK_MODES)
     try:
@@ -345,6 +313,15 @@ def _render_mode_nav(cfg) -> str:
 
     with cols[-1]:
         _nav_clock_fragment()
+        st.radio(
+            "Theme",
+            options=("light", "dark"),
+            format_func=lambda x: "Light" if x == "light" else "Dark",
+            key="desk_theme",
+            horizontal=True,
+            label_visibility="collapsed",
+            help="Light is the default desk. Dark is optional. Presentation only.",
+        )
     st.markdown('<div class="fx-nav-gap"></div>', unsafe_allow_html=True)
     if clicked and clicked != active:
         st.session_state.desk_mode = clicked
@@ -1879,35 +1856,6 @@ def _render_workspace_bar(cfg, wl) -> None:
             st.error(str(exc))
 
 
-def _render_masthead(cfg) -> None:
-    """Brand + legend + theme. Clock lives in the slim top nav, not this card."""
-    chrome, toggle = st.columns([6.35, 1.15])
-    with chrome:
-        st.markdown(
-            f'<div class="fx-masthead">'
-            f'<div class="fx-masthead-top">'
-            f'<div class="fx-masthead-left">'
-            f'<span class="fx-brand">FX</span>'
-            f'<span class="fx-title">SIGNAL SCREEN</span>'
-            f'<span class="fx-chip">PAPER</span>'
-            f'<span class="fx-chip muted">RESEARCH</span>'
-            f"</div>"
-            f"</div>"
-            f"{scan_legend_html()}"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-    with toggle:
-        st.markdown('<div class="fx-theme-kicker">Theme</div>', unsafe_allow_html=True)
-        st.radio(
-            "Theme",
-            options=("light", "dark"),
-            format_func=lambda x: "Light" if x == "light" else "Dark",
-            key="desk_theme",
-            help="Light is the default desk. Dark is optional. Presentation only.",
-        )
-
-
 def _load_calendar(cfg, *, force: bool = False) -> CalendarBundle:
     try:
         return calendar_lab.fetch_calendar(cfg, force=bool(force))
@@ -2018,7 +1966,7 @@ def _render_watchlist_editor(wl, cfg, available, lab_iv) -> None:
 
 
 def render_decision_mode(cfg) -> None:
-    """Decision: clock is in the masthead. Alerts + scan board + pair drawer only."""
+    """Decision: clock is in the slim top nav. Alerts + scan board + pair drawer only."""
     if st.session_state.pop("watch_clear_typed", False):
         st.session_state["watch_typed_pair"] = ""
     wl = load_watchlist(cfg=cfg, create=True)
@@ -2673,10 +2621,7 @@ def render() -> None:
             active_ws.min_confidence = float(st.session_state["ws_min_conf"])
     cfg = overlay_config(cfg, active_ws)
 
-    _render_masthead(cfg)
     mode = _render_mode_nav(cfg)
-    with st.expander("Disclaimer (research only — not a live edge)", expanded=False):
-        st.warning(DISCLAIMER)
 
     if mode == "Decision":
         render_decision_mode(cfg)

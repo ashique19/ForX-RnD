@@ -1704,13 +1704,21 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
   color: var(--fx-muted);
   padding: 2px 0 4px;
 }
+[class*="st-key-desk_theme"] {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
 [class*="st-key-desk_theme"] label,
 [class*="st-key-desk_theme"] p,
 [class*="st-key-desk_theme"] [data-testid="stWidgetLabel"] p {
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 800 !important;
   letter-spacing: 0.06em !important;
   color: var(--fx-muted) !important;
+}
+[class*="st-key-desk_theme"] [role="radiogroup"] {
+  justify-content: flex-end !important;
+  gap: 0.35rem !important;
 }
 @media (max-width: 1320px) {
   .block-container,
