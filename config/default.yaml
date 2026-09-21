@@ -222,6 +222,14 @@ board:
     timeframes: ["4h"]     # causal SMA slope from the same pair CSV (add "1D" if wanted)
     conflict_flash: off    # off | weaken | hold — default off (badge only; HTF gate hurt EURUSD)
     flat_eps: 1.0e-8
+  alerts:
+    enabled: true
+    sound: false             # optional beep; off by default (UI checkbox can enable)
+    cooldown_s: 300          # same flip/STALE/event key will not re-fire inside this window
+    max_visible: 6           # compact strip — do not bury the board
+    event_warning: true      # high-impact calendar event within event_minutes
+    event_minutes: 60
+    persist_file: data/alert_state.json  # last-seen signals; gitignored; not a broker store
 
 # Paths (relative to project root)
 paths:

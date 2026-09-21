@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import base64
+import html
 
 import pandas as pd
 import streamlit as st
@@ -30,6 +32,17 @@ from forex_lab.ui.board import (
 from forex_lab.session import SessionState, classify_session
 from forex_lab.ui.quote import QuoteView
 from forex_lab.fred import fred_feed_status
+from forex_lab.ui.alerts import (
+    alerts_cfg,
+    beep_wav,
+    dismiss_alert,
+    format_alert_time,
+    kind_tone,
+    load_state as load_alert_state,
+    process_watch,
+    save_state as save_alert_state,
+    visible_alerts,
+)
 from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
 from forex_lab.ui.pipeline import (
     artifact_status,
@@ -96,6 +109,8 @@ DISCLAIMER = (
     "Paper uPnL is a local mark vs that last/mid-ish cache — **not** live broker PnL. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
+    "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
+    "it never auto-submits via BrokerPort. Optional alert sound is **off by default**. "
     "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket."
 )
 
@@ -141,6 +156,13 @@ Research suggestion only: **no lot size, no auto-submit, no live broker order**.
 **Paper desk** — Buy / Sell / Close talk only to `BrokerPort` (`broker.backend: paper`).
 Fills at the last cached close like a practice book: open position, uPnL, SL/TP hits.
 A future `mt5` / `oanda` backend would implement the same four methods. **Not** a live order.
+
+**Alerts** — compact top strip when a watchlist pair **flips** BUY/SELL/HOLD vs the
+previous refresh, or validity becomes **STALE / MISSING**. Last-seen signals persist
+in `data/alert_state.json` (local; not a broker). Unchanged polls stay quiet; the same
+transition is rate-limited. Optional high-impact **event within 60m** uses the calendar.
+Sound is **off by default** (checkbox + `board.alerts.sound`). Times are **Asia/Dhaka**.
+Dismissible; never places orders.
 
 **Awareness** — always-visible **Feeds:** line plus expander listing OHLCV + news
 with last update, cadence, and OK/STALE/FAIL. Opens itself when a feed is STALE/FAIL/MISSING.
@@ -386,6 +408,58 @@ def _render_sparkline(row) -> None:
     chart = pd.DataFrame({"close": list(row.sparkline)})
     st.line_chart(chart, height=90, use_container_width=True)
     st.caption(row.sparkline_note)
+
+
+def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
+    """Dense dismissible banner. Hidden when there is nothing to show."""
+    acfg = alerts_cfg(cfg)
+    shown = visible_alerts(state, max_visible=int(acfg.get("max_visible") or 6))
+    if shown:
+        head, clear = st.columns([7.2, 1.1])
+        with head:
+            st.markdown("**Alerts**")
+            st.caption(
+                "Flips and STALE vs last snapshot · dismissible · not orders. "
+                f"{'Sound on' if sound_on else 'Sound off'}."
+            )
+        with clear:
+            st.markdown("&nbsp;")
+            if st.button("Clear", key="alert_clear_all", help="Dismiss every visible alert"):
+                for a in list(state.alerts):
+                    dismiss_alert(state, a.id)
+                save_alert_state(state, cfg)
+                st.rerun()
+        clicked = None
+        for alert in shown:
+            msg, xbtn = st.columns([8.6, 0.55])
+            with msg:
+                bg = kind_tone(alert.kind)
+                when = format_alert_time(alert, cfg)
+                st.markdown(
+                    f'<div style="display:flex;gap:10px;align-items:center;background:{bg};'
+                    f"color:#fff;font-size:0.78rem;font-weight:700;padding:5px 8px;"
+                    f'border-radius:6px;letter-spacing:0.02em;line-height:1.2">'
+                    f"<span>{html.escape(alert.message)}</span>"
+                    f'<span style="margin-left:auto;font-weight:600;opacity:.9;white-space:nowrap">'
+                    f"{html.escape(when)}</span></div>",
+                    unsafe_allow_html=True,
+                )
+            with xbtn:
+                if st.button("×", key=f"alert_dismiss_{alert.id}", help="Dismiss this alert"):
+                    clicked = alert.id
+        hidden_n = max(0, len([a for a in state.alerts if a.id not in {s.id for s in shown}]) )
+        if hidden_n:
+            st.caption(f"{hidden_n} older alert(s) not shown — Clear to drop them.")
+        if clicked:
+            dismiss_alert(state, clicked)
+            save_alert_state(state, cfg)
+            st.rerun()
+    if sound_on and fresh:
+        b64 = base64.b64encode(beep_wav()).decode("ascii")
+        st.markdown(
+            f'<audio autoplay src="data:audio/wav;base64,{b64}"></audio>',
+            unsafe_allow_html=True,
+        )
 
 
 def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=None) -> None:
@@ -905,12 +979,20 @@ def render_watch_board(cfg) -> None:
     with st.expander("Column help (research only)"):
         st.markdown(BOARD_HELP)
 
-    c_real, c_secs, c_note = st.columns([1.1, 1.1, 2.4])
+    c_real, c_secs, c_sound, c_note = st.columns([1.0, 1.0, 1.15, 2.1])
     realtime = c_real.checkbox(
         "Realtime",
         value=False,
         help="Rebuild signals from local cache on a timer. yfinance only when a bar is due. "
         "Not broker quotes and not streaming.",
+    )
+    if "alert_sound" not in st.session_state:
+        st.session_state["alert_sound"] = bool(load_alert_state(cfg).sound)
+    sound_on = c_sound.checkbox(
+        "Alert sound",
+        key="alert_sound",
+        help="Off by default. Short beep when a watchlist pair flips BUY/SELL/HOLD or goes "
+        "STALE/MISSING. Never places orders.",
     )
     bcfg = board_cfg(cfg)
     default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
@@ -957,6 +1039,21 @@ def render_watch_board(cfg) -> None:
             rows, rate_msg = _sync_watch_rows(wl, cfg, manual=manual, realtime=realtime)
         if rate_msg:
             st.warning(rate_msg)
+
+        calendar: CalendarBundle | None = None
+        try:
+            calendar = calendar_lab.fetch_calendar(cfg, force=bool(manual))
+        except Exception as exc:  # noqa: BLE001 — never break the math board
+            calendar = CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
+
+        alert_state, alert_fresh = process_watch(
+            rows,
+            calendar=calendar,
+            cfg=cfg,
+            now=now_utc(),
+            sound=bool(sound_on),
+        )
+        _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
         refreshed = st.session_state.get("board_last_refreshed")
         if refreshed:
             st.caption(
@@ -980,12 +1077,6 @@ def render_watch_board(cfg) -> None:
             )
         except Exception:
             news_map = {}
-
-        calendar: CalendarBundle | None = None
-        try:
-            calendar = calendar_lab.fetch_calendar(cfg, force=bool(manual))
-        except Exception as exc:  # noqa: BLE001 — never break the math board
-            calendar = CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
 
         try:
             broker = _paper_broker(cfg)
