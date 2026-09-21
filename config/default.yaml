@@ -24,10 +24,11 @@ label_threshold: 0.0005    # used only by forward_return
 entry_timing: next_open    # next_open (honest fill) | same_close (legacy)
 
 barrier:
-  tp_atr: 2.0              # upper/lower distance in ATR units at decision time
-  sl_atr: 2.0              # symmetric for direction labels (avoids baked-in side bias)
+  tp_atr: 2.0              # per-side take-profit distance in ATR units at decision time
+  sl_atr: 2.0              # per-side stop distance (long SL = -sl_atr*ATR, short SL = +sl_atr*ATR)
   path: high_low           # high_low | close
   timeout_label: hold      # hold | sign
+  cost_aware: false        # if true, barrier wins with TP < spread are labeled HOLD
 
 # Backtest exits: match the label barriers when true
 use_tp_sl: true
@@ -60,6 +61,9 @@ model:
   random_state: 42
   class_weight_balanced: true
   compare_logistic: true   # extra walk-forward column; not used for signals
+  calibrate: null          # null | isotonic | sigmoid (Platt); fit on last calibrate_frac of train
+  calibrate_frac: 0.2
+  prune_bottom_frac: 0.0   # drop lowest-gain features using train-fold importance only
   xgboost:
     n_estimators: 160
     max_depth: 3
@@ -77,6 +81,9 @@ signals:
   min_confidence: 0.40     # min P(predicted class) to emit BUY/SELL (else HOLD)
   min_dir_edge: 0.0        # min |P(BUY)-P(SELL)|; 0 keeps the model's own HOLD class
   lookback_bars: 64        # rows written to latest_signals.csv
+  sessions: []             # e.g. [london, ny]; empty = all UTC hours
+  min_vol_regime: 0.0      # 0 = off; >1 keeps only high-vol vs long-run vol
+  min_tp_pips: 0.0         # skip entries whose TP distance is below this (0 = off)
 
 # Paths (relative to project root)
 paths:

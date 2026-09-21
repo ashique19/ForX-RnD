@@ -14,6 +14,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_sample_weight
 
+from forex_lab.console import safe_print
 from forex_lab.features import INV_LABEL_MAP, LABEL_MAP, label_distribution, make_dataset
 from forex_lab.paths import resolve_under_root
 
@@ -101,17 +102,137 @@ def predict_proba_aligned(model, X: pd.DataFrame) -> np.ndarray | None:
 
 
 def apply_signal_filters(pred_frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.Series:
-    """Force low-confidence / low-edge directional calls to HOLD."""
+    """Force low-confidence / filtered directional calls to HOLD."""
     sig_cfg = cfg.get("signals") or {}
-    min_conf = float(sig_cfg.get("min_confidence", 0.45))
-    min_edge = float(sig_cfg.get("min_dir_edge", 0.08))
+    min_conf = float(sig_cfg.get("min_confidence", 0.40))
+    min_edge = float(sig_cfg.get("min_dir_edge", 0.0))
     raw = (pred_frame["pred_raw"] if "pred_raw" in pred_frame.columns else pred_frame["pred"]).astype(int)
     keep = raw != LABEL_MAP["HOLD"]
     if "confidence" in pred_frame.columns:
         keep = keep & (pred_frame["confidence"] >= min_conf)
     if "dir_edge" in pred_frame.columns:
         keep = keep & (pred_frame["dir_edge"] >= min_edge)
+    sessions = sig_cfg.get("sessions") or []
+    if sessions:
+        sess_keep = pd.Series(False, index=pred_frame.index)
+        have_col = False
+        for name in sessions:
+            col = f"sess_{str(name).strip().lower()}"
+            if col in pred_frame.columns:
+                have_col = True
+                sess_keep = sess_keep | (pred_frame[col].astype(float) > 0.5)
+        if have_col:
+            keep = keep & sess_keep
+    min_vol = float(sig_cfg.get("min_vol_regime", 0.0) or 0.0)
+    if min_vol > 0 and "vol_regime" in pred_frame.columns:
+        keep = keep & (pred_frame["vol_regime"].astype(float) >= min_vol)
+    min_tp = float(sig_cfg.get("min_tp_pips", 0.0) or 0.0)
+    if min_tp > 0 and "tp_pips" in pred_frame.columns:
+        keep = keep & (pred_frame["tp_pips"].astype(float) >= min_tp)
     return raw.where(keep, LABEL_MAP["HOLD"]).astype(int)
+
+
+def _calibrate_method(cfg: dict[str, Any]) -> str | None:
+    raw = (cfg.get("model") or {}).get("calibrate")
+    if raw is None or raw is False:
+        return None
+    method = str(raw).strip().lower()
+    if method in ("", "none", "false", "0"):
+        return None
+    if method not in ("isotonic", "sigmoid"):
+        return None
+    return method
+
+
+def prune_feature_columns(model, columns: list[str], frac: float) -> list[str]:
+    """Drop the lowest-gain fraction of features (train-fold importance only)."""
+    if frac is None or float(frac) <= 0:
+        return list(columns)
+    imp = getattr(model, "feature_importances_", None)
+    if imp is None or len(imp) != len(columns):
+        return list(columns)
+    n_drop = int(round(len(columns) * float(frac)))
+    if n_drop <= 0:
+        return list(columns)
+    order = np.argsort(np.asarray(imp, dtype=float))
+    drop = set(int(i) for i in order[:n_drop])
+    kept = [c for i, c in enumerate(columns) if i not in drop]
+    return kept if kept else list(columns)
+
+
+def feature_importance_table(model, columns: list[str], top_n: int = 12) -> list[dict[str, Any]]:
+    imp = getattr(model, "feature_importances_", None)
+    if imp is None or len(imp) != len(columns):
+        return []
+    rows = [{"feature": c, "importance": float(v)} for c, v in zip(columns, imp)]
+    rows.sort(key=lambda r: r["importance"], reverse=True)
+    return rows[:top_n]
+
+
+def fit_predict_bundle(
+    cfg: dict[str, Any],
+    X_tr: pd.DataFrame,
+    y_tr: pd.Series,
+    X_te: pd.DataFrame,
+    *,
+    model_type: str | None = None,
+    balanced: bool = True,
+) -> tuple[Any, pd.DataFrame, list[str]]:
+    """Fit (optional prune + calibrate) on train only; predict test. No test leakage."""
+    model, _name = build_model(cfg, model_type)
+    cols = list(X_tr.columns)
+    prune_frac = float((cfg.get("model") or {}).get("prune_bottom_frac", 0.0) or 0.0)
+    method = _calibrate_method(cfg)
+    cal_frac = float((cfg.get("model") or {}).get("calibrate_frac", 0.2) or 0.2)
+
+    n = len(X_tr)
+    n_cal = 0
+    if method:
+        n_cal = max(100, int(n * cal_frac))
+        n_cal = min(n_cal, max(0, n - 50))
+        if n_cal < 50:
+            n_cal = 0
+            method = None
+
+    X_fit, y_fit = (X_tr.iloc[: n - n_cal], y_tr.iloc[: n - n_cal]) if n_cal else (X_tr, y_tr)
+    X_cal, y_cal = (X_tr.iloc[n - n_cal :], y_tr.iloc[n - n_cal :]) if n_cal else (None, None)
+
+    fit_model(model, X_fit[cols], y_fit, balanced=balanced)
+    if prune_frac > 0:
+        cols = prune_feature_columns(model, cols, prune_frac)
+        model, _name = build_model(cfg, model_type)
+        fit_model(model, X_fit[cols], y_fit, balanced=balanced)
+
+    predictor = model
+    if method and X_cal is not None:
+        try:
+            from sklearn.calibration import CalibratedClassifierCV
+
+            try:
+                cal = CalibratedClassifierCV(estimator=model, method=method, cv="prefit")
+            except TypeError:
+                cal = CalibratedClassifierCV(base_estimator=model, method=method, cv="prefit")
+            cal.fit(X_cal[cols], y_cal)
+            predictor = cal
+        except Exception:
+            predictor = model
+
+    proba = predict_proba_aligned(predictor, X_te[cols])
+    if method and proba is not None:
+        pred = proba.argmax(axis=1)
+    else:
+        pred = predictor.predict(X_te[cols])
+    frame = pd.DataFrame({"pred_raw": pred}, index=X_te.index)
+    if proba is not None:
+        frame["p_sell"] = proba[:, LABEL_MAP["SELL"]]
+        frame["p_hold"] = proba[:, LABEL_MAP["HOLD"]]
+        frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
+        frame["confidence"] = proba.max(axis=1)
+        frame["dir_edge"] = np.abs(proba[:, LABEL_MAP["BUY"]] - proba[:, LABEL_MAP["SELL"]])
+    for extra in ("sess_asia", "sess_london", "sess_ny", "vol_regime", "atr_pct"):
+        if extra in X_te.columns:
+            frame[extra] = X_te[extra].to_numpy()
+    return predictor, frame, cols
 
 
 def model_dir(cfg: dict[str, Any]) -> Path:
@@ -153,19 +274,25 @@ def train_models(
     }
 
     for mtype in ("xgboost", "logistic"):
-        model, name = build_model(cfg, mtype)
-        fit_model(model, X_train, y_train, balanced=balanced)
-        pred = model.predict(X_val)
+        model, frame, used_cols = fit_predict_bundle(
+            cfg, X_train, y_train, X_val, model_type=mtype, balanced=balanced
+        )
+        pred = frame["pred_raw"].to_numpy()
         acc = float(accuracy_score(y_val, pred))
         report = classification_report(
             y_val, pred, target_names=["SELL", "HOLD", "BUY"], zero_division=0, output_dict=True
         )
+        name = mtype
         paths = model_paths(pair, cfg, name)
-        joblib.dump({"model": model, "features": list(X.columns)}, paths["model"])
+        joblib.dump({"model": model, "features": used_cols}, paths["model"])
+        inner = model
+        if hasattr(model, "calibrated_classifiers_"):
+            inner = getattr(model, "estimator", None) or getattr(model, "base_estimator", None) or model
+        imp = feature_importance_table(inner, used_cols)
         meta = {
             "pair": pair.upper(),
             "model_type": name,
-            "features": list(X.columns),
+            "features": used_cols,
             "val_accuracy": acc,
             "classification_report": report,
             "label_map": INV_LABEL_MAP,
@@ -175,10 +302,13 @@ def train_models(
             "barrier": cfg.get("barrier"),
             "entry_timing": cfg.get("entry_timing", "next_open"),
             "label_distribution": label_distribution(y),
+            "feature_importance": imp,
+            "calibrate": (cfg.get("model") or {}).get("calibrate"),
+            "prune_bottom_frac": (cfg.get("model") or {}).get("prune_bottom_frac", 0.0),
         }
         paths["meta"].write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
-        results[name] = {"val_accuracy": acc, "path": str(paths["model"]), "report": report}
-        print(f"[train] {name}: val_accuracy={acc:.4f} -> {paths['model']}")
+        results[name] = {"val_accuracy": acc, "path": str(paths["model"]), "report": report, "feature_importance": imp}
+        safe_print(f"[train] {name}: val_accuracy={acc:.4f} -> {paths['model']}")
 
     return results
 

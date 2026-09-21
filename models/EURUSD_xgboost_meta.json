@@ -85,7 +85,8 @@
     "tp_atr": 2.0,
     "sl_atr": 2.0,
     "path": "high_low",
-    "timeout_label": "hold"
+    "timeout_label": "hold",
+    "cost_aware": false
   },
   "entry_timing": "next_open",
   "label_distribution": {
@@ -93,5 +94,57 @@
     "hold": 0.4566663928366056,
     "buy": 0.27519921136942416,
     "n": 12173
-  }
+  },
+  "feature_importance": [
+    {
+      "feature": "sess_ny",
+      "importance": 0.1312674731016159
+    },
+    {
+      "feature": "hour_sin",
+      "importance": 0.12776422500610352
+    },
+    {
+      "feature": "sess_asia",
+      "importance": 0.07654781639575958
+    },
+    {
+      "feature": "sess_london",
+      "importance": 0.05802178010344505
+    },
+    {
+      "feature": "hour_cos",
+      "importance": 0.054243236780166626
+    },
+    {
+      "feature": "dow_sin",
+      "importance": 0.028936656191945076
+    },
+    {
+      "feature": "ret_24",
+      "importance": 0.02095559425652027
+    },
+    {
+      "feature": "dow_cos",
+      "importance": 0.02088147960603237
+    },
+    {
+      "feature": "vol_regime",
+      "importance": 0.020688995718955994
+    },
+    {
+      "feature": "atr_pct",
+      "importance": 0.019884880632162094
+    },
+    {
+      "feature": "dist_high_20",
+      "importance": 0.019558895379304886
+    },
+    {
+      "feature": "ema_26_ratio",
+      "importance": 0.01943882554769516
+    }
+  ],
+  "calibrate": null,
+  "prune_bottom_frac": 0.0
 }

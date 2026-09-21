@@ -85,7 +85,8 @@
     "tp_atr": 2.0,
     "sl_atr": 2.0,
     "path": "high_low",
-    "timeout_label": "hold"
+    "timeout_label": "hold",
+    "cost_aware": false
   },
   "entry_timing": "next_open",
   "label_distribution": {
@@ -93,5 +94,8 @@
     "hold": 0.4566663928366056,
     "buy": 0.27519921136942416,
     "n": 12173
-  }
+  },
+  "feature_importance": [],
+  "calibrate": null,
+  "prune_bottom_frac": 0.0
 }

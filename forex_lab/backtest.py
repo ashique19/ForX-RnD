@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from forex_lab.config_loader import pip_size_for_pair
+from forex_lab.console import safe_print
 from forex_lab.features import (
     INV_LABEL_MAP,
     LABEL_MAP,
@@ -16,7 +17,7 @@ from forex_lab.features import (
     make_dataset,
     true_range_atr,
 )
-from forex_lab.model import apply_signal_filters, build_model, fit_model, predict_proba_aligned
+from forex_lab.model import apply_signal_filters, fit_predict_bundle
 from forex_lab.paths import resolve_under_root
 
 
@@ -24,6 +25,41 @@ def _spread_cost_frac(pair: str, cfg: dict[str, Any], price: float) -> float:
     pips = float(cfg.get("spread_pips", 1.0)) + float(cfg.get("commission_pips", 0.0))
     pip = pip_size_for_pair(pair, cfg)
     return (pips * pip) / max(price, 1e-12)
+
+
+def _attach_policy_columns(
+    frame: pd.DataFrame,
+    X: pd.DataFrame,
+    ohlcv: pd.DataFrame,
+    cfg: dict[str, Any],
+    pair: str,
+) -> pd.DataFrame:
+    """Copy session/vol/ATR columns used by signal filters. Causal features only."""
+    out = frame.copy()
+    aligned = X.reindex(out.index)
+    for extra in ("sess_asia", "sess_london", "sess_ny", "vol_regime", "atr_pct"):
+        if extra in aligned.columns:
+            out[extra] = aligned[extra].to_numpy()
+    min_tp = float((cfg.get("signals") or {}).get("min_tp_pips", 0.0) or 0.0)
+    if min_tp > 0 and "atr_pct" in aligned.columns:
+        pip = pip_size_for_pair(pair, cfg)
+        tp_atr = float((cfg.get("barrier") or {}).get("tp_atr", 2.0))
+        close = ohlcv["Close"].reindex(out.index).astype(float)
+        atr_pct = aligned["atr_pct"].astype(float)
+        out["tp_pips"] = (tp_atr * atr_pct * close) / max(pip, 1e-12)
+    return out
+
+
+def _policy_filter_signals(
+    signals: pd.Series,
+    X: pd.DataFrame,
+    ohlcv: pd.DataFrame,
+    cfg: dict[str, Any],
+    pair: str,
+) -> pd.Series:
+    frame = pd.DataFrame({"pred_raw": signals.astype(int)}, index=signals.index)
+    frame = _attach_policy_columns(frame, X, ohlcv, cfg, pair)
+    return apply_signal_filters(frame, cfg)
 
 
 def _sma_crossover_signals(close: pd.Series, fast: int = 10, slow: int = 50) -> pd.Series:
@@ -52,33 +88,38 @@ def _first_touch_exit(
     sl_dist: float,
     path: str,
 ) -> tuple[int, float, str]:
-    """Walk horizon bars from entry_loc inclusive. Returns (exit_loc, exit_px, reason)."""
+    """Walk horizon bars from entry_loc inclusive. Returns (exit_loc, exit_px, reason).
+
+    Distances are per-side: long TP is +tp_dist, long SL is -sl_dist;
+    short TP is -tp_dist, short SL is +sl_dist. When tp_dist == sl_dist this
+    matches a single upper/lower pair.
+    """
     n = len(ohlcv)
     end = min(n, entry_loc + horizon)
     use_hl = path != "close"
     high = ohlcv["High"].to_numpy()
     low = ohlcv["Low"].to_numpy()
     close = ohlcv["Close"].to_numpy()
-    up = entry + tp_dist
-    dn = entry - sl_dist
+    if side == 1:
+        tp_px = entry + tp_dist
+        sl_px = entry - sl_dist
+    else:
+        tp_px = entry - tp_dist
+        sl_px = entry + sl_dist
     for i in range(entry_loc, end):
         px_up = high[i] if use_hl else close[i]
         px_dn = low[i] if use_hl else close[i]
         if side == 1:
-            hit_tp = px_up >= up
-            hit_sl = px_dn <= dn
+            hit_tp = px_up >= tp_px
+            hit_sl = px_dn <= sl_px
         else:
-            hit_tp = px_dn <= dn
-            hit_sl = px_up >= up
+            hit_tp = px_dn <= tp_px
+            hit_sl = px_up >= sl_px
         if hit_tp and hit_sl:
-            # Ambiguous same-bar path: pessimistic stop
-            sl_px = entry - sl_dist if side == 1 else entry + sl_dist
             return i, float(sl_px), "sl_conflict"
         if hit_sl:
-            sl_px = entry - sl_dist if side == 1 else entry + sl_dist
             return i, float(sl_px), "sl"
         if hit_tp:
-            tp_px = entry + tp_dist if side == 1 else entry - tp_dist
             return i, float(tp_px), "tp"
     exit_loc = end - 1
     return exit_loc, float(close[exit_loc]), "timeout"
@@ -254,7 +295,7 @@ def walk_forward_backtest(
     pair: str,
     model_type: str | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
-    X, y, _ohlcv = make_dataset(df, cfg)
+    X, y, ohlcv = make_dataset(df, cfg)
     wf = cfg.get("walk_forward") or {}
     train_bars = int(wf.get("train_bars", 2000))
     test_bars = int(wf.get("test_bars", 250))
@@ -288,19 +329,10 @@ def walk_forward_backtest(
         y_te = y.iloc[start:te_end]
 
         def _predict_frame(mtype: str | None) -> pd.DataFrame:
-            model, _name = build_model(cfg, mtype)
-            fit_model(model, X_tr, y_tr, balanced=balanced)
-            pred = model.predict(X_te)
-            proba = predict_proba_aligned(model, X_te)
-            frame = pd.DataFrame({"pred_raw": pred}, index=X_te.index)
-            if proba is not None:
-                frame["p_sell"] = proba[:, LABEL_MAP["SELL"]]
-                frame["p_hold"] = proba[:, LABEL_MAP["HOLD"]]
-                frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
-                frame["confidence"] = proba.max(axis=1)
-                frame["dir_edge"] = np.abs(
-                    proba[:, LABEL_MAP["BUY"]] - proba[:, LABEL_MAP["SELL"]]
-                )
+            _model, frame, _cols = fit_predict_bundle(
+                cfg, X_tr, y_tr, X_te, model_type=mtype, balanced=balanced
+            )
+            frame = _attach_policy_columns(frame, X_te, ohlcv, cfg, pair)
             frame["pred"] = apply_signal_filters(frame, cfg)
             return frame
 
@@ -335,10 +367,12 @@ def walk_forward_backtest(
     sma_sig = (
         _sma_crossover_signals(df["Close"]).reindex(preds.index).fillna(LABEL_MAP["HOLD"]).astype(int)
     )
+    sma_sig = _policy_filter_signals(sma_sig, X, ohlcv, cfg, pair)
     sma_trades = _simulate_trades(df, sma_sig, cfg, pair, atr=atr_full)
     sma_metrics = _metrics_from_trades(sma_trades)
 
     always_long = pd.Series(LABEL_MAP["BUY"], index=preds.index, dtype=int)
+    always_long = _policy_filter_signals(always_long, X, ohlcv, cfg, pair)
     long_trades = _simulate_trades(df, always_long, cfg, pair, atr=atr_full)
     long_metrics = _metrics_from_trades(long_trades)
 
@@ -386,6 +420,12 @@ def walk_forward_backtest(
             "sl_atr": b.get("sl_atr"),
             "min_confidence": sig_cfg.get("min_confidence"),
             "min_dir_edge": sig_cfg.get("min_dir_edge"),
+            "sessions": sig_cfg.get("sessions") or [],
+            "min_vol_regime": sig_cfg.get("min_vol_regime", 0.0),
+            "min_tp_pips": sig_cfg.get("min_tp_pips", 0.0),
+            "cost_aware": bool(b.get("cost_aware", False)),
+            "calibrate": (cfg.get("model") or {}).get("calibrate"),
+            "prune_bottom_frac": (cfg.get("model") or {}).get("prune_bottom_frac", 0.0),
         },
     }
     return result, model_trades, preds
@@ -472,12 +512,12 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
             "```",
             "fill      = Open[t+1]          # next-bar open; not used as a feature",
             "ATR       = Wilder ATR at t    # causal",
-            "upper     = fill + tp_atr * ATR",
-            "lower     = fill - sl_atr * ATR",
+            "long  TP  = fill + tp_atr * ATR ;  long  SL = fill - sl_atr * ATR",
+            "short TP  = fill - tp_atr * ATR ;  short SL = fill + sl_atr * ATR",
             "scan      = High/Low of bars t+1 .. t+horizon",
-            "BUY  if upper is touched first",
-            "SELL if lower is touched first",
-            "HOLD if timeout, or both barriers in the same bar",
+            "BUY  if the long trade hits TP before SL",
+            "SELL if the short trade hits TP before SL",
+            "HOLD if neither side wins (timeout, conflict, or both fail)",
             "```",
             "",
             "Backtest uses the same fill, barriers, and (optional) one-position rule.",
@@ -503,7 +543,10 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
             f" + commission {costs.get('commission_pips')} pips"
         ),
         f"- Filters: min_confidence={costs.get('min_confidence')} min_dir_edge={costs.get('min_dir_edge')} "
-        f"one_position={costs.get('one_position')}",
+        f"sessions={costs.get('sessions') or 'all'} min_vol_regime={costs.get('min_vol_regime')} "
+        f"min_tp_pips={costs.get('min_tp_pips')} one_position={costs.get('one_position')} "
+        f"calibrate={costs.get('calibrate')} prune={costs.get('prune_bottom_frac')} "
+        f"cost_aware={costs.get('cost_aware')}",
         (
             f"- Label mix (full labeled set): BUY {fmt_pct(dist.get('buy'))} / "
             f"SELL {fmt_pct(dist.get('sell'))} / HOLD {fmt_pct(dist.get('hold'))} (n={dist.get('n', 0)})"
@@ -567,17 +610,26 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
         "- Fold std tells you whether a headline number is stable or driven by a few windows.",
         "- Logistic is a linear comparison on the **same** folds/features/filters, not a second trading system.",
         "",
-        "## Disclaimer",
-        "",
-        "This lab is for research education only. It does **not** place broker orders.",
-        "Data from yfinance is not identical to broker executable quotes. Past backtest results do not predict future performance.",
-        "Even if the model beats these baselines, that is a research signal — not evidence of a deployable edge after slippage, gaps, and session holes.",
-        "",
+        ]
+    )
+    extra = reports_dir / "experiments.md"
+    if extra.exists():
+        text = extra.read_text(encoding="utf-8").strip()
+        if text:
+            lines.extend(["", text, ""])
+    lines.extend(
+        [
+            "## Disclaimer",
+            "",
+            "This lab is for research education only. It does **not** place broker orders.",
+            "Data from yfinance is not identical to broker executable quotes. Past backtest results do not predict future performance.",
+            "Even if the model beats these baselines, that is a research signal — not evidence of a deployable edge after slippage, gaps, and session holes.",
+            "",
         ]
     )
     md_path.write_text("\n".join(lines), encoding="utf-8")
     json_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     if trades is not None and not trades.empty:
         trades.to_csv(reports_dir / "latest_trades.csv", index=False)
-    print(f"[backtest] wrote {md_path}")
+    safe_print(f"[backtest] wrote {md_path}")
     return str(md_path)

@@ -5,6 +5,8 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.backtest import _attach_policy_columns
+from forex_lab.console import safe_print
 from forex_lab.features import INV_LABEL_MAP, LABEL_MAP, build_features
 from forex_lab.model import apply_signal_filters, load_model, predict_proba_aligned
 from forex_lab.paths import resolve_under_root
@@ -25,6 +27,7 @@ def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.Dat
         pred_frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
         pred_frame["confidence"] = proba.max(axis=1)
         pred_frame["dir_edge"] = (pred_frame["p_buy"] - pred_frame["p_sell"]).abs()
+    pred_frame = _attach_policy_columns(pred_frame, valid, df, cfg, pair)
     pred_frame["pred"] = apply_signal_filters(pred_frame, cfg)
 
     lookback = int((cfg.get("signals") or {}).get("lookback_bars", 64))
@@ -56,10 +59,10 @@ def write_signals(signals: pd.DataFrame, cfg: dict[str, Any]) -> str:
     sig_dir.mkdir(parents=True, exist_ok=True)
     path = sig_dir / "latest_signals.csv"
     signals.to_csv(path, index=False)
-    print(f"[signals] wrote {path} ({len(signals)} rows)")
+    safe_print(f"[signals] wrote {path} ({len(signals)} rows)")
     if len(signals):
         last = signals.iloc[-1]
-        print(
+        safe_print(
             f"[signals] latest: {last['datetime']} {last['pair']} "
             f"{last['signal']} conf={last['confidence']} close={last['close']}"
         )
