@@ -88,14 +88,18 @@ def test_discover_python_uses_which_then_resolves_executable():
             return SimpleNamespace(returncode=0, stdout="/resolved/python3.12\n", stderr="")
         return SimpleNamespace(returncode=1, stdout="", stderr="")
 
+    def path_exists(path) -> bool:
+        # Path("/x") becomes "\x" on Windows; normalize for the mock.
+        s = str(path).replace(chr(92), "/")
+        return s in {"/resolved/python3.12", "/usr/bin/python3.12"}
+
     found = discover_python(
         which=which,
-        path_exists=lambda p: str(p) in {"/resolved/python3.12", "/usr/bin/python3.12"},
+        path_exists=path_exists,
         env={},
         runner=runner,
     )
     assert found == "/resolved/python3.12"
-
 
 def test_preflight_missing_python_prints_ok_missing_checklist(tmp_path):
     (tmp_path / "requirements.txt").write_text("streamlit>=1.32\n", encoding="utf-8")
