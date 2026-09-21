@@ -281,7 +281,7 @@ def test_board_row_eurusd_uses_existing_signals_csv():
     assert row.quote is not None
     assert row.session is not None
     if row.quote.available:
-        assert "last/mid-ish" in row.quote.kind or row.quote.kind == "mid"
+        assert "last/mid-ish" in row.quote.kind
         assert row.quote.bid is None
     if row.last_bar_at and row.last_bar_at != "n/a":
         assert "Asia/Dhaka" in row.last_bar_at
@@ -306,6 +306,20 @@ def test_board_row_session_follows_clock_not_last_bar():
     )
     assert weekend.session is not None
     assert weekend.session.badge() == "CLOSED"
+
+    from zoneinfo import ZoneInfo
+
+    dhaka = ZoneInfo("Asia/Dhaka")
+    # Same instant as 11:00 UTC London, shown as 17:00 Dhaka on the desk.
+    london_from_dhaka = build_board_row(
+        "EURUSD",
+        refresh_data=False,
+        regenerate=False,
+        now=datetime(2026, 9, 21, 17, 0, tzinfo=dhaka),
+    )
+    assert london_from_dhaka.session is not None
+    assert london_from_dhaka.session.badge() == "LONDON"
+    assert london_from_dhaka.session.hour_utc == 11.0
 
 
 def test_build_board_rows_mixed_status(tmp_path):

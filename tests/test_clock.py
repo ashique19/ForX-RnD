@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from forex_lab.clock import (
     DEFAULT_TIMEZONE,
+    clock_note,
     fmt_display,
     parse_ts,
     relabel,
@@ -67,3 +68,12 @@ def test_relabel_in_text_converts_embedded_utc_and_skips_dhaka():
     iso = relabel_in_text("event 2026-09-21T10:00:00Z nearby")
     assert "2026-09-21 16:00" in iso
     assert "Asia/Dhaka" in iso
+
+
+def test_clock_note_offset_follows_configured_zone():
+    note = clock_note(None)
+    assert "Asia/Dhaka" in note
+    assert "UTC+6" in note
+    london = clock_note({"ui": {"timezone": "Europe/London", "timezone_tag": "Europe/London"}})
+    assert "Europe/London" in london
+    assert "UTC+6" not in london

@@ -51,6 +51,8 @@ def test_asia_london_ny_and_overlap():
     assert overlap.name == "london+ny"
     assert overlap.badge() == "LONDON+NY"
     assert "overlap" in overlap.note
+    assert "13:00–21:00 UTC" in overlap.note or "13:00–16:00 UTC" in overlap.note
+    assert "Asia/Dhaka" in overlap.note
 
     ny = classify_session(datetime(2026, 9, 21, 18, 0, 0))
     assert ny.name == "ny"
@@ -95,4 +97,47 @@ def test_config_windows_override_and_can_leave_a_gap():
 def test_invalid_window_keeps_default():
     cfg = {"board": {"sessions": {"asia": [99, 7], "london": "nope", "ny": [13]}}}
     wins = session_windows(cfg)
-    assert wins == session_windows(None)
+    assert session_windows(cfg) == session_windows(None)
+
+
+def test_dhaka_wall_clock_maps_to_utc_london_ny_asia_not_dhaka_hour():
+    """Desk shows Asia/Dhaka; session windows are UTC. Do not classify on Dhaka hour."""
+    from zoneinfo import ZoneInfo
+
+    from forex_lab.clock import fmt_display
+    from forex_lab.session import utc_hour_as_display, window_dual_label
+
+    dhaka = ZoneInfo("Asia/Dhaka")
+
+    # Dhaka 17:00 Monday = 11:00 UTC = London (not NY, even though 17h looks like NY UTC).
+    t = datetime(2026, 9, 21, 17, 0, tzinfo=dhaka)
+    sess = classify_session(t)
+    assert sess.badge() == "LONDON"
+    assert sess.hour_utc == 11.0
+    assert fmt_display(t) == "2026-09-21 17:00 Asia/Dhaka"
+    assert "13:00–22:00 Asia/Dhaka" in sess.note  # London 07–16 UTC
+
+    # Dhaka 19:30 Monday = 13:30 UTC = London+NY overlap
+    overlap = classify_session(datetime(2026, 9, 21, 19, 30, tzinfo=dhaka))
+    assert overlap.badge() == "LONDON+NY"
+
+    # Dhaka 22:00 Monday = 16:00 UTC = NY only (London ended)
+    ny = classify_session(datetime(2026, 9, 21, 22, 0, tzinfo=dhaka))
+    assert ny.badge() == "NY"
+
+    # Dhaka 03:00 Tuesday = 21:00 UTC Monday = Asia (Sunday–Fri 21:00 wrap)
+    asia = classify_session(datetime(2026, 9, 22, 3, 0, tzinfo=dhaka))
+    assert asia.badge() == "ASIA"
+
+    # Saturday 02:00 Dhaka = Friday 20:00 UTC = NY still open (not weekend-closed)
+    sat_morning = classify_session(datetime(2026, 9, 19, 2, 0, tzinfo=dhaka))
+    assert sat_morning.badge() == "NY"
+    assert sat_morning.market_open is True
+
+    # Saturday 03:30 Dhaka = Friday 21:30 UTC = CLOSED
+    sat_closed = classify_session(datetime(2026, 9, 19, 3, 30, tzinfo=dhaka))
+    assert sat_closed.badge() == "CLOSED"
+
+    assert utc_hour_as_display(7.0) == "13:00"
+    assert utc_hour_as_display(21.0) == "03:00"
+    assert "03:00–13:00 Asia/Dhaka" in window_dual_label(21.0, 7.0)

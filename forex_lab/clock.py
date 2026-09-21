@@ -141,4 +141,12 @@ def relabel_in_text(text: object, cfg: dict[str, Any] | None = None) -> str:
 def clock_note(cfg: dict[str, Any] | None = None) -> str:
     name = timezone_name(cfg)
     tag = timezone_tag(cfg)
-    return f"Times shown in {tag} ({name}, UTC+6 for Asia/Dhaka). Sessions stay on UTC windows."
+    sample = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc).astimezone(zoneinfo_for(cfg))
+    off = sample.utcoffset()
+    hours = (off.total_seconds() / 3600.0) if off is not None else 0.0
+    sign = "+" if hours >= 0 else ""
+    if abs(hours - round(hours)) < 1e-9:
+        off_s = f"UTC{sign}{int(round(hours))}"
+    else:
+        off_s = f"UTC{sign}{hours:g}"
+    return f"Times shown in {tag} ({name}, {off_s}). Sessions stay on UTC windows."

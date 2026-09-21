@@ -16,9 +16,10 @@ as trained. Do not reuse this module to rewrite model columns.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
+from forex_lab.clock import timezone_tag, zoneinfo_for
 from forex_lab.freshness import fx_session_open, now_utc
 
 SESSION_ASIA = "asia"
@@ -109,13 +110,54 @@ def active_sessions(hour: float, windows: dict[str, tuple[float, float]] | None 
     return [name for name in DISPLAY_ORDER if hour_in_window(hour, wins[name])]
 
 
+def _hhmm(hour: float) -> str:
+    h = int(hour) % 24
+    minutes = int(round((hour - int(hour)) * 60.0)) % 60
+    return f"{h:02d}:{minutes:02d}"
+
+
+def utc_hour_as_display(hour: float, cfg: dict[str, Any] | None = None) -> str:
+    """Map a UTC hour-of-day onto the UI timezone (Asia/Dhaka by default)."""
+    h = int(hour) % 24
+    minutes = int(round((hour - int(hour)) * 60.0)) % 60
+    t = datetime(2026, 9, 21, h, minutes, tzinfo=timezone.utc)
+    return t.astimezone(zoneinfo_for(cfg)).strftime("%H:%M")
+
+
+def window_dual_label(
+    start: float,
+    end: float,
+    cfg: dict[str, Any] | None = None,
+) -> str:
+    tag = timezone_tag(cfg)
+    return (
+        f"{_hhmm(start)}–{_hhmm(end)} UTC / "
+        f"{utc_hour_as_display(start, cfg)}–{utc_hour_as_display(end, cfg)} {tag}"
+    )
+
+
+def _session_note(
+    labels: list[str],
+    windows: dict[str, tuple[float, float]],
+    cfg: dict[str, Any] | None,
+) -> str:
+    bits = [f"{name} {window_dual_label(*windows[name], cfg)}" for name in labels]
+    if len(labels) == 1:
+        return f"{labels[0]} session ({bits[0]})"
+    return f"overlap {'+'.join(labels)} ({'; '.join(bits)})"
+
+
 def classify_session(
     now: datetime | None = None,
     cfg: dict[str, Any] | None = None,
     *,
     respect_market_hours: bool = True,
 ) -> SessionState:
-    """Name the session from the clock. Weekend / Friday 21:00 UTC → closed."""
+    """Name the session from the UTC clock. Weekend / Friday 21:00 UTC → closed.
+
+    ``now`` may be tz-aware (e.g. Asia/Dhaka); it is converted to UTC before
+    matching London/NY/Asia windows. Do not pass naive Dhaka wall time.
+    """
     t = now_utc(now)
     hour = _hour_frac(t)
     windows = session_windows(cfg)
@@ -139,16 +181,11 @@ def classify_session(
             market_open=open_now,
             note="no configured Asia/London/NY window at this UTC hour",
         )
-    name = "+".join(labels)
-    if len(labels) == 1:
-        note = f"{labels[0]} session (UTC windows from board.sessions)"
-    else:
-        note = f"overlap {'+'.join(labels)} (UTC windows from board.sessions)"
     return SessionState(
-        name=name,
+        name="+".join(labels),
         labels=list(labels),
         hour_utc=hour,
         weekday=t.weekday(),
         market_open=open_now,
-        note=note,
+        note=_session_note(labels, windows, cfg),
     )
