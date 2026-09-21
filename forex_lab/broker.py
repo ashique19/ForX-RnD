@@ -289,6 +289,8 @@ class PaperBroker(BrokerPort):
             "session": session_name(meta.get("entry_bar_time") or now),
             "conf_bucket": conf_bucket(meta.get("confidence")),
             "note": str(meta.get("note") or ""),
+            "news_bias": str(meta.get("news_bias") or ""),
+            "news_note": str(meta.get("news_note") or "")[:160],
             "outcome": "PENDING",
         }
         fill = {

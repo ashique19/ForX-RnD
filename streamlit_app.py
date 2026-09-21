@@ -326,7 +326,7 @@ def _driver_snapshot(row) -> str:
     return ", ".join(bits)
 
 
-def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
+def _render_paper_actions(row, cfg, broker: PaperBroker, news: NewsBundle | None = None) -> None:
     st.markdown("**Paper desk**")
     st.caption("Practice fill at last cached close. Not a broker order. No auto-submit.")
     flash = st.session_state.pop("paper_flash", None)
@@ -367,6 +367,14 @@ def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
     box = research_risk(ohlcv, cfg, side, validity=VALIDITY_OK)
     sl = box.sl if box.available else None
     tp = box.tp if box.available else None
+    news_bias = ""
+    news_note = ""
+    if news is not None:
+        news_bias = str(news.bias or "")
+        if news.headlines:
+            news_note = str(news.headlines[0].title or "")[:160]
+        elif news.error:
+            news_note = f"news fail: {news.error}"[:160]
     try:
         broker.submit(
             side,
@@ -389,6 +397,8 @@ def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
             entry_ref="last close (paper fill; lab path is next-open)",
             horizon=int(cfg.get("horizon") or 8),
             note=f"validity={row.validity}",
+            news_bias=news_bias,
+            news_note=news_note,
         )
         st.session_state["paper_flash"] = f"Paper {side} recorded @ {_fmt_num(price, 5)} — local journal only."
         if row.validity == VALIDITY_STALE:
@@ -427,6 +437,8 @@ def _render_paper_journal(broker: PaperBroker) -> None:
                     "model": r.get("model_signal"),
                     "conf": r.get("confidence"),
                     "session": r.get("session"),
+                    "news": r.get("news_bias"),
+                    "news_note": r.get("news_note"),
                     "reason": r.get("exit_reason"),
                     "drivers": r.get("drivers"),
                 }
@@ -439,7 +451,8 @@ def _render_paper_journal(broker: PaperBroker) -> None:
                 st.markdown(
                     f"- **{r.get('pair')} {r.get('side')}**  validity={r.get('validity_at_entry')}  "
                     f"model={r.get('model_signal')}  conf={r.get('confidence')}  "
-                    f"{(r.get('rationale') or '')[:180]}"
+                    f"news={r.get('news_bias') or 'n/a'}  "
+                    f"{(r.get('rationale') or r.get('news_note') or '')[:180]}"
                 )
     agg = broker.aggregates()
     m1, m2, m3, m4 = st.columns(4)
@@ -754,7 +767,7 @@ def render_watch_board(cfg) -> None:
                     with rk:
                         _render_risk(row)
                         if broker is not None:
-                            _render_paper_actions(row, cfg, broker)
+                            _render_paper_actions(row, cfg, broker, news=news)
                     with st.expander("Drivers, rules, rationale, headlines"):
                         st.markdown(
                             f"- **Buy/Sell:** {row.buy_sell}  \n"

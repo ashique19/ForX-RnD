@@ -36,9 +36,11 @@ def test_submit_requires_price_and_one_position(tmp_path):
     b = PaperBroker(tmp_path / "p.json", cfg={"spread_pips": 0.0, "horizon": 8})
     with pytest.raises(BrokerError, match="no reference price"):
         b.submit("BUY", "EURUSD")
-    fill = b.submit("BUY", "EURUSD", sl=1.09, tp=1.12, price=1.10, timeframe="1h")
+    fill = b.submit("BUY", "EURUSD", sl=1.09, tp=1.12, price=1.10, timeframe="1h", news_bias="mixed", news_note="fixture headline")
     assert fill["kind"] == "open"
     assert fill["price"] == pytest.approx(1.10)
+    assert b.list_positions()[0]["news_bias"] == "mixed"
+    assert "fixture" in b.list_positions()[0]["news_note"]
     assert len(b.list_positions()) == 1
     with pytest.raises(BrokerError, match="already has an open"):
         b.submit("SELL", "EURUSD", price=1.11)
