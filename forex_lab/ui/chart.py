@@ -176,7 +176,20 @@ def candlestick_figure(
     except ImportError:
         return None, "no candlestick — plotly is not installed"
 
-    from forex_lab.ui.theme import BG, BORDER, BUY, MUTED, SELL, SURFACE, TEXT, TEXT_BRIGHT
+    from forex_lab.ui.theme import (
+        BG,
+        BORDER,
+        BUY,
+        CARD,
+        EMA_FAST,
+        EMA_SLOW,
+        MUTED,
+        RSI_LINE,
+        SELL,
+        TEXT,
+        TEXT_BRIGHT,
+        plotly_template,
+    )
 
     take = int(n) if n is not None else candle_bar_count(cfg)
     frame = ohlc_window(ohlcv, n=take)
@@ -258,7 +271,7 @@ def candlestick_figure(
             x=idx,
             y=ema_fast_s,
             name=f"EMA {ema_fast}",
-            line=dict(color="#f5c542", width=1.5),
+            line=dict(color=EMA_FAST, width=1.5),
             hoverinfo="y+name",
         )
         if candle_row:
@@ -270,7 +283,7 @@ def candlestick_figure(
             x=idx,
             y=ema_slow_s,
             name=f"EMA {ema_slow}",
-            line=dict(color="#60a5fa", width=1.5),
+            line=dict(color=EMA_SLOW, width=1.5),
             hoverinfo="y+name",
         )
         if candle_row:
@@ -299,7 +312,7 @@ def candlestick_figure(
                 x=idx,
                 y=rsi_s,
                 name=f"RSI {period}",
-                line=dict(color="#c4b5fd", width=1.4),
+                line=dict(color=RSI_LINE, width=1.4),
                 hoverinfo="y+name",
             ),
             row=rsi_row,
@@ -355,9 +368,9 @@ def candlestick_figure(
         heading = f"{title}   {heading}"
 
     fig.update_layout(
-        template="plotly_dark",
+        template=plotly_template(),
         paper_bgcolor=BG,
-        plot_bgcolor=SURFACE,
+        plot_bgcolor=CARD,
         font=dict(color=TEXT, size=14, family="sans-serif"),
         title=dict(
             text=heading,

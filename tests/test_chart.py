@@ -20,7 +20,7 @@ from forex_lab.ui.chart import (
     ohlc_header_text,
     ohlc_window,
 )
-from forex_lab.ui.theme import BG, BUY, SELL, SURFACE
+from forex_lab.ui.theme import BG, BUY, CARD, MUTED, SELL, TEXT
 
 
 plotly = pytest.importorskip("plotly")
@@ -60,7 +60,7 @@ def test_stale_missing_do_not_invent_candles():
     assert "MISSING" in note2
 
 
-def test_candlestick_plotly_dark_theme_buy_sell_and_volume():
+def test_candlestick_plotly_light_theme_buy_sell_and_volume():
     df = generate_synthetic_ohlcv(bars=180, seed=5)
     fig, note = candlestick_figure(
         df,
@@ -83,7 +83,11 @@ def test_candlestick_plotly_dark_theme_buy_sell_and_volume():
     assert str(dec).lower() == SELL.lower()
     layout = fig.layout
     assert str(layout.paper_bgcolor).lower() == BG.lower()
-    assert str(layout.plot_bgcolor).lower() == SURFACE.lower()
+    assert str(layout.plot_bgcolor).lower() == CARD.lower()
+    tick = str(getattr(getattr(layout.yaxis, "tickfont", None), "color", "") or "").lower()
+    assert tick in {TEXT.lower(), MUTED.lower()} or tick == ""
+    template = str(getattr(layout, "template", "") or "")
+    assert "plotly_white" in template.lower() or BG.lower() in ("#f4f6f8",)
     assert layout.xaxis.rangeslider.visible is False
     assert "EURUSD" in str(layout.title.text or "")
     assert "O " in str(layout.title.text or "")
@@ -119,6 +123,10 @@ def test_chart_helper_does_not_import_broker():
     assert "1m" in CHART_INTERVALS and "1h" in CHART_INTERVALS
     app = Path("streamlit_app.py").read_text(encoding="utf-8")
     assert "_render_chart_toolbar" in app
+    assert "board_realtime" in app
+    assert "board_reload" in app
+    assert '"Manual update"' not in app
+    assert '"Update selected"' not in app
     assert "build_signal_brief" in app
     assert "Run pipeline" in app
     assert "Add pair" in app

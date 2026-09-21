@@ -1,4 +1,4 @@
-"""Dark dense terminal theme for the Streamlit desk.
+"""Light (default) dense desk theme — optional dark toggle.
 
 Presentation only. Does not change BrokerPort, paper fills, session windows,
 or Asia/Dhaka display clocks. BUY / SELL / HOLD colors are high-contrast scan
@@ -18,20 +18,7 @@ from forex_lab.freshness import (
 )
 from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT
 
-# High-contrast terminal palette (also mirrored as CSS variables).
-BG = "#0a0e14"
-SURFACE = "#151e28"
-ELEVATED = "#1c2734"
-CARD = "#1a2430"
-BORDER = "#4a5d73"
-BORDER_STRONG = "#6b8299"
-TEXT = "#f2f5f8"
-TEXT_BRIGHT = "#f8fafc"
-# Secondary copy: light grey on #0a0e14 (never dark-grey-on-dark).
-MUTED = "#c8d0db"
-DIM = "#b3becb"
 # Readability first. px so Streamlit cannot shrink captions back to ~11px.
-# Body 17px after the 16px pass still felt tight on the scan board.
 FONT_ROOT_PX = 17
 FONT_BODY = "17px"
 FONT_CAPTION = "15px"
@@ -45,43 +32,72 @@ FONT_SIG_COMPACT = "17px"
 FONT_CLOCK = "22px"
 FONT_TITLE = "22px"
 
-# Top-level desk destinations. Only one mode's main content is on screen.
 DESK_MODES = ("Decision", "Calendar", "Paper", "Lab", "Awareness")
 DEFAULT_MODE = "Decision"
+DEFAULT_THEME = "light"
 
+# BUY / SELL stay the same hue on both palettes (high-contrast scan aids).
 BUY = "#16c784"
-BUY_FG = "#04140c"
-BUY_BG = "#0f3d2a"
 SELL = "#ea3943"
-SELL_FG = "#ffffff"
-SELL_BG = "#3d1216"
-HOLD = "#c5ced8"
-HOLD_FG = "#e8edf3"
-HOLD_BG = "#2a313c"
-NEUTRAL = "#c0c9d4"
-NEUTRAL_BG = "#1a222c"
-
-WARN = "#f5a524"
-WARN_FG = "#1a1204"
-WARN_BG = "#3a2a0c"
 ERROR = "#ea3943"
-INFO = "#3b82f6"
-EVENT = "#a78bfa"
+INFO = "#2563eb"
+EVENT = "#7c3aed"
 OK = BUY
 
-SIGNAL_FILL = {
-    "BUY": (BUY, BUY_FG),
-    "SELL": (SELL, SELL_FG),
-    "HOLD": (HOLD_BG, HOLD_FG),
-    "—": (NEUTRAL_BG, NEUTRAL),
+LIGHT = {
+    "BG": "#f4f6f8",
+    "SURFACE": "#ffffff",
+    "ELEVATED": "#ffffff",
+    "CARD": "#ffffff",
+    "BORDER": "#cbd5e1",
+    "BORDER_STRONG": "#94a3b8",
+    "TEXT": "#0f172a",
+    "TEXT_BRIGHT": "#020617",
+    "MUTED": "#475569",
+    "DIM": "#64748b",
+    "BUY_FG": "#042f2e",
+    "BUY_BG": "#ccfbf1",
+    "SELL_FG": "#ffffff",
+    "SELL_BG": "#fee2e2",
+    "HOLD": "#334155",
+    "HOLD_FG": "#1e293b",
+    "HOLD_BG": "#e2e8f0",
+    "NEUTRAL": "#475569",
+    "NEUTRAL_BG": "#e2e8f0",
+    "WARN": "#b45309",
+    "WARN_FG": "#78350f",
+    "WARN_BG": "#fef3c7",
+    "EMA_FAST": "#d97706",
+    "EMA_SLOW": "#2563eb",
+    "RSI_LINE": "#7c3aed",
 }
 
-VALIDITY_TONE = {
-    VALIDITY_OK: OK,
-    VALIDITY_CLOSED: MUTED,
-    VALIDITY_STALE: WARN,
-    VALIDITY_MISSING: NEUTRAL,
-    VALIDITY_ERROR: ERROR,
+DARK = {
+    "BG": "#0a0e14",
+    "SURFACE": "#151e28",
+    "ELEVATED": "#1c2734",
+    "CARD": "#1a2430",
+    "BORDER": "#4a5d73",
+    "BORDER_STRONG": "#6b8299",
+    "TEXT": "#f2f5f8",
+    "TEXT_BRIGHT": "#f8fafc",
+    "MUTED": "#c8d0db",
+    "DIM": "#b3becb",
+    "BUY_FG": "#04140c",
+    "BUY_BG": "#0f3d2a",
+    "SELL_FG": "#ffffff",
+    "SELL_BG": "#3d1216",
+    "HOLD": "#c5ced8",
+    "HOLD_FG": "#e8edf3",
+    "HOLD_BG": "#2a313c",
+    "NEUTRAL": "#c0c9d4",
+    "NEUTRAL_BG": "#1a222c",
+    "WARN": "#f5a524",
+    "WARN_FG": "#1a1204",
+    "WARN_BG": "#3a2a0c",
+    "EMA_FAST": "#f5c542",
+    "EMA_SLOW": "#60a5fa",
+    "RSI_LINE": "#c4b5fd",
 }
 
 SESSION_FILL = {
@@ -92,17 +108,50 @@ SESSION_FILL = {
     "LONDON+NY": "#b45309",
     "ASIA+NY": "#6d28d9",
     "ASIA+LONDON+NY": "#b45309",
-    "CLOSED": "#3a4450",
-    "OFF": "#2a313c",
-    "N/A": "#2a313c",
+    "CLOSED": "#64748b",
+    "OFF": "#94a3b8",
+    "N/A": "#94a3b8",
 }
 
 ALERT_TONE = {
     "flip": INFO,
-    "stale": WARN,
-    "missing": NEUTRAL,
+    "stale": "#b45309",
+    "missing": "#64748b",
     "event": EVENT,
 }
+
+
+def _bind_palette(pal: dict[str, str]) -> None:
+    g = globals()
+    g.update(pal)
+    g["SIGNAL_FILL"] = {
+        "BUY": (BUY, pal["BUY_FG"]),
+        "SELL": (SELL, pal["SELL_FG"]),
+        "HOLD": (pal["HOLD_BG"], pal["HOLD_FG"]),
+        "—": (pal["NEUTRAL_BG"], pal["NEUTRAL"]),
+    }
+    g["VALIDITY_TONE"] = {
+        VALIDITY_OK: BUY,
+        VALIDITY_CLOSED: pal["MUTED"],
+        VALIDITY_STALE: pal["WARN"],
+        VALIDITY_MISSING: pal["NEUTRAL"],
+        VALIDITY_ERROR: ERROR,
+    }
+
+
+_bind_palette(LIGHT)
+ACTIVE_THEME = DEFAULT_THEME
+
+
+def apply_palette(name: str | None = None) -> str:
+    """Switch module colors. Returns the resolved theme name (light|dark)."""
+    global ACTIVE_THEME
+    mode = str(name or DEFAULT_THEME).strip().lower()
+    if mode not in {"light", "dark"}:
+        mode = DEFAULT_THEME
+    _bind_palette(DARK if mode == "dark" else LIGHT)
+    ACTIVE_THEME = mode
+    return mode
 
 
 def signal_fill(sig: object) -> tuple[str, str]:
@@ -291,6 +340,27 @@ def empty_state_html(
 
 def empty_inline_html(text: str) -> str:
     return f'<div class="fx-empty-inline">{_esc(text)}</div>'
+
+
+CHROME_STATE_PREFIX = "chrome_open_"
+
+
+def chrome_state_key(name: str) -> str:
+    """Session-state key for an auxiliary chrome card. Default is collapsed."""
+    slug = "".join(ch if ch.isalnum() else "_" for ch in str(name or "").strip().lower())
+    slug = slug.strip("_") or "aux"
+    return f"{CHROME_STATE_PREFIX}{slug}"
+
+
+def chrome_card_head_html(title: str, *, expanded: bool = False, note: str = "") -> str:
+    """Header copy for a collapsible helper card. Chevron is a separate icon button."""
+    extra = f'<span class="fx-chrome-note">{_esc(note)}</span>' if note else ""
+    state = "open" if expanded else "closed"
+    return (
+        f'<div class="fx-chrome-head {state}">'
+        f'<span class="fx-chrome-title">{_esc(title)}</span>'
+        f"{extra}</div>"
+    )
 
 
 def section_head_html(kicker: str, title: str, *, note: str = "") -> str:
@@ -581,20 +651,6 @@ def tech_bullets_html(bullets: list[str] | tuple[str, ...]) -> str:
 
 TERMINAL_CSS = """
 :root {
-  --fx-bg: #0a0e14;
-  --fx-surface: #151e28;
-  --fx-elev: #1c2734;
-  --fx-card: #1a2430;
-  --fx-border: #4a5d73;
-  --fx-border-strong: #6b8299;
-  --fx-text: #f2f5f8;
-  --fx-text-bright: #f8fafc;
-  --fx-muted: #c8d0db;
-  --fx-dim: #b3becb;
-  --fx-buy: #16c784;
-  --fx-sell: #ea3943;
-  --fx-hold: #c5ced8;
-  --fx-warn: #f5a524;
   --fx-row-h: 2.85rem;
   --fx-font-body: 17px;
   --fx-font-caption: 15px;
@@ -849,7 +905,7 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   border-color: var(--fx-buy) !important;
   color: var(--fx-buy) !important;
   box-shadow: inset 3px 0 0 var(--fx-buy);
-  background: #0f3d2a !important;
+  background: var(--fx-buy-bg) !important;
 }
 [class*="st-key-board_rm"] button {
   background: transparent !important;
@@ -859,22 +915,22 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 }
 [class*="st-key-paper_buy"] button {
   background: var(--fx-buy) !important;
-  color: #04140c !important;
+  color: var(--fx-buy-fg) !important;
   border: 0 !important;
 }
 [class*="st-key-paper_sell"] button {
   background: var(--fx-sell) !important;
-  color: #fff !important;
+  color: var(--fx-sell-fg) !important;
   border: 0 !important;
 }
 [class*="st-key-paper_close"] button {
-  background: #3a424d !important;
-  color: #e6edf3 !important;
+  background: var(--fx-hold-bg) !important;
+  color: var(--fx-text) !important;
   border: 0 !important;
 }
 [class*="st-key-board_fetch"] button {
   background: var(--fx-warn) !important;
-  color: #1a1204 !important;
+  color: var(--fx-warn-fg) !important;
   border: 0 !important;
 }
 [class*="st-key-paper_buy"] button:disabled,
@@ -995,18 +1051,19 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
   letter-spacing: 0.08em;
   padding: 4px 9px;
   border-radius: 3px;
-  background: #0f3d2a;
+  background: var(--fx-buy-bg);
   color: var(--fx-buy);
+  border: 1px solid var(--fx-border);
 }
 .fx-chip.muted {
   background: var(--fx-surface);
   color: var(--fx-muted);
   border: 1px solid var(--fx-border);
 }
-.fx-chip.buy { background: #0f3d2a; color: var(--fx-buy); }
-.fx-chip.sell { background: #3d1216; color: var(--fx-sell); }
-.fx-chip.hold { background: #2a313c; color: var(--fx-hold); }
-.fx-chip.stale { background: #3a2a0c; color: var(--fx-warn); }
+.fx-chip.buy { background: var(--fx-buy-bg); color: var(--fx-buy); }
+.fx-chip.sell { background: var(--fx-sell-bg); color: var(--fx-sell); }
+.fx-chip.hold { background: var(--fx-hold-bg); color: var(--fx-hold); }
+.fx-chip.stale { background: var(--fx-warn-bg); color: var(--fx-warn); }
 .fx-clock {
   font-variant-numeric: tabular-nums;
   font-weight: 800;
@@ -1090,15 +1147,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
   border: 1px solid var(--fx-border);
 }
 .fx-count b { font-variant-numeric: tabular-nums; padding-left: 4px; color: var(--fx-text); }
-.fx-count.buy.on { background: #0f3d2a; color: var(--fx-buy); border-color: #1a5c3e; }
+.fx-count.buy.on { background: var(--fx-buy-bg); color: var(--fx-buy); border-color: var(--fx-buy); }
 .fx-count.buy.on b { color: var(--fx-buy); }
-.fx-count.sell.on { background: #3d1216; color: var(--fx-sell); border-color: #6b1c24; }
+.fx-count.sell.on { background: var(--fx-sell-bg); color: var(--fx-sell); border-color: var(--fx-sell); }
 .fx-count.sell.on b { color: var(--fx-sell); }
-.fx-count.hold.on { background: #2a313c; color: var(--fx-hold); border-color: #3a4450; }
+.fx-count.hold.on { background: var(--fx-hold-bg); color: var(--fx-hold); border-color: var(--fx-border-strong); }
 .fx-count.hold.on b { color: var(--fx-hold); }
-.fx-count.stale.on { background: #3a2a0c; color: var(--fx-warn); border-color: #6b4a12; }
+.fx-count.stale.on { background: var(--fx-warn-bg); color: var(--fx-warn); border-color: var(--fx-warn); }
 .fx-count.stale.on b { color: var(--fx-warn); }
-.fx-count.missing.on { background: #1a222c; color: var(--fx-muted); border-color: #3a4450; }
+.fx-count.missing.on { background: var(--fx-neutral-bg); color: var(--fx-muted); border-color: var(--fx-border-strong); }
 .fx-count.missing.on b { color: var(--fx-muted); }
 .fx-board-head {
   font-size: 13px;
@@ -1294,6 +1351,45 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
 .fx-card-warn { border-color: var(--fx-sell); }
 .fx-card-caution { border-color: var(--fx-warn); }
 .fx-card-info { border-color: var(--fx-border-strong); }
+.fx-chrome-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 2px 2px;
+  min-height: 2.15rem;
+}
+.fx-chrome-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--fx-text);
+  line-height: 1.35;
+}
+.fx-chrome-head.closed .fx-chrome-title {
+  color: var(--fx-muted);
+  font-weight: 700;
+}
+.fx-chrome-note {
+  font-size: 14px;
+  color: var(--fx-muted);
+  font-weight: 600;
+}
+[class*="st-key-chrome_toggle"] button,
+[class*="st-key-board_reload"] button {
+  min-height: 2.15rem !important;
+  min-width: 2.15rem !important;
+  height: 2.15rem !important;
+  width: 2.15rem !important;
+  padding: 0 !important;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  background: var(--fx-elev) !important;
+  border: 1px solid var(--fx-border-strong) !important;
+  color: var(--fx-text-bright) !important;
+  border-radius: 4px !important;
+}
 .fx-rail {
   background: var(--fx-surface);
   border: 1px solid var(--fx-border);
@@ -1479,6 +1575,22 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
   font-size: 14px !important;
   letter-spacing: 0.06em !important;
 }
+.fx-theme-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fx-muted);
+  padding: 2px 0 4px;
+}
+[class*="st-key-desk_theme"] label,
+[class*="st-key-desk_theme"] p,
+[class*="st-key-desk_theme"] [data-testid="stWidgetLabel"] p {
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.06em !important;
+  color: var(--fx-muted) !important;
+}
 @media (max-width: 1320px) {
   .block-container,
   [data-testid="stMainBlockContainer"] {
@@ -1496,15 +1608,64 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
 }
 """
 
+def _root_css() -> str:
+    """Bind the active palette into :root so CSS tracks Light / Dark."""
+    return f"""
+:root {{
+  --fx-bg: {BG};
+  --fx-surface: {SURFACE};
+  --fx-elev: {ELEVATED};
+  --fx-card: {CARD};
+  --fx-border: {BORDER};
+  --fx-border-strong: {BORDER_STRONG};
+  --fx-text: {TEXT};
+  --fx-text-bright: {TEXT_BRIGHT};
+  --fx-muted: {MUTED};
+  --fx-dim: {DIM};
+  --fx-buy: {BUY};
+  --fx-buy-fg: {BUY_FG};
+  --fx-buy-bg: {BUY_BG};
+  --fx-sell: {SELL};
+  --fx-sell-fg: {SELL_FG};
+  --fx-sell-bg: {SELL_BG};
+  --fx-hold: {HOLD};
+  --fx-hold-fg: {HOLD_FG};
+  --fx-hold-bg: {HOLD_BG};
+  --fx-neutral: {NEUTRAL};
+  --fx-neutral-bg: {NEUTRAL_BG};
+  --fx-warn: {WARN};
+  --fx-warn-fg: {WARN_FG};
+  --fx-warn-bg: {WARN_BG};
+  --fx-error: {ERROR};
+  --fx-info: {INFO};
+  --fx-event: {EVENT};
+}}
+"""
+
+
+def plotly_template() -> str:
+    """Plotly layout template for the active desk palette."""
+    return "plotly_dark" if ACTIVE_THEME == "dark" else "plotly_white"
+
+
 def terminal_css() -> str:
-    return TERMINAL_CSS
+    return _root_css() + TERMINAL_CSS
 
 
 def inject_terminal_css() -> None:
-    """Apply dense dark CSS. Safe no-op when Streamlit is not importing the app."""
+    """Apply desk CSS for the active Light (default) / Dark palette.
+
+    Safe no-op when Streamlit is not importing the app. Presentation only —
+    does not change BrokerPort, paper fills, or Asia/Dhaka clocks.
+    """
     import streamlit as st
 
+    try:
+        raw = st.session_state.get("desk_theme")
+    except Exception:
+        raw = DEFAULT_THEME
+    name = apply_palette(raw)
     st.markdown(
-        f'<style data-fx-theme="terminal">{TERMINAL_CSS}</style>',
+        f'<style data-fx-theme="{name}">{terminal_css()}</style>',
         unsafe_allow_html=True,
     )

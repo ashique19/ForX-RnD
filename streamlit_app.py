@@ -106,7 +106,10 @@ from forex_lab.ui.theme import (
     empty_inline_html,
     empty_state_html,
     DEFAULT_MODE,
+    DEFAULT_THEME,
     DESK_MODES,
+    chrome_card_head_html,
+    chrome_state_key,
     inject_terminal_css,
     scan_counts,
     scan_legend_html,
@@ -236,11 +239,58 @@ def _init_state() -> None:
         st.session_state.last_action = None
     if "desk_mode" not in st.session_state:
         st.session_state.desk_mode = DEFAULT_MODE
+    if "desk_theme" not in st.session_state:
+        st.session_state.desk_theme = DEFAULT_THEME
 
 
 def _active_mode() -> str:
     mode = str(st.session_state.get("desk_mode") or DEFAULT_MODE)
     return mode if mode in DESK_MODES else DEFAULT_MODE
+
+
+def _chrome_open(name: str, *, default: bool = False) -> bool:
+    key = chrome_state_key(name)
+    if key not in st.session_state:
+        st.session_state[key] = bool(default)
+    return bool(st.session_state[key])
+
+
+def _flip_chrome(name: str) -> None:
+    key = chrome_state_key(name)
+    st.session_state[key] = not bool(st.session_state.get(key, False))
+
+
+def _render_aux_chrome(name: str, title: str, *, note: str = "", default: bool = False) -> bool:
+    """Chevron header for helper cards. Default collapsed; state lives in session_state."""
+    open_ = _chrome_open(name, default=default)
+    chev = "▾" if open_ else "▸"
+    btn, head = st.columns([0.28, 6.6])
+    with btn:
+        if st.button(
+            chev,
+            key=f"chrome_toggle_{name}",
+            help="Expand or collapse this helper. Not required to keep the board on screen.",
+        ):
+            _flip_chrome(name)
+            st.rerun()
+    with head:
+        st.markdown(
+            chrome_card_head_html(title, expanded=open_, note=note),
+            unsafe_allow_html=True,
+        )
+    return open_
+
+
+def _kick_app_rerun() -> None:
+    """Full-script rerun so fragment run_every picks up Realtime."""
+    try:
+        st.rerun(scope="app")
+    except TypeError:
+        st.rerun()
+
+
+def _mark_board_reload() -> None:
+    st.session_state["board_reload_tick"] = True
 
 
 def _render_mode_nav() -> str:
@@ -374,7 +424,7 @@ def _render_fetch_cta(pair: str, cfg, *, key: str, interval: str | None = None) 
         key=key,
         type="primary",
         use_container_width=True,
-        help="Refresh this pair's OHLCV (same as Lab → Fetch). Then Manual update. Not a broker quote.",
+                help="Refresh this pair's OHLCV (same as Lab → Fetch). Then ↻ on the chart. Not a broker quote.",
     ):
         _run_step(
             f"Fetch {pair}",
@@ -495,7 +545,7 @@ def _render_price_chart(row, cfg, *, chart_tf: str | None = None, show_rsi: bool
             "No candlestick — data is not OK",
             blocked,
             kicker="CHART",
-            action="Lab → Fetch, then Manual update. Or Run pipeline with Also fetch.",
+            action="Lab → Fetch, then ↻ on the chart. Or Run pipeline with Also fetch.",
         )
         _render_fetch_cta(
             row.pair,
@@ -528,7 +578,7 @@ def _render_price_chart(row, cfg, *, chart_tf: str | None = None, show_rsi: bool
             "No candlestick for this pair",
             f"{note}",
             kicker="CHART",
-            action="Lab → Fetch this timeframe, then Manual update.",
+            action="Lab → Fetch this timeframe, then ↻ on the chart.",
         )
         _render_fetch_cta(
             row.pair,
@@ -551,7 +601,24 @@ def _render_price_chart(row, cfg, *, chart_tf: str | None = None, show_rsi: bool
 
 
 def _render_chart_toolbar(row, cfg) -> tuple[str, bool, bool]:
-    """Pair label + timeframe chips + EMA200/RSI toggles. Missing TFs stay disabled."""
+    """Realtime + reload above TF chips. Missing TFs stay disabled. Not broker live."""
+    live, reload_col = st.columns([1.55, 0.5])
+    with live:
+        toggle = getattr(st, "toggle", st.checkbox)
+        toggle(
+            "Realtime",
+            key="board_realtime",
+            help="Auto-refresh from local cache on a timer. yfinance only when a bar is due. "
+            "Not broker quotes and not streaming.",
+            on_change=_kick_app_rerun,
+        )
+    with reload_col:
+        st.button(
+            "↻",
+            key="board_reload",
+            help="One-shot refresh of cached yfinance / signals. Not a broker quote.",
+            on_click=_mark_board_reload,
+        )
     available = cached_chart_intervals(row.pair, cfg)
     default_tf = str(row.timeframe or "1h")
     key = f"chart_tf_{row.pair}"
@@ -648,7 +715,7 @@ def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=
     if bundle is None:
         _empty_state(
             "Calendar not loaded this tick",
-            "Retry Manual update if the feed was skipped.",
+            "Retry ↻ on the chart if the feed was skipped.",
             kicker="CALENDAR",
         )
         return
@@ -1773,24 +1840,35 @@ def _render_masthead(cfg) -> None:
     now = datetime.now(zoneinfo_for(cfg))
     clock = html.escape(fmt_display(now, cfg, seconds=True))
     tz = html.escape(timezone_tag(cfg))
-    st.markdown(
-        f'<div class="fx-masthead">'
-        f'<div class="fx-masthead-top">'
-        f'<div class="fx-masthead-left">'
-        f'<span class="fx-brand">FX</span>'
-        f'<span class="fx-title">SIGNAL SCREEN</span>'
-        f'<span class="fx-chip">PAPER</span>'
-        f'<span class="fx-chip muted">RESEARCH</span>'
-        f"</div>"
-        f'<div class="fx-masthead-right">'
-        f'<span class="fx-clock">{clock}</span>'
-        f'<span class="fx-tz">{tz}</span>'
-        f"</div>"
-        f"</div>"
-        f"{scan_legend_html()}"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    chrome, toggle = st.columns([6.35, 1.15])
+    with chrome:
+        st.markdown(
+            f'<div class="fx-masthead">'
+            f'<div class="fx-masthead-top">'
+            f'<div class="fx-masthead-left">'
+            f'<span class="fx-brand">FX</span>'
+            f'<span class="fx-title">SIGNAL SCREEN</span>'
+            f'<span class="fx-chip">PAPER</span>'
+            f'<span class="fx-chip muted">RESEARCH</span>'
+            f"</div>"
+            f'<div class="fx-masthead-right">'
+            f'<span class="fx-clock">{clock}</span>'
+            f'<span class="fx-tz">{tz}</span>'
+            f"</div>"
+            f"</div>"
+            f"{scan_legend_html()}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with toggle:
+        st.markdown('<div class="fx-theme-kicker">Theme</div>', unsafe_allow_html=True)
+        st.radio(
+            "Theme",
+            options=("light", "dark"),
+            format_func=lambda x: "Light" if x == "light" else "Dark",
+            key="desk_theme",
+            help="Light is the default desk. Dark is optional. Presentation only.",
+        )
 
 
 def _load_calendar(cfg, *, force: bool = False) -> CalendarBundle:
@@ -1899,10 +1977,7 @@ def _render_watchlist_editor(wl, cfg, available, lab_iv) -> None:
                 st.rerun()
             except WatchlistError as exc:
                 st.error(str(exc))
-        st.caption(
-            "New rows appear on the board. No cache → Data● MISSING — open Lab and Fetch "
-            "(or Run pipeline with Also fetch). × on a row removes it. Does not wipe the paper journal."
-        )
+        st.caption("× removes a row. Writes config/watchlist.yaml. Does not wipe the paper journal.")
 
 
 def render_decision_mode(cfg) -> None:
@@ -1913,61 +1988,61 @@ def render_decision_mode(cfg) -> None:
     lab_iv = wl.lab_interval(cfg)
     available = ui_pairs(cfg)
 
-    with st.container(border=True):
-        _render_workspace_bar(cfg, wl)
-        c_real, c_secs, c_sound, c_help = st.columns([1.0, 1.0, 1.15, 2.1])
-        realtime = c_real.checkbox(
-            "Realtime",
-            value=False,
-            help="Rebuild signals from local cache on a timer. yfinance only when a bar is due. "
-            "Not broker quotes and not streaming.",
-        )
-        if "alert_sound" not in st.session_state:
-            st.session_state["alert_sound"] = bool(load_alert_state(cfg).sound)
-        sound_on = c_sound.checkbox(
-            "Alert sound",
-            key="alert_sound",
-            help="Off by default. Short beep when a watchlist pair flips BUY/SELL/HOLD or goes "
-            "STALE/MISSING. Never places orders.",
-        )
-        bcfg = board_cfg(cfg)
-        default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
-        if "board_refresh_s" not in st.session_state:
-            st.session_state["board_refresh_s"] = max(60, int(wl.refresh_seconds) or default_rt)
-        seconds = int(
-            c_secs.number_input(
-                "Refresh (s)",
-                min_value=60,
-                max_value=3600,
-                step=30,
-                key="board_refresh_s",
-                help="Realtime poll interval. Default 60s. Not a broker stream.",
+    if "board_realtime" not in st.session_state:
+        st.session_state["board_realtime"] = False
+    if "alert_sound" not in st.session_state:
+        st.session_state["alert_sound"] = bool(load_alert_state(cfg).sound)
+    bcfg = board_cfg(cfg)
+    default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
+    if "board_refresh_s" not in st.session_state:
+        st.session_state["board_refresh_s"] = max(60, int(wl.refresh_seconds) or default_rt)
+
+    aux_title = (
+        f"Nav / Workspace / lab TF {lab_iv} · click a pair for the drawer"
+    )
+    if _render_aux_chrome("decision_aux", aux_title):
+        with st.container(border=True):
+            _render_workspace_bar(cfg, wl)
+            c_secs, c_sound, c_help = st.columns([1.15, 1.2, 2.6])
+            c_sound.checkbox(
+                "Alert sound",
+                key="alert_sound",
+                help="Off by default. Short beep when a watchlist pair flips BUY/SELL/HOLD or goes "
+                "STALE/MISSING. Never places orders.",
             )
-        )
-        if seconds != int(wl.refresh_seconds):
-            wl.refresh_seconds = seconds
-            save_watchlist(wl)
-        with c_help:
-            with st.expander("Column help (research only)"):
-                st.markdown(BOARD_HELP)
+            seconds_in = int(
+                c_secs.number_input(
+                    "Refresh (s)",
+                    min_value=60,
+                    max_value=3600,
+                    step=30,
+                    key="board_refresh_s",
+                    help="Realtime poll interval when the chart Realtime switch is on. Default 60s. "
+                    "Not a broker stream.",
+                )
+            )
+            if seconds_in != int(wl.refresh_seconds):
+                wl.refresh_seconds = seconds_in
+                save_watchlist(wl)
+            with c_help:
+                with st.expander("Column help (research only)"):
+                    st.markdown(BOARD_HELP)
+            st.caption(
+                "New rows appear on the board after Add pair. No cache → Data● MISSING — "
+                "Lab → Fetch (or Run pipeline with Also fetch). "
+                "Click a pair for chart / SHAP / news / risk / rationale. "
+                "Realtime and ↻ sit above the chart. News context, not a trade instruction."
+            )
+
+    realtime = bool(st.session_state.get("board_realtime", False))
+    sound_on = bool(st.session_state.get("alert_sound", False))
+    seconds = int(st.session_state.get("board_refresh_s") or default_rt)
 
     run_every = seconds if realtime else None
 
     @st.fragment(run_every=run_every)
     def _board_fragment() -> None:
-        manual = False
-        b1, b2, b3 = st.columns([1.2, 1.4, 2.4])
-        if not realtime:
-            if b1.button("Manual update", type="primary", help="Refresh all watchlist pairs once"):
-                manual = True
-        else:
-            b1.caption("Realtime on")
-        if b2.button(
-            "Update selected",
-            help="Force yfinance (short window, merged into cache) + regenerate signals "
-            "for pairs that already have a model. Rate-limited with backoff.",
-        ):
-            manual = True
+        manual = bool(st.session_state.pop("board_reload_tick", False))
         with st.spinner("Updating watch board…" if (manual or realtime) else "Loading watch board…"):
             rows, rate_msg = _sync_watch_rows(wl, cfg, manual=manual, realtime=realtime)
         if rate_msg:
@@ -2027,6 +2102,7 @@ def render_decision_mode(cfg) -> None:
                 f"{refresh_bit}"
                 "Last is yfinance last/mid-ish — not broker bid/ask. "
                 "Spread is the config pip estimate (cost context). "
+                "News context, not a trade instruction. "
                 + PAPER_STALE_CAPTION
                 + " "
                 + PAPER_GATE_CAPTION
@@ -2044,10 +2120,6 @@ def render_decision_mode(cfg) -> None:
                 flash = st.session_state.pop("paper_flash", None)
                 if flash:
                     st.success(flash)
-                st.caption(
-                    "Click a pair for chart / SHAP / news / risk / rationale. "
-                    "News context, not a trade instruction."
-                )
                 _render_dense_header()
                 selected = st.session_state.get("board_detail_pair")
                 if selected and selected not in {r.pair for r in rows}:
@@ -2082,20 +2154,6 @@ def render_decision_mode(cfg) -> None:
                     calendar,
                 )
 
-        ok_n = sum(1 for r in rows if r.validity == VALIDITY_OK)
-        closed_n = sum(1 for r in rows if r.validity == VALIDITY_CLOSED)
-        stale_n = sum(1 for r in rows if r.validity == VALIDITY_STALE)
-        missing_n = sum(1 for r in rows if r.validity in {VALIDITY_MISSING, VALIDITY_ERROR})
-        if rows:
-            bits = [f"{ok_n} OK"]
-            if closed_n:
-                bits.append(f"{closed_n} CLOSED")
-            if stale_n:
-                bits.append(f"{stale_n} STALE")
-            if missing_n:
-                bits.append(f"{missing_n} MISSING/ERROR")
-            b3.caption(" · ".join(bits))
-
     _render_watchlist_editor(wl, cfg, available, lab_iv)
     _board_fragment()
 
@@ -2109,11 +2167,15 @@ def render_calendar_mode(cfg) -> None:
         ),
         unsafe_allow_html=True,
     )
-    st.caption(
-        "High-impact FX releases (NFP, FOMC, CPI, rate decisions). "
-        "Cached Forex Factory weekly JSON. Fail-soft if offline. "
-        f"{clock_note(cfg)}"
-    )
+    if _render_aux_chrome(
+        "calendar_aux",
+        "Calendar — unofficial feed, not a trade instruction",
+    ):
+        st.caption(
+            "High-impact FX releases (NFP, FOMC, CPI, rate decisions). "
+            "Cached Forex Factory weekly JSON. Fail-soft if offline. "
+            f"{clock_note(cfg)}"
+        )
     wl = load_watchlist(cfg=cfg, create=True)
     calendar = _load_calendar(cfg)
     _render_calendar_panel(calendar, wl.pair_symbols(), cfg)
@@ -2128,6 +2190,14 @@ def render_paper_mode(cfg) -> None:
         ),
         unsafe_allow_html=True,
     )
+    if _render_aux_chrome(
+        "paper_aux",
+        "Paper — practice desk, BrokerPort, not a live venue",
+    ):
+        st.caption(
+            "Journal, RIGHT/WRONG lookback, and paper marks vs last/mid-ish cache. "
+            "Not live broker PnL. Clocks Asia/Dhaka."
+        )
     broker = _load_broker(cfg)
     if broker is None:
         _empty_state(
@@ -2151,12 +2221,16 @@ def render_awareness_mode(cfg) -> None:
         ),
         unsafe_allow_html=True,
     )
-    st.caption(
-        "OHLCV, news RSS, model files, calendar, optional FRED. "
-        "STALE / FAIL / MISSING never display as OK. "
-        f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged. "
-        "Daily digest is yesterday/today in Asia/Dhaka — not a live edge."
-    )
+    if _render_aux_chrome(
+        "awareness_aux",
+        "Awareness — sources this desk observes",
+    ):
+        st.caption(
+            "OHLCV, news RSS, model files, calendar, optional FRED. "
+            "STALE / FAIL / MISSING never display as OK. "
+            f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged. "
+            "Daily digest is yesterday/today in Asia/Dhaka — not a live edge."
+        )
     wl = load_watchlist(cfg=cfg, create=True)
     bcfg = board_cfg(cfg)
     seconds = int(st.session_state.get("board_refresh_s") or wl.refresh_seconds or 60)
@@ -2265,13 +2339,17 @@ def render_lab_mode(cfg) -> None:
         section_head_html("Mode", "Lab", note="Fetch / Run pipeline — not the scan board"),
         unsafe_allow_html=True,
     )
-    st.caption(
-        "Secondary research surface. Open Decision to read signals. "
-        f"Project: `{project_root()}`. CLI is unchanged."
-    )
-    pairs = ui_pairs(cfg)
     default_period = str(cfg.get("period") or "2y")
     default_interval = str(cfg.get("interval") or "1h")
+    if _render_aux_chrome(
+        "lab_aux",
+        f"Lab / TF {default_interval} · Fetch / Run pipeline — not the scan board",
+    ):
+        st.caption(
+            "Secondary research surface. Open Decision to read signals. "
+            f"Project: `{project_root()}`. CLI is unchanged."
+        )
+    pairs = ui_pairs(cfg)
     pair = st.selectbox("Pair", options=pairs, index=0, help="From config/default.yaml", key="lab_pair")
     status = artifact_status(pair, cfg)
     st.markdown(

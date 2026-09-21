@@ -1,4 +1,4 @@
-"""Dark dense terminal theme — presentation only."""
+"""Light (default) dense desk theme — presentation only."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,18 +39,19 @@ def _rgb(hex_color: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def test_theme_config_is_dark_terminal():
+def test_theme_config_is_light_desk():
     cfg = (project_root() / ".streamlit" / "config.toml").read_text(encoding="utf-8")
-    assert 'base = "dark"' in cfg
+    assert 'base = "light"' in cfg
     assert "primaryColor" in cfg
     assert "#16c784" in cfg
     assert "toolbarMode" in cfg and "minimal" in cfg
     assert "backgroundColor" in cfg
     assert "baseFontSize = 17" in cfg
-    assert "textColor = \"#f2f5f8\"" in cfg
+    assert 'textColor = "#0f172a"' in cfg
     assert "showWidgetBorder = true" in cfg
-    assert "borderColor = \"#4a5d73\"" in cfg
-    assert "secondaryBackgroundColor = \"#1c2734\"" in cfg
+    assert 'borderColor = "#cbd5e1"' in cfg
+    assert 'secondaryBackgroundColor = "#ffffff"' in cfg
+    assert 'backgroundColor = "#f4f6f8"' in cfg
 
 
 def test_buy_sell_hold_are_high_contrast():
@@ -77,10 +78,11 @@ def test_buy_sell_hold_are_high_contrast():
 
 
 def test_muted_captions_and_labels_are_readable():
-    """Body 17px, captions 15px, secondary #c8d0db+ — not dark grey on dark."""
+    """Body 17px, captions 15px, slate muted on near-white — not washed-out grey."""
     from forex_lab.ui.health import awareness_table_html
     from forex_lab.ui.theme import (
         BG,
+        CARD,
         FONT_BODY,
         FONT_CAPTION,
         FONT_CELL,
@@ -89,19 +91,22 @@ def test_muted_captions_and_labels_are_readable():
         MUTED,
         NEUTRAL,
         TEXT,
+        apply_palette,
         validity_badge_html,
     )
 
+    apply_palette("light")
     assert FONT_BODY == "17px"
     assert FONT_CAPTION == "15px"
     assert FONT_LABEL == "15px"
     assert FONT_CELL == "16px"
     assert FONT_EXPANDER == "17px"
-    assert min(_rgb(MUTED)) >= 200
-    assert MUTED.lower() >= "#c8d0db"
-    assert _contrast(MUTED, BG) >= 10.0
-    assert _contrast(TEXT, BG) >= 12.0
-    assert _contrast(NEUTRAL, BG) >= 8.0
+    assert max(_rgb(MUTED)) <= 120
+    assert min(_rgb(MUTED)) >= 50
+    assert MUTED.lower() == "#475569"
+    assert _contrast(MUTED, BG) >= 4.5
+    assert _contrast(TEXT, BG) >= 10.0
+    assert _contrast(NEUTRAL, CARD) >= 4.5
     css = terminal_css()
     assert MUTED in css
     assert TEXT in css
@@ -288,12 +293,18 @@ def test_chrome_cards_borders_and_section_heads():
         BORDER_STRONG,
         CARD,
         DEFAULT_MODE,
+        DEFAULT_THEME,
         DESK_MODES,
         ELEVATED,
+        apply_palette,
         card_html,
+        chrome_card_head_html,
+        chrome_state_key,
         section_head_html,
         terminal_css,
     )
+
+    apply_palette("light")
 
     css = terminal_css()
     for needle in (
@@ -310,6 +321,9 @@ def test_chrome_cards_borders_and_section_heads():
         ".fx-advice-line",
         ".fx-invalid",
         "st-key-desk_nav",
+        "st-key-chrome_toggle",
+        "st-key-board_reload",
+        ".fx-chrome-head",
         '[data-testid="stTabs"]',
         '[data-testid="stVerticalBlockBorderWrapper"]',
         '[data-testid="stExpander"]',
@@ -335,6 +349,17 @@ def test_chrome_cards_borders_and_section_heads():
     assert "Board" in head and "pair row" in head
     assert DESK_MODES == ("Decision", "Calendar", "Paper", "Lab", "Awareness")
     assert DEFAULT_MODE == "Decision"
+    assert DEFAULT_THEME == "light"
+    assert chrome_state_key("decision_aux") == "chrome_open_decision_aux"
+    closed = chrome_card_head_html(
+        "Nav / Workspace / lab TF 1h · click a pair for the drawer",
+        expanded=False,
+    )
+    assert "fx-chrome-head" in closed and "closed" in closed
+    assert "Nav / Workspace" in closed
+    assert "click a pair" in closed
+    opened = chrome_card_head_html("Nav / Workspace", expanded=True)
+    assert "open" in opened
     source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
     assert 'section_head_html("Scan", "Board"' in source
     assert 'section_head_html("Detail"' in source
@@ -368,3 +393,36 @@ def test_chrome_cards_borders_and_section_heads():
     assert "build_signal_brief" in source
     assert "Run pipeline" in source
     assert "Add pair" in source
+    assert "desk_theme" in source
+    assert "_render_aux_chrome" in source
+    assert "chrome_toggle_" in source
+    assert "chrome_state_key" in source
+    assert "board_reload" in source
+    assert 'key="board_realtime"' in source
+    assert 'st.button(\n            "↻"' in source or '"↻"' in source
+    assert '"Manual update"' not in source
+    assert '"Update selected"' not in source
+    assert "_render_alert_strip" in source
+    assert source.find("_render_alert_strip") < source.find("_render_dense_header")
+    aux_at = source.find("_render_aux_chrome")
+    alert_at = source.find("_render_alert_strip")
+    assert 0 < aux_at < alert_at
+    assert "toggle" in source and "board_realtime" in source
+
+
+def test_apply_palette_roundtrip_light_default():
+    from forex_lab.ui.theme import DARK, LIGHT, MUTED, TEXT, apply_palette, terminal_css
+
+    try:
+        assert apply_palette("light") == "light"
+        assert TEXT.lower() == LIGHT["TEXT"].lower()
+        light_css = terminal_css()
+        assert LIGHT["BG"] in light_css
+        assert apply_palette("dark") == "dark"
+        assert MUTED.lower() == DARK["MUTED"].lower()
+        dark_css = terminal_css()
+        assert DARK["BG"] in dark_css
+        assert apply_palette("nope") == "light"
+        assert TEXT.lower() == LIGHT["TEXT"].lower()
+    finally:
+        apply_palette("light")

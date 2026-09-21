@@ -196,8 +196,15 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     labels = [str(getattr(b, "label", "")) for b in at.button]
     assert "Add to watchlist" in labels
     assert any(str(getattr(b, "label", "")) == "×" for b in at.button)
+    assert any(str(getattr(b, "label", "")) == "▸" for b in at.button)
+    assert "Manual update" not in labels
+    assert "Update selected" not in labels
     selects = [str(getattr(s, "label", "")) for s in at.selectbox]
     assert any("Add pair" in s for s in selects)
+    radios = [str(getattr(r, "label", "")) for r in getattr(at, "radio", [])]
+    assert any("Theme" in r for r in radios)
+    joined_aux = joined
+    assert "Nav / Workspace" in joined_aux or "lab TF" in joined_aux or "click a pair" in low
 
     _click_nav(at, "Calendar")
     cal = _joined(at).lower()
