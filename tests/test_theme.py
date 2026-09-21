@@ -40,6 +40,11 @@ def test_buy_sell_hold_are_high_contrast():
     assert "st-key-paper_buy" in css
     assert "st-key-paper_sell" in css
     assert "fx-masthead" in css
+    assert "fx-empty" in css
+    assert "fx-legend" in css
+    assert "fx-scan" in css
+    assert "flex-end" in css
+    assert "st-key-paper_close" in css
 
 
 def test_style_board_uses_dark_signal_colors():
@@ -83,3 +88,71 @@ def test_theme_does_not_touch_broker_or_timezone_defaults():
     source = Path(project_root() / "forex_lab" / "ui" / "theme.py").read_text(encoding="utf-8")
     assert "BrokerPort" in source
     assert "Asia/Dhaka" in source
+    assert "STALE" in source
+
+
+def test_stale_outranks_buy_sell_hold():
+    from forex_lab.ui.theme import (
+        WARN,
+        WARN_BG,
+        empty_state_html,
+        scan_counts,
+        scan_emphasis,
+        scan_legend_html,
+        scan_strip_html,
+        signal_badge_html,
+        validity_badge_html,
+    )
+
+    assert scan_emphasis("BUY", "STALE") == "STALE"
+    assert scan_emphasis("SELL", "MISSING") == "MISSING"
+    assert scan_emphasis("HOLD", "ERROR") == "ERROR"
+    assert scan_emphasis("BUY", "OK") == "BUY"
+    assert scan_emphasis("HOLD", "OK") == "HOLD"
+    assert scan_emphasis("—", "OK") == "—"
+
+    counts = scan_counts(
+        [
+            {"buy_sell": "BUY", "validity": "OK"},
+            {"buy_sell": "SELL", "validity": "STALE"},
+            {"buy_sell": "HOLD", "validity": "OK"},
+            {"buy_sell": "—", "validity": "MISSING"},
+        ]
+    )
+    assert counts["BUY"] == 1
+    assert counts["SELL"] == 1
+    assert counts["HOLD"] == 1
+    assert counts["STALE"] == 1
+    assert counts["MISSING"] == 1
+
+    buy = signal_badge_html("BUY", compact=True)
+    hold = signal_badge_html("HOLD", compact=True)
+    dash = signal_badge_html("—", compact=True)
+    assert "fx-sig-buy" in buy and BUY in buy
+    assert "fx-sig-quiet" in hold
+    assert "fx-sig-muted" in dash
+
+    stale = validity_badge_html("STALE", compact=True)
+    ok = validity_badge_html("OK", compact=True)
+    assert "fx-valid-loud" in stale
+    assert WARN in stale and WARN_BG in stale
+    assert "fx-valid-quiet" in ok
+    assert "fx-valid-loud" not in ok
+
+    legend = scan_legend_html()
+    assert "fx-chip buy" in legend and "fx-chip stale" in legend
+    assert "STALE outranks" in legend
+    strip = scan_strip_html(
+        session="LONDON+NY",
+        refreshed="2026-09-21 19:42:01",
+        tz="Asia/Dhaka",
+        counts=counts,
+    )
+    assert "fx-scan" in strip
+    assert "Asia/Dhaka" in strip
+    assert "LONDON+NY" in strip
+    assert "STALE" in strip
+    empty = empty_state_html("Watchlist is empty. Add a pair below.", "Fetch first.")
+    assert "fx-empty" in empty
+    assert "Watchlist is empty. Add a pair below." in empty
+    assert "<script" not in empty_state_html("<script>x</script>", "body")
