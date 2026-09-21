@@ -177,6 +177,8 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "scalp" in low or "swing" in low
     assert "paper journal" in low or "brokerport" in low
     assert "fx-masthead" in joined or "data-fx-theme" in joined or "--fx-buy" in joined
+    assert "fx-legend" in joined or "stale outranks" in low
+    assert "fx-scan" in joined or "fx-empty" in joined or "seconds to decide" in low
     buy_btns = [b for b in at.button if "BUY" in str(getattr(b, "label", "")).upper()]
     sell_btns = [b for b in at.button if "SELL" in str(getattr(b, "label", "")).upper()]
     assert buy_btns and sell_btns
