@@ -1,0 +1,26 @@
+# Dark dense trading-terminal theme for the Streamlit desk.
+# Research UI only — does not change BrokerPort, paper fills, or session math.
+# Clocks stay Asia/Dhaka (ui.timezone in config/default.yaml).
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#16c784"
+backgroundColor = "#0a0e14"
+secondaryBackgroundColor = "#121820"
+textColor = "#e6edf3"
+font = "sans serif"
+codeFont = "monospace"
+baseFontSize = 13
+baseRadius = "sm"
+showWidgetBorder = false
+borderColor = "#243040"
+headingFontSizes = ["1.35rem", "1.12rem", "1.0rem", "0.92rem", "0.85rem", "0.8rem"]
+dataframeHeaderBackgroundColor = "#121820"
+dataframeBorderColor = "#243040"
+linkColor = "#16c784"

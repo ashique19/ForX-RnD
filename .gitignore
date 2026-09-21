@@ -6,3 +6,21 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.install_write_probe
+# extra-pair caches; EURUSD_1h.csv is the committed demo set
+data/GBPUSD_*.csv
+data/USDJPY_*.csv
+data/AUDUSD_*.csv
+data/USDCAD_*.csv
+data/news_cache.json
+data/calendar_cache.json
+data/fred_cache/
+data/paper_broker.json
+data/paper_broker.json.tmp
+data/alert_state.json
+data/digest_latest.json
+data/champion/
+models/*_champion.json
+models/*_challenger.*
+# user workspace presets + last-applied pointer (builtins live in config/workspaces/)
+data/workspaces/

@@ -5,50 +5,55 @@ from typing import Any
 
 import pandas as pd
 
-from forex_lab.features import INV_LABEL_MAP, build_features
-from forex_lab.model import load_model
+from forex_lab.backtest import _attach_policy_columns
+from forex_lab.console import safe_print
+from forex_lab.features import INV_LABEL_MAP, LABEL_MAP, build_features
+from forex_lab.model import apply_signal_filters, load_model, predict_proba_aligned
 from forex_lab.paths import resolve_under_root
 
 
 def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.DataFrame:
     model, feature_cols, mtype = load_model(pair, cfg)
-    feats = build_features(df, cfg)
-    # Drop rows with NaN features (warm-up)
-    valid = feats.dropna()
-    X = valid[feature_cols]
+    feats = build_features(df, cfg, pair=pair)
+    missing = [c for c in feature_cols if c not in feats.columns]
+    if missing:
+        raise KeyError(f"Model features missing from current feature set: {missing[:8]}")
+    X = feats[feature_cols].dropna()
     pred = model.predict(X)
-    conf = None
-    if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(X)
-        conf = proba.max(axis=1)
-        # Map classes — sklearn/xgb use 0,1,2
-        class_ids = list(getattr(model, "classes_", [0, 1, 2]))
-    else:
-        class_ids = [0, 1, 2]
+    proba = predict_proba_aligned(model, X)
 
-    min_conf = float((cfg.get("signals") or {}).get("min_confidence", 0.40))
+    pred_frame = pd.DataFrame({"pred_raw": pred}, index=X.index)
+    if proba is not None:
+        pred_frame["p_sell"] = proba[:, LABEL_MAP["SELL"]]
+        pred_frame["p_hold"] = proba[:, LABEL_MAP["HOLD"]]
+        pred_frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
+        pred_frame["confidence"] = proba.max(axis=1)
+        pred_frame["dir_edge"] = (pred_frame["p_buy"] - pred_frame["p_sell"]).abs()
+    pred_frame = _attach_policy_columns(pred_frame, feats, df, cfg, pair)
+    pred_frame["pred"] = apply_signal_filters(pred_frame, cfg)
+
     lookback = int((cfg.get("signals") or {}).get("lookback_bars", 64))
-
     rows = []
-    for i, ts in enumerate(X.index):
-        label_id = int(pred[i])
+    for ts, row in pred_frame.iterrows():
+        label_id = int(row["pred"])
+        raw_id = int(row["pred_raw"])
         name = INV_LABEL_MAP.get(label_id, "HOLD")
-        c = float(conf[i]) if conf is not None else 1.0
-        if name != "HOLD" and c < min_conf:
-            name = "HOLD"
         rows.append(
             {
                 "datetime": ts,
                 "pair": pair.upper(),
                 "close": float(df.loc[ts, "Close"]),
                 "signal": name,
-                "confidence": round(c, 4),
+                "raw_signal": INV_LABEL_MAP.get(raw_id, "HOLD"),
+                "confidence": round(float(row["confidence"]) if "confidence" in row else 1.0, 4),
+                "dir_edge": round(float(row["dir_edge"]) if "dir_edge" in row else 0.0, 4),
+                "p_buy": round(float(row["p_buy"]) if "p_buy" in row else float("nan"), 4),
+                "p_sell": round(float(row["p_sell"]) if "p_sell" in row else float("nan"), 4),
+                "p_hold": round(float(row["p_hold"]) if "p_hold" in row else float("nan"), 4),
                 "model": mtype,
             }
         )
-    out = pd.DataFrame(rows).tail(lookback)
-    # Highlight actionable last row
-    return out
+    return pd.DataFrame(rows).tail(lookback)
 
 
 def write_signals(signals: pd.DataFrame, cfg: dict[str, Any]) -> str:
@@ -56,10 +61,10 @@ def write_signals(signals: pd.DataFrame, cfg: dict[str, Any]) -> str:
     sig_dir.mkdir(parents=True, exist_ok=True)
     path = sig_dir / "latest_signals.csv"
     signals.to_csv(path, index=False)
-    print(f"[signals] wrote {path} ({len(signals)} rows)")
+    safe_print(f"[signals] wrote {path} ({len(signals)} rows)")
     if len(signals):
         last = signals.iloc[-1]
-        print(
+        safe_print(
             f"[signals] latest: {last['datetime']} {last['pair']} "
             f"{last['signal']} conf={last['confidence']} close={last['close']}"
         )
