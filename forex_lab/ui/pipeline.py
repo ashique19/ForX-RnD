@@ -55,11 +55,15 @@ def trades_path(cfg: dict[str, Any] | None = None) -> Path:
     return reports_dir(cfg) / "latest_trades.csv"
 
 
-def artifact_status(pair: str, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+def artifact_status(
+    pair: str,
+    cfg: dict[str, Any] | None = None,
+    interval: str | None = None,
+) -> dict[str, Any]:
     """Existence checks for the selected pair's cache / model plus shared reports."""
     cfg = cfg if cfg is not None else load_config()
     pair = pair.upper()
-    interval = str(cfg.get("interval", "1h"))
+    interval = str(interval or cfg.get("interval", "1h"))
     csv = data_path(pair, cfg, interval)
     n_bars = None
     if csv.exists() and csv.stat().st_size > 0:

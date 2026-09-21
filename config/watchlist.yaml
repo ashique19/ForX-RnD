@@ -1,0 +1,6 @@
+# Streamlit research watchlist (not a broker list; no live orders).
+# Survives app reruns. Edit here or via the dashboard Add / Remove controls.
+refresh_seconds: 60
+interval: null
+pairs:
+  - EURUSD

@@ -60,6 +60,8 @@ If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. 
 
 A browser UI on **localhost:8501** to run fetch / train / backtest / generate signals and view `signals/latest_signals.csv` plus walk-forward metrics from `reports/latest_metrics.json`. It calls the same `forex_lab` functions as the CLI. **No broker APIs, no order buttons, no auto-trading.**
 
+The top of the page is a **watch board**: one row per selected pair (`Pair | Timeframe | Buy/Sell | Target | Signal details`). Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. **Realtime** auto-refreshes the board on a configurable interval (`st.fragment`); when it is off, **Manual update** / **Update selected** refresh once. Auto-refresh is a research timer, **not** broker realtime. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal. The sidebar Fetch / Train / Backtest tools are unchanged.
+
 Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing):
 
 ```bat
@@ -85,6 +87,7 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `models/EURUSD_xgboost.joblib` | Primary model |
 | `models/EURUSD_logistic.joblib` | Logistic baseline model |
 | `signals/latest_signals.csv` | Latest BUY/SELL/HOLD rows (confidence-filtered) |
+| `config/watchlist.yaml` | Streamlit watch-board pairs (local; survives reruns) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
 | `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
 | `reports/latest_metrics.json` | Same metrics as JSON |
@@ -171,7 +174,7 @@ Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR bar
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, and a Streamlit UI smoke render against sample reports/signals.
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, and watchlist load/save plus board-row status.
 
 ## Project layout
 
@@ -188,6 +191,7 @@ forex_lab/
   cli.py         # CLI entry
   ui/            # Streamlit helpers (imports CLI functions; no live trading)
 config/default.yaml
+config/watchlist.yaml  # persisted research watchlist for the Streamlit board
 tests/
 scripts/screen_variants.py  # optional research screen (not a user command)
 ```

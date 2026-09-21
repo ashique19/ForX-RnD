@@ -12,6 +12,12 @@ import streamlit as st
 
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
+from forex_lab.ui.board import (
+    NEED_FETCH_TRAIN,
+    board_table,
+    build_board_row,
+    style_board,
+)
 from forex_lab.ui.pipeline import (
     artifact_status,
     equity_from_trades,
@@ -27,6 +33,15 @@ from forex_lab.ui.pipeline import (
     style_signals,
     ui_pairs,
 )
+from forex_lab.ui.watchlist import (
+    KNOWN_INTERVALS,
+    WatchlistError,
+    add_pair,
+    load_watchlist,
+    remove_pair,
+    save_watchlist,
+    watchlist_path,
+)
 
 st.set_page_config(
     page_title="Forex Research Lab",
@@ -39,8 +54,31 @@ DISCLAIMER = (
     "**Research only — not financial advice.** "
     "This dashboard does **not** place live orders and has **no broker APIs**. "
     "yfinance quotes are **not** broker executable prices (spreads, liquidity, and session gaps differ). "
-    "Past backtest metrics do not predict future results."
+    "Past backtest metrics do not predict future results. "
+    "Watch-board auto-refresh is a research timer, **not** broker realtime."
 )
+
+BOARD_HELP = """
+**Pair** — watchlist symbol (e.g. EURUSD).
+
+**Timeframe** — bar interval used for that row. Default is the lab interval from
+`config/default.yaml` (fetch settings). A per-pair override can be set when adding.
+
+**Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`
+(`BUY` / `SELL` / `HOLD`). This is a research label, not an order.
+
+**Target** — best-effort from the lab labeling scheme. For `triple_barrier`, last close
+± ATR × tp/sl (next-open fill is unknown on the latest bar, so close is a **proxy**).
+If barriers cannot be computed: `n/a` plus scheme / horizon in the row details.
+
+**Signal details** — confidence, dir_edge, p_buy / p_sell / p_hold, model name, signal
+datetime. If data or the model is missing the cell is **need Fetch/Train** — the board
+will not invent prices.
+
+Realtime ticks and **Manual update** try yfinance only when a model already exists, then
+regenerate signals in memory (they do **not** overwrite `signals/latest_signals.csv`).
+The sidebar Fetch / Train / Backtest / Generate signals tools remain the pipeline.
+"""
 
 
 def _init_state() -> None:
@@ -84,8 +122,180 @@ def _run_step(label: str, fn) -> None:
     _append_log(label, rc, log)
     if rc == 0:
         st.sidebar.success(f"{label} finished (exit 0)")
+        st.session_state.pop("watch_rows", None)
     else:
         st.sidebar.error(f"{label} failed (exit {rc}). See Logs.")
+
+
+def _watch_cache_key(pair: str, interval: str) -> str:
+    return f"{pair.upper()}|{interval}"
+
+
+def _sync_watch_rows(wl, cfg, *, refresh: bool) -> list:
+    lab_iv = wl.lab_interval(cfg)
+    cache: dict = st.session_state.setdefault("watch_rows", {})
+    wanted: list[str] = []
+    rows = []
+    for item in wl.pairs:
+        interval = item.resolved_interval(lab_iv)
+        key = _watch_cache_key(item.pair, interval)
+        wanted.append(key)
+        if refresh or key not in cache:
+            cache[key] = build_board_row(
+                item.pair,
+                cfg,
+                interval=interval,
+                refresh_data=refresh,
+                regenerate=refresh,
+            )
+        rows.append(cache[key])
+    for stale in [k for k in cache if k not in wanted]:
+        del cache[stale]
+    return rows
+
+
+def render_watch_board(cfg) -> None:
+    """Top-of-page multi-pair research board + persisted watchlist controls."""
+    wl = load_watchlist(cfg=cfg, create=True)
+    lab_iv = wl.lab_interval(cfg)
+    available = ui_pairs(cfg)
+
+    st.subheader("Watch board")
+    st.caption(
+        f"One row per selected pair. Lab timeframe **{lab_iv}** "
+        f"(from config / fetch settings). File: `{watchlist_path()}`."
+    )
+    with st.expander("Column help (research only)"):
+        st.markdown(BOARD_HELP)
+
+    c_real, c_secs, c_note = st.columns([1.1, 1.1, 2.4])
+    realtime = c_real.checkbox(
+        "Realtime",
+        value=False,
+        help="Auto-rebuild the board on a timer. Not broker quotes and not streaming.",
+    )
+    seconds = int(
+        c_secs.number_input(
+            "Refresh (s)",
+            min_value=15,
+            max_value=3600,
+            value=int(wl.refresh_seconds),
+            step=15,
+            help="Interval used when Realtime is checked.",
+        )
+    )
+    if seconds != int(wl.refresh_seconds):
+        wl.refresh_seconds = seconds
+        save_watchlist(wl)
+    if realtime:
+        c_note.caption(f"Auto-refresh every {seconds}s. Research timer only — not executable prices.")
+    else:
+        c_note.caption("Realtime off: the board stays put until **Manual update**.")
+
+    run_every = seconds if realtime else None
+
+    @st.fragment(run_every=run_every)
+    def _board_fragment() -> None:
+        refresh = bool(realtime)
+        b1, b2, b3 = st.columns([1.2, 1.4, 2.4])
+        if not realtime:
+            if b1.button("Manual update", type="primary", help="Refresh all watchlist pairs once"):
+                refresh = True
+        else:
+            b1.caption("Realtime on")
+        if b2.button(
+            "Update selected",
+            help="yfinance + regenerate signals for watchlist pairs that already have a model. "
+            "Pairs without data/model stay as need Fetch/Train.",
+        ):
+            refresh = True
+        with st.spinner("Updating watch board…" if refresh else "Loading watch board…"):
+            rows = _sync_watch_rows(wl, cfg, refresh=refresh)
+        table = board_table(rows)
+        if table.empty:
+            st.info("Watchlist is empty. Add a pair below.")
+        else:
+            try:
+                st.dataframe(style_board(table), use_container_width=True, hide_index=True)
+            except Exception:
+                st.dataframe(table, use_container_width=True, hide_index=True)
+        ready = sum(1 for r in rows if r.status == "ready")
+        blocked = len(rows) - ready
+        if rows:
+            b3.caption(
+                f"{ready} ready · {blocked} {NEED_FETCH_TRAIN}" if blocked else f"{ready} ready"
+            )
+        for row in rows:
+            title = f"{row.pair} · {row.timeframe} · {row.buy_sell}"
+            with st.expander(title):
+                st.write(
+                    {
+                        "status": row.status,
+                        "buy_sell": row.buy_sell,
+                        "target": row.target,
+                        "target_note": row.target_note,
+                        "confidence": row.confidence,
+                        "dir_edge": row.dir_edge,
+                        "p_buy": row.p_buy,
+                        "p_sell": row.p_sell,
+                        "p_hold": row.p_hold,
+                        "model": row.model,
+                        "datetime": row.datetime,
+                        "close": row.close,
+                        "raw_signal": row.raw_signal,
+                        "data_source": row.data_source,
+                        "n_bars": row.n_bars,
+                        "error": row.error,
+                    }
+                )
+                if row.status != "ready":
+                    st.warning(
+                        f"{row.pair}: {row.signal_details}. "
+                        "Use the sidebar **Fetch** then **Train** (then this board’s update). "
+                        "The board does not invent prices."
+                    )
+
+    _board_fragment()
+
+    st.markdown("**Watchlist**")
+    add_c, del_c = st.columns(2)
+    watched = wl.pair_symbols()
+    with add_c:
+        addable = [p for p in available if p not in watched]
+        pick = st.selectbox(
+            "Add pair",
+            options=addable or ["(all config pairs are listed)"],
+            disabled=not addable,
+        )
+        typed = st.text_input("Or type a pair", value="", placeholder="EURUSD")
+        tf_choice = st.selectbox(
+            "Pair timeframe",
+            options=["lab default (" + lab_iv + ")"] + list(KNOWN_INTERVALS),
+        )
+        if st.button("Add to watchlist"):
+            symbol = (typed or "").strip() or (pick if addable else "")
+            try:
+                iv = None if tf_choice.startswith("lab default") else tf_choice
+                add_pair(wl, symbol, interval=iv)
+                save_watchlist(wl)
+                st.session_state.pop("watch_rows", None)
+                st.rerun()
+            except WatchlistError as exc:
+                st.error(str(exc))
+    with del_c:
+        rm = st.selectbox(
+            "Remove pair",
+            options=watched or ["(watchlist empty)"],
+            disabled=not watched,
+        )
+        st.caption("Persisted to disk so the list survives reruns.")
+        if st.button("Remove from watchlist", disabled=not watched) and watched:
+            remove_pair(wl, str(rm))
+            save_watchlist(wl)
+            st.session_state.pop("watch_rows", None)
+            st.rerun()
+
+    st.divider()
 
 
 def render() -> None:
@@ -98,6 +308,8 @@ def render() -> None:
     st.title("Forex Research Lab")
     st.caption("Local BUY / SELL / HOLD research dashboard. Manual review only.")
     st.warning(DISCLAIMER)
+
+    render_watch_board(cfg)
 
     with st.sidebar:
         st.header("Pipeline")

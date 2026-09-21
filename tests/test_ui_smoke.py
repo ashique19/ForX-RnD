@@ -110,7 +110,7 @@ def test_streamlit_app_renders_sample_artifacts():
     assert not at.exception, f"Streamlit render failed: {at.exception}"
     # Disclaimer + sample metrics should be on the page.
     blobs = []
-    for attr in ("markdown", "warning", "caption", "text", "title"):
+    for attr in ("markdown", "warning", "caption", "text", "title", "subheader", "header"):
         block = getattr(at, attr, None)
         if block is None:
             continue
@@ -121,3 +121,4 @@ def test_streamlit_app_renders_sample_artifacts():
     joined = "\n".join(blobs)
     assert "Research only" in joined or "research only" in joined.lower()
     assert "yfinance" in joined.lower() or "broker" in joined.lower()
+    assert "Watch board" in joined or "watch board" in joined.lower()
