@@ -50,7 +50,7 @@ def test_align_fred_asof_hides_same_day_print():
         {"DFF": [1.0, 2.0, 3.0]},
         index=pd.to_datetime(["2024-01-10", "2024-01-11", "2024-01-12"]),
     )
-    bars = pd.date_range("2024-01-10 00:00", periods=72, freq="h")
+    bars = pd.date_range("2024-01-10 00:00", periods=96, freq="h")
     aligned = align_fred_asof(daily, bars, lag_days=1)
     assert pd.isna(aligned.loc[pd.Timestamp("2024-01-10 15:00"), "DFF"])
     assert aligned.loc[pd.Timestamp("2024-01-11 00:00"), "DFF"] == 1.0
