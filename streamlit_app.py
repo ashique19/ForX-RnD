@@ -35,7 +35,6 @@ from forex_lab.ui.board import (
     paper_submit_block_reason,
     paper_submit_risk_defaults,
     research_target,
-    spark_ascii,
     style_board,
     validity_token,
 )
@@ -60,7 +59,6 @@ from forex_lab.ui.health import (
     health_strip,
     health_unhealthy,
     model_status_map,
-    status_token,
 )
 from forex_lab.ui.pipeline import (
     artifact_status,
@@ -72,6 +70,7 @@ from forex_lab.ui.pipeline import (
     metrics_table,
     run_backtest,
     run_fetch,
+    run_pipeline,
     run_retrain,
     run_signals,
     run_train,
@@ -85,7 +84,14 @@ from forex_lab.ui.watchlist import (
     load_watchlist,
     remove_pair,
     save_watchlist,
-    watchlist_path,
+)
+from forex_lab.ui.brief import build_signal_brief
+from forex_lab.ui.chart import (
+    CHART_INTERVALS,
+    cached_chart_intervals,
+    candle_bar_count,
+    candlestick_figure,
+    chart_blocked_reason,
 )
 from forex_lab.ui.theme import (
     BUY,
@@ -99,17 +105,24 @@ from forex_lab.ui.theme import (
     WARN,
     empty_inline_html,
     empty_state_html,
+    DEFAULT_MODE,
+    DESK_MODES,
     inject_terminal_css,
     scan_counts,
     scan_legend_html,
     scan_strip_html,
     section_head_html,
     card_html,
+    drawer_meta_html,
+    last_cell_html,
+    pair_tf_html,
     session_fill,
     signal_badge_html,
+    signal_brief_html,
+    signal_stack_html,
+    tech_bullets_html,
     validity_badge_html,
 )
-from forex_lab.ui.chart import candle_bar_count, candlestick_figure, chart_blocked_reason
 from forex_lab.ui.workspace import (
     Workspace,
     WorkspaceError,
@@ -180,7 +193,7 @@ DISCLAIMER = (
     "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
     "it never auto-submits via BrokerPort. Optional alert sound is **off by default**. "
     "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket. "
-    "Click a board row for chart / SHAP / news / risk / rationale. "
+    "Click a board row for a **signal brief** (bias headline, primary + alternate TP/SL, short why, then chart). "
     "**Workspace** presets (scalp / swing / save-as) switch watchlist pairs, TF, "
     "realtime interval, and min-confidence display only — they do **not** wipe the "
     "paper journal or change BrokerPort. "
@@ -191,66 +204,29 @@ DISCLAIMER = (
 )
 
 BOARD_HELP = """
-This is the **trader screen**: one dense scan board. Click a pair for the detail drawer.
+**Scan board** (primary) — Pair | Signal | Data● | Last | Next | Actions.
+TF, conf, and MTF sit under Pair / Signal. Session sits under Last. Spark, spread, and the full column set live in **Table view** in the right rail.
 
-**Columns** — Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | actions.
+**Signal** — BUY green / SELL red / HOLD grey. Research label, **not** an order. STALE/MISSING flash **—**.
 
-**Pair / TF** — watchlist symbol and lab interval. Click the pair to open chart / SHAP / news / risk / rationale.
+**Data●** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. **Paper BUY/SELL is disabled when STALE or MISSING** — Fetch first.
 
-**Signal** — BUY green / SELL red / HOLD grey (quieter). Research label, **not** an order. STALE/MISSING flash **—** and the Data● pill outranks the flash.
+**Last** — yfinance last/mid-ish, not broker bid/ask. Session badge under the price (ASIA / LONDON / NY). Spread is config pips — table view / Risk tab.
 
-**Conf** — P(predicted class). Scan aid only.
+**Next** — next high-impact print. **⚠** when the pre-event window is live. Not a trade instruction.
 
-**Data●** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last bar older than ~2× the timeframe is **STALE**. Weekends / Friday after ~21:00 UTC show **CLOSED**. **Paper BUY/SELL is disabled when STALE or MISSING** — refresh (Fetch) first. Optional **gates** (MTF agree / min confidence / event window) can also HOLD the flash and disable paper opens when `gates.enabled` is true (default **off**).
+**Actions** — Paper BUY / SELL / CLOSE via `BrokerPort` (`broker.backend: paper`). STALE/MISSING: Fetch is the next action; BUY/SELL stay disabled. CLOSE still works. Practice desk — not a live order.
 
-**Last/mid** — cached yfinance close as **last/mid-ish**. Not broker bid/ask.
+**Detail drawer** — Chart-first candlesticks when Data● is OK. SHAP / news / risk / rationale. Advice never auto-submitted.
 
-**Spread** — config `spread_pips` as cost context, not a live broker spread.
+**Modes** — Decision (this board) | Calendar | Paper | Lab | Awareness. One destination at a time — not a dump of every panel.
 
-**Session** — ASIA / LONDON / NY from UTC windows (`board.sessions`). Overlap LONDON+NY. Desk clocks are **Asia/Dhaka**.
-
-**MTF** — causal higher-TF SMA slope: agree / conflict / n/a. Not a live trend filter.
-
-**Next event** — next high-impact print that hits this pair (countdown). **⚠** when the pre-event window is live — keep that warning visible. Not a trade instruction. Full calendar is an expander.
-
-**Spark** — unicode spark of cached closes. Empty when STALE/MISSING (no invented prices). Sparkline chart lives in the drawer.
-
-**Actions** — Paper BUY / SELL / CLOSE via `BrokerPort` (`broker.backend: paper` only). Disabled on STALE/MISSING with a clear caption. Optional gates (default off) can also disable BUY/SELL. CLOSE still works on an open paper position. SL/TP default from the ATR risk box when available. Practice desk — not a live order.
-
-**Detail drawer** — chart, SHAP/drivers, news context, risk box, rationale, advisory cards (no new opens / hold / close / tighten SL). Advice **never auto-submitted**.
-
-**Event calendar** — unofficial Forex Factory weekly JSON (`nfs.faireconomy.media`). Cached; fail-soft. **Not a trade instruction.**
-
-**Alerts** — compact top strip on BUY/SELL/HOLD flips or STALE/MISSING. Optional event-within-60m. Sound off by default. Times **Asia/Dhaka**. Never places orders.
-
-**Awareness** — every source this desk fetches or observes (watchlist OHLCV, news RSS, model files, calendar, optional FRED). Columns: **Source | Observing | Cadence | Last OK | Status**. STALE/FAIL/MISSING never look OK. Opens itself when anything is unhealthy. Times **Asia/Dhaka**.
-
-**Workspace** — scalp / swing (or a saved custom) switch **pairs, TF, refresh, min conf**. Apply / Save current / Reset. Does **not** rewrite `config/default.yaml`, the paper journal, or BrokerPort. Clocks stay **Asia/Dhaka**.
-
-**Realtime** (default 60s) rebuilds from **local** cache. yfinance at most one pair/tick. Not broker quotes.
-
-**Theme** — dark dense terminal (`.streamlit/config.toml` + CSS). BUY green / SELL red / HOLD grey. STALE amber outranks the flash. Clocks **Asia/Dhaka**. BrokerPort unchanged.
-
-**Last bar / last fetch / last signal** — in the detail drawer. The board shows **board last refreshed**. Desk clocks are **Asia/Dhaka**.
-
-Fetch / Train / Backtest live in the sidebar **Lab** expander. Rows without data/model show **need Fetch/Train**.
+Fetch / Train live in **Lab**. Clocks **Asia/Dhaka**. BrokerPort unchanged.
 """
 
-DENSE_WEIGHTS = [1.08, 0.42, 0.82, 0.48, 0.58, 0.62, 0.72, 0.88, 0.48, 1.18, 0.82, 1.72]
-DENSE_HEADERS = [
-    "Pair",
-    "TF",
-    "Signal",
-    "Conf",
-    "Data●",
-    "MTF",
-    "Session",
-    "Last/mid",
-    "Spread",
-    "Next event",
-    "Spark",
-    "actions",
-]
+# Six scan columns so the board stays legible at ~1280px with a right rail.
+DENSE_WEIGHTS = [1.22, 0.98, 0.82, 1.05, 1.28, 1.55]
+DENSE_HEADERS = ["Pair", "Signal", "Data●", "Last", "Next", "Actions"]
 
 
 def _init_state() -> None:
@@ -258,6 +234,35 @@ def _init_state() -> None:
         st.session_state.logs = ""
     if "last_action" not in st.session_state:
         st.session_state.last_action = None
+    if "desk_mode" not in st.session_state:
+        st.session_state.desk_mode = DEFAULT_MODE
+
+
+def _active_mode() -> str:
+    mode = str(st.session_state.get("desk_mode") or DEFAULT_MODE)
+    return mode if mode in DESK_MODES else DEFAULT_MODE
+
+
+def _render_mode_nav() -> str:
+    """Prominent top-level destinations. Only the active mode renders below."""
+    active = _active_mode()
+    cols = st.columns(len(DESK_MODES))
+    clicked = None
+    for col, name in zip(cols, DESK_MODES):
+        kwargs = {
+            "key": f"desk_nav_{name.lower()}",
+            "use_container_width": True,
+            "help": f"Open {name} — other modes stay off this screen.",
+        }
+        if name == active:
+            kwargs["type"] = "primary"
+        if col.button(name, **kwargs):
+            clicked = name
+    st.markdown('<div class="fx-nav-gap"></div>', unsafe_allow_html=True)
+    if clicked and clicked != active:
+        st.session_state.desk_mode = clicked
+        st.rerun()
+    return active
 
 
 def _append_log(title: str, rc: int, log: str) -> None:
@@ -293,10 +298,10 @@ def _run_step(label: str, fn) -> None:
         rc, log = fn()
     _append_log(label, rc, log)
     if rc == 0:
-        st.sidebar.success(f"{label} finished (exit 0)")
+        st.success(f"{label} finished (exit 0)")
         st.session_state.pop("watch_rows", None)
     else:
-        st.sidebar.error(f"{label} failed (exit {rc}). See Logs.")
+        st.error(f"{label} failed (exit {rc}). See Lab → Logs.")
 
 
 def _render_explanation(expl: SignalExplanation | None, *, heading: str = "Why this signal?") -> None:
@@ -343,8 +348,11 @@ def _render_explanation(expl: SignalExplanation | None, *, heading: str = "Why t
         st.dataframe(rule_df, use_container_width=True, hide_index=True)
 
 
-def _empty_state(title: str, body: str, *, kicker: str = "EMPTY") -> None:
-    st.markdown(empty_state_html(title, body, kicker=kicker), unsafe_allow_html=True)
+def _empty_state(title: str, body: str, *, kicker: str = "EMPTY", action: str = "") -> None:
+    st.markdown(
+        empty_state_html(title, body, kicker=kicker, action=action),
+        unsafe_allow_html=True,
+    )
 
 
 def _empty_inline(text: str) -> None:
@@ -357,6 +365,21 @@ def _validity_badge(validity: str, *, compact: bool = False) -> None:
 
 def _signal_badge(sig: str, *, weak: bool = False, compact: bool = False) -> None:
     st.markdown(signal_badge_html(sig, weak=weak, compact=compact), unsafe_allow_html=True)
+
+
+def _render_fetch_cta(pair: str, cfg, *, key: str, interval: str | None = None) -> None:
+    """Next action for STALE/MISSING — Lab Fetch path. Does not touch BrokerPort."""
+    if st.button(
+        "Fetch",
+        key=key,
+        type="primary",
+        use_container_width=True,
+        help="Refresh this pair's OHLCV (same as Lab → Fetch). Then Manual update. Not a broker quote.",
+    ):
+        _run_step(
+            f"Fetch {pair}",
+            lambda: run_fetch(pair, interval=interval, cfg=cfg),
+        )
 
 
 def _session_badge(session: SessionState | None, *, show_note: bool = False) -> None:
@@ -460,8 +483,8 @@ def _render_sparkline(row, *, height: int = 90) -> None:
     st.caption(row.sparkline_note)
 
 
-def _render_price_chart(row, cfg) -> None:
-    """Detail Chart tab: interactive Plotly candlestick from cached OHLCV.
+def _render_price_chart(row, cfg, *, chart_tf: str | None = None, show_rsi: bool = True, show_ema200: bool = True) -> None:
+    """Signal-brief chart: cached Plotly candlesticks, volume, EMA, optional RSI.
 
     Scan-board sparkline stays a mini close spark. STALE/MISSING/ERROR never
     invent candles. Not a broker chart.
@@ -470,25 +493,48 @@ def _render_price_chart(row, cfg) -> None:
     if blocked:
         _empty_state(
             "No candlestick — data is not OK",
-            blocked + " The board sparkline stays empty too. Research only — not a broker chart.",
+            blocked,
             kicker="CHART",
+            action="Lab → Fetch, then Manual update. Or Run pipeline with Also fetch.",
+        )
+        _render_fetch_cta(
+            row.pair,
+            cfg,
+            key=f"board_fetch_chart_{row.pair}_{row.timeframe}",
+            interval=row.timeframe,
         )
         return
-    _price, _ts, ohlcv = _cached_quote(row, cfg)
-    title = f"{row.pair}  {row.timeframe}"
+    tf = str(chart_tf or row.timeframe or cfg.get("interval") or "1h")
+    if tf == str(row.timeframe):
+        _price, _ts, ohlcv = _cached_quote(row, cfg)
+    else:
+        ohlcv = load_cached_ohlcv(row.pair, cfg, tf)
+    title = f"{row.pair}  {tf}"
     fig, note = candlestick_figure(
         ohlcv,
         n=candle_bar_count(cfg),
         title=title,
-        timeframe=row.timeframe,
+        timeframe=tf,
+        pair=row.pair,
         cfg=cfg,
         validity=row.validity,
+        show_ema=True,
+        ema_fast=50,
+        ema_slow=200 if show_ema200 else 0,
+        show_rsi=bool(show_rsi),
     )
     if fig is None:
         _empty_state(
             "No candlestick for this pair",
-            f"{note}. Fetch OHLCV first. Research only — not a broker chart.",
+            f"{note}",
             kicker="CHART",
+            action="Lab → Fetch this timeframe, then Manual update.",
+        )
+        _render_fetch_cta(
+            row.pair,
+            cfg,
+            key=f"board_fetch_chart_empty_{row.pair}_{tf}",
+            interval=tf,
         )
         return
     st.plotly_chart(
@@ -497,10 +543,58 @@ def _render_price_chart(row, cfg) -> None:
         config={
             "scrollZoom": True,
             "displaylogo": False,
+            "displayModeBar": True,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"],
         },
     )
     st.caption(note)
+
+
+def _render_chart_toolbar(row, cfg) -> tuple[str, bool, bool]:
+    """Pair label + timeframe chips + EMA200/RSI toggles. Missing TFs stay disabled."""
+    available = cached_chart_intervals(row.pair, cfg)
+    default_tf = str(row.timeframe or "1h")
+    key = f"chart_tf_{row.pair}"
+    if key not in st.session_state:
+        st.session_state[key] = default_tf if default_tf in available else (available[0] if available else default_tf)
+    if st.session_state[key] not in available and default_tf in available:
+        st.session_state[key] = default_tf
+    chips = st.columns([1.4] + [0.7] * len(CHART_INTERVALS) + [0.95, 0.85])
+    with chips[0]:
+        st.markdown(
+            f'<div class="fx-drawer-pair">{html.escape(row.pair)}</div>',
+            unsafe_allow_html=True,
+        )
+    for col, iv in zip(chips[1 : 1 + len(CHART_INTERVALS)], CHART_INTERVALS):
+        has = iv in available
+        kwargs = {
+            "key": f"chart_tf_btn_{row.pair}_{iv}",
+            "use_container_width": True,
+            "disabled": not has,
+            "help": (
+                f"Cached {row.pair}_{iv}.csv — yfinance last/mid-ish, not a live feed."
+                if has
+                else f"No {row.pair}_{iv}.csv on disk. Lab → Fetch this interval to enable."
+            ),
+        }
+        if has and st.session_state[key] == iv:
+            kwargs["type"] = "primary"
+        if col.button(iv, **kwargs) and has:
+            st.session_state[key] = iv
+            st.rerun()
+    ema200 = chips[-2].checkbox(
+        "EMA 200",
+        value=True,
+        key=f"chart_ema200_{row.pair}",
+        help="Causal EMA(200) on this cache. Hidden when the series is too short.",
+    )
+    show_rsi = chips[-1].checkbox(
+        "RSI 14",
+        value=True,
+        key=f"chart_rsi_{row.pair}",
+        help="Wilder RSI — same helper as model features. Not a broker oscillator.",
+    )
+    return st.session_state[key], bool(ema200), bool(show_rsi)
 
 
 def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
@@ -511,10 +605,6 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
         head, clear = st.columns([7.2, 1.1])
         with head:
             st.markdown("**Alerts**")
-            st.caption(
-                "Flips and STALE vs last snapshot · dismissible · not orders. "
-                f"{'Sound on' if sound_on else 'Sound off'}."
-            )
         with clear:
             if st.button("Clear", key="alert_clear_all", help="Dismiss every visible alert"):
                 for a in list(state.alerts):
@@ -555,17 +645,10 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
 
 
 def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=None) -> None:
-    st.markdown("**Event calendar**")
-    st.caption(
-        "High-impact FX releases (NFP, FOMC, CPI, rate decisions, …). "
-        "Free unofficial Forex Factory weekly JSON via nfs.faireconomy.media — no API key. "
-        "Cached locally; fail-soft if offline. **Not a trade instruction.** "
-        f"{clock_note(cfg)}"
-    )
     if bundle is None:
         _empty_state(
             "Calendar not loaded this tick",
-            "Math board is unchanged. Retry Manual update if the feed was skipped.",
+            "Retry Manual update if the feed was skipped.",
             kicker="CALENDAR",
         )
         return
@@ -883,6 +966,13 @@ def _render_paper_actions(
     if price is None:
         if not compact:
             st.caption("n/a — no cached price for a paper fill.")
+        st.caption("MISSING — Fetch path")
+        _render_fetch_cta(
+            row.pair,
+            cfg,
+            key=f"board_fetch_row_{row.pair}_{row.timeframe}",
+            interval=row.timeframe,
+        )
         return
     help_txt = (
         block_reason
@@ -950,45 +1040,47 @@ def _render_dense_row(
     }
     with st.container(border=bool(selected or warn or blocked)):
         c = st.columns(DENSE_WEIGHTS)
+        pair_col, rm_col = c[0].columns([4.0, 1.05])
         pair_kwargs = {
             "key": f"board_open_{row.pair}_{row.timeframe}",
             "use_container_width": True,
-            "help": "Open detail drawer (chart / SHAP / news / risk / rationale)",
+            "help": "Open detail drawer (chart first)",
         }
         if selected:
             pair_kwargs["type"] = "primary"
-        if c[0].button(row.pair, **pair_kwargs):
+        if pair_col.button(row.pair, **pair_kwargs):
             cur = st.session_state.get("board_detail_pair")
             st.session_state["board_detail_pair"] = None if cur == row.pair else row.pair
             st.rerun()
+        if rm_col.button(
+            "×",
+            key=f"board_rm_{row.pair}_{row.timeframe}",
+            use_container_width=True,
+            help=f"Remove {row.pair} from the watchlist (saved to config/watchlist.yaml)",
+        ):
+            _remove_watch_pair(row.pair, cfg)
+        c[0].markdown(pair_tf_html(row.timeframe), unsafe_allow_html=True)
+        mtf = getattr(row, "mtf", None)
+        mtf_lab = mtf.status if mtf is not None else ""
         with c[1]:
-            _dense_cell(row.timeframe)
-        with c[2]:
-            _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)), compact=True)
-        with c[3]:
-            _dense_cell(conf_label(row.confidence), numeric=True, strong=True)
-        with c[4]:
-            _validity_badge(row.validity, compact=True)
-        with c[5]:
-            _mtf_badge(getattr(row, "mtf", None), compact=True)
-        with c[6]:
-            _session_badge(getattr(row, "session", None), show_note=False)
-        last = row.quote.last_label() if row.quote is not None else "n/a"
-        with c[7]:
-            _dense_cell(last, numeric=True, strong=True)
-        spread = row.quote.spread_label() if row.quote is not None else "n/a"
-        with c[8]:
-            _dense_cell(spread, numeric=True)
-        with c[9]:
-            _dense_cell(row.next_event or "—", warn=warn)
-        with c[10]:
-            spark = spark_ascii(row.sparkline)
             st.markdown(
-                f'<div style="font-size:15px;letter-spacing:-0.06em;line-height:1.25;'
-                f'color:{MUTED};font-variant-numeric:tabular-nums">{html.escape(spark)}</div>',
+                signal_stack_html(
+                    row.buy_sell,
+                    conf_label(row.confidence),
+                    weak=bool(getattr(row, "flash_weak", False)),
+                    mtf=mtf_lab,
+                ),
                 unsafe_allow_html=True,
             )
-        with c[11]:
+        with c[2]:
+            _validity_badge(row.validity, compact=True)
+        last = row.quote.last_label() if row.quote is not None else "n/a"
+        sess = row.session.badge() if row.session is not None else "n/a"
+        with c[3]:
+            st.markdown(last_cell_html(last, sess), unsafe_allow_html=True)
+        with c[4]:
+            _dense_cell(row.next_event or "—", warn=warn)
+        with c[5]:
             _render_paper_actions(row, cfg, broker, news=news, calendar=calendar, compact=True)
 
 
@@ -999,51 +1091,76 @@ def _render_detail_drawer(
     news: NewsBundle | None,
     calendar: CalendarBundle | None,
 ) -> None:
-    """Row-click drawer: chart / SHAP / news / risk / rationale. Board stays clean."""
+    """Selected-row signal brief: headline, two advice cards, why, chart, tech notes."""
+    now = datetime.now(zoneinfo_for(cfg))
+    clock_label = f"{fmt_display(now, cfg, seconds=False)} {timezone_tag(cfg)}"
+    _price, _ts, ohlcv = _cached_quote(row, cfg)
+    brief = build_signal_brief(
+        row,
+        cfg=cfg,
+        ohlcv=ohlcv,
+        news=news,
+        calendar=calendar,
+        clock_label=clock_label,
+    )
     with st.container(border=True):
         head, xbtn = st.columns([7.4, 1.0])
         with head:
-            st.markdown(
-                f'<div class="fx-drawer-head">'
-                f'<span class="fx-drawer-pair">{html.escape(row.pair)}</span>'
-                f'<span class="fx-tz">{html.escape(row.timeframe)}</span>'
-                f"{signal_badge_html(row.buy_sell, compact=True)}"
-                f"{validity_badge_html(row.validity, compact=True)}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            st.caption(
-                "Chart / SHAP / news / risk / rationale. "
-                "News context, not a trade instruction. Advisory cards never auto-submit. "
-                f"{clock_note(cfg)}"
-            )
+            st.caption("Signal brief — cached research note, not a live ticket.")
         with xbtn:
             if st.button("Close", key=f"board_close_drawer_{row.pair}_{row.timeframe}"):
                 st.session_state["board_detail_pair"] = None
                 st.rerun()
         if getattr(row, "next_event_warn", False):
             st.warning(f"Pre-event warning: {row.next_event}")
-        if row.validity == VALIDITY_STALE:
-            st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
-        elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {"ready", "stale"}:
-            st.warning(row.signal_details or row.validity_reason or NEED_FETCH_TRAIN)
-        tabs = st.tabs(["Chart", "SHAP", "News", "Risk", "Rationale"])
-        with tabs[0]:
-            _render_price_chart(row, cfg)
-            st.caption(f"Last bar  {row.last_bar_at or 'n/a'}")
-            st.caption(f"Last fetch  {row.last_fetch_at or 'n/a'}")
-            st.caption(f"Last signal  {row.last_signal_at or row.datetime or 'n/a'}")
-            if row.quote is not None:
-                st.caption(row.quote.note)
-                if row.quote.range_note:
-                    st.caption(
-                        f"bar range "
-                        f"{'n/a' if row.quote.range_pips is None else f'{row.quote.range_pips:.1f}p'}"
-                        f" · {row.quote.range_note}"
-                    )
-            if row.session is not None and row.session.note:
-                st.caption(row.session.note)
-        with tabs[1]:
+        if brief.blocked:
+            _empty_state(
+                brief.headline,
+                brief.block_reason or "Data is not OK — not a live call.",
+                kicker=str(row.validity or "MISSING"),
+                action="Lab → Fetch, then Run pipeline. Paper BUY/SELL stays disabled.",
+            )
+            _render_fetch_cta(
+                row.pair,
+                cfg,
+                key=f"board_fetch_brief_{row.pair}_{row.timeframe}",
+                interval=row.timeframe,
+            )
+            return
+        st.markdown(
+            signal_brief_html(
+                headline=brief.headline,
+                horizons=brief.horizons,
+                why=brief.why,
+                invalidation=brief.invalidation,
+                disclaimer=brief.disclaimer,
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            section_head_html("Technical", "Cached chart", note="yfinance OHLCV — not a live feed"),
+            unsafe_allow_html=True,
+        )
+        chart_tf, ema200, show_rsi = _render_chart_toolbar(row, cfg)
+        _render_price_chart(
+            row,
+            cfg,
+            chart_tf=chart_tf,
+            show_rsi=show_rsi,
+            show_ema200=ema200,
+        )
+        if brief.tech_bullets:
+            st.markdown(tech_bullets_html(brief.tech_bullets), unsafe_allow_html=True)
+        st.markdown(
+            drawer_meta_html(
+                last_bar=row.last_bar_at or "n/a",
+                last_fetch=row.last_fetch_at or "n/a",
+                last_signal=row.last_signal_at or row.datetime or "n/a",
+            ),
+            unsafe_allow_html=True,
+        )
+        with st.expander("Advanced — SHAP, news, paper, numbers", expanded=False):
+            st.caption("Default UX is the signal brief above. These panels are for debugging.")
             expl = None
             if row.rationale or row.drivers or row.rules:
                 expl = SignalExplanation(
@@ -1057,12 +1174,10 @@ def _render_detail_drawer(
                     target=row.target,
                 )
             _render_explanation(expl, heading="Why this math signal?")
-        with tabs[2]:
             _render_news_lane(news, cfg)
-        with tabs[3]:
             _render_risk(row)
             if broker is not None:
-                price, _, ohlcv = _cached_quote(row, cfg)
+                price, _, ohlcv_p = _cached_quote(row, cfg)
                 open_pos = position_for_pair(broker, row.pair)
                 _render_suggestions(
                     row,
@@ -1071,15 +1186,12 @@ def _render_detail_drawer(
                     calendar=calendar,
                     news=news,
                     price=price,
-                    ohlcv=ohlcv,
+                    ohlcv=ohlcv_p,
                     position=open_pos,
                 )
-                if open_pos:
-                    st.caption(
-                        f"Open {open_pos['side']} @ {_fmt_num(open_pos['entry_price'], 5)} · "
-                        f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)} · "
-                        f"{open_pos.get('outcome') or 'PENDING'} — paper mark vs last/mid-ish, not live broker PnL"
-                    )
+                _render_paper_actions(
+                    row, cfg, broker, news=news, calendar=calendar, compact=False
+                )
             cal_events = list(calendar.events) if calendar is not None else []
             if not paper_submit_allowed(row.validity, row, cfg, events=cal_events, now=now_utc()):
                 st.caption(
@@ -1088,7 +1200,6 @@ def _render_detail_drawer(
                     )
                     or PAPER_STALE_CAPTION
                 )
-        with tabs[4]:
             st.caption(
                 f"conf={_fmt_num(row.confidence, 4)} · dir_edge={_fmt_num(row.dir_edge, 4)} · "
                 f"p_buy={_fmt_num(row.p_buy, 3)} / p_sell={_fmt_num(row.p_sell, 3)} / "
@@ -1098,16 +1209,12 @@ def _render_detail_drawer(
                 st.caption(f"{row.model or ''} · {row.datetime}")
             if row.target_note:
                 st.caption(row.target_note)
-            if row.rationale:
-                st.write(row.rationale)
             if row.raw_signal and row.buy_sell in {"—", "HOLD"}:
                 st.caption(f"Last model class (not live / MTF overlay): {row.raw_signal}")
             if row.validity_reason:
                 st.caption(f"Validity: {row.validity} — {row.validity_reason}")
             if row.error:
                 st.caption(f"Status detail: {row.error}")
-            if row.status not in {"ready", "stale"}:
-                st.info("Open **Lab** in the sidebar: Fetch then Train. The board does not invent prices.")
 
 
 def _pct_label(value: object) -> str:
@@ -1138,6 +1245,7 @@ def _render_daily_digest(
     broker: BrokerPort | None,
     alert_state,
     board_rows,
+    as_page: bool = False,
 ) -> None:
     """Yesterday/today snapshot. Fail-soft. Paper BrokerPort is only read, never submitted."""
     if digest_cfg(cfg).get("enabled") is False:
@@ -1183,63 +1291,71 @@ def _render_daily_digest(
     bits.append(f"{paper.get('right', 0)}R/{paper.get('wrong', 0)}W paper")
     if bits:
         label += " — " + " · ".join(bits)
+    if as_page:
+        st.markdown(section_head_html("Digest", label), unsafe_allow_html=True)
+        _render_digest_body(payload, paper, n_flips, issues, cfg)
+        return
     with st.expander(label, expanded=expand):
-        st.caption(
-            "Yesterday + today in "
-            f"**{timezone_tag(cfg)}**. Freshness, signal flips, paper RIGHT/WRONG, "
-            "calendar ahead, Awareness FAIL/STALE. "
-            "Paper lookback only — **not a live edge**. BrokerPort unchanged."
-        )
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("RIGHT", str(paper.get("right", 0)))
-        k2.metric("WRONG", str(paper.get("wrong", 0)))
-        k3.metric("Flips", str(n_flips))
-        k4.metric("FAIL/STALE", str(issues))
-        windows = payload.get("windows") or []
-        win_bits = ", ".join(f"{w.get('label')} {w.get('local_date')}" for w in windows)
-        st.caption(
-            f"Generated {payload.get('generated_at') or ''} · {win_bits or 'n/a'} · "
-            "paper lookback, not a live edge"
-        )
-        fresh = list(payload.get("freshness") or [])
-        if fresh:
-            st.markdown("**Data freshness**")
-            st.dataframe(pd.DataFrame(fresh), use_container_width=True, hide_index=True)
-        else:
-            _empty_inline("No watchlist freshness rows.")
-        flips = list(payload.get("flips") or [])
-        if flips:
-            st.markdown("**Signal flips (BUY/SELL/HOLD)**")
-            st.dataframe(pd.DataFrame(flips), use_container_width=True, hide_index=True)
-        else:
-            _empty_inline("No BUY/SELL/HOLD flips in the window.")
-        by_w = list(paper.get("by_window") or [])
-        if by_w:
-            st.markdown("**Paper RIGHT/WRONG by day**")
-            show = pd.DataFrame(by_w)
-            if "hit_rate" in show.columns:
-                show["hit_rate"] = [_pct_label(x) for x in show["hit_rate"]]
-            drop = [c for c in ("note",) if c in show.columns]
-            st.dataframe(show.drop(columns=drop, errors="ignore"), use_container_width=True, hide_index=True)
-        ahead = list(payload.get("calendar_ahead") or [])
-        if payload.get("calendar_error") and not ahead:
-            _empty_inline(f"Calendar unavailable: {payload.get('calendar_error')}")
-        elif ahead:
-            st.markdown("**Calendar ahead**")
-            st.dataframe(pd.DataFrame(ahead), use_container_width=True, hide_index=True)
-        else:
-            _empty_inline("No calendar events in the lookahead window.")
-        aw_issues = list((payload.get("awareness") or {}).get("issues") or [])
-        if aw_issues:
-            st.markdown("**Awareness FAIL/STALE/MISSING**")
-            st.dataframe(pd.DataFrame(aw_issues), use_container_width=True, hide_index=True)
-        else:
-            _empty_inline("No FAIL/STALE/MISSING sources.")
-        errs = list(payload.get("errors") or [])
-        if errs:
-            st.caption("Fail-soft: " + " · ".join(str(e) for e in errs))
-        with st.expander("CLI text", expanded=False):
-            st.code(format_digest_text(payload), language=None)
+        _render_digest_body(payload, paper, n_flips, issues, cfg)
+
+
+def _render_digest_body(payload, paper, n_flips, issues, cfg) -> None:
+    st.caption(
+        "Yesterday + today in "
+        f"**{timezone_tag(cfg)}**. Freshness, signal flips, paper RIGHT/WRONG, "
+        "calendar ahead, Awareness FAIL/STALE. "
+        "Paper lookback only — **not a live edge**. BrokerPort unchanged."
+    )
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("RIGHT", str(paper.get("right", 0)))
+    k2.metric("WRONG", str(paper.get("wrong", 0)))
+    k3.metric("Flips", str(n_flips))
+    k4.metric("FAIL/STALE", str(issues))
+    windows = payload.get("windows") or []
+    win_bits = ", ".join(f"{w.get('label')} {w.get('local_date')}" for w in windows)
+    st.caption(
+        f"Generated {payload.get('generated_at') or ''} · {win_bits or 'n/a'} · "
+        "paper lookback, not a live edge"
+    )
+    fresh = list(payload.get("freshness") or [])
+    if fresh:
+        st.markdown("**Data freshness**")
+        st.dataframe(pd.DataFrame(fresh), use_container_width=True, hide_index=True)
+    else:
+        _empty_inline("No watchlist freshness rows.")
+    flips = list(payload.get("flips") or [])
+    if flips:
+        st.markdown("**Signal flips (BUY/SELL/HOLD)**")
+        st.dataframe(pd.DataFrame(flips), use_container_width=True, hide_index=True)
+    else:
+        _empty_inline("No BUY/SELL/HOLD flips in the window.")
+    by_w = list(paper.get("by_window") or [])
+    if by_w:
+        st.markdown("**Paper RIGHT/WRONG by day**")
+        show = pd.DataFrame(by_w)
+        if "hit_rate" in show.columns:
+            show["hit_rate"] = [_pct_label(x) for x in show["hit_rate"]]
+        drop = [c for c in ("note",) if c in show.columns]
+        st.dataframe(show.drop(columns=drop, errors="ignore"), use_container_width=True, hide_index=True)
+    ahead = list(payload.get("calendar_ahead") or [])
+    if payload.get("calendar_error") and not ahead:
+        _empty_inline(f"Calendar unavailable: {payload.get('calendar_error')}")
+    elif ahead:
+        st.markdown("**Calendar ahead**")
+        st.dataframe(pd.DataFrame(ahead), use_container_width=True, hide_index=True)
+    else:
+        _empty_inline("No calendar events in the lookahead window.")
+    aw_issues = list((payload.get("awareness") or {}).get("issues") or [])
+    if aw_issues:
+        st.markdown("**Awareness FAIL/STALE/MISSING**")
+        st.dataframe(pd.DataFrame(aw_issues), use_container_width=True, hide_index=True)
+    else:
+        _empty_inline("No FAIL/STALE/MISSING sources.")
+    errs = list(payload.get("errors") or [])
+    if errs:
+        st.caption("Fail-soft: " + " · ".join(str(e) for e in errs))
+    with st.expander("CLI text", expanded=False):
+        st.code(format_digest_text(payload), language=None)
 
 
 def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
@@ -1677,28 +1793,129 @@ def _render_masthead(cfg) -> None:
     )
 
 
-def render_watch_board(cfg) -> None:
-    """Top-of-page multi-pair research board + persisted watchlist controls."""
+def _load_calendar(cfg, *, force: bool = False) -> CalendarBundle:
+    try:
+        return calendar_lab.fetch_calendar(cfg, force=bool(force))
+    except Exception as exc:  # noqa: BLE001 — never break the math board
+        return CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
+
+
+def _load_broker(cfg) -> BrokerPort | None:
+    try:
+        return _paper_broker(cfg)
+    except BrokerError as exc:
+        st.error(str(exc))
+        return None
+
+
+def _refresh_paper_marks(broker: BrokerPort | None, rows, cfg) -> None:
+    if broker is None:
+        return
+    refresh = getattr(broker, "refresh_from_ohlcv", None)
+    if not callable(refresh):
+        return
+    for row in rows:
+        refresh(row.pair, load_cached_ohlcv(row.pair, cfg, row.timeframe), cfg)
+
+
+def _desk_health(rows, news_map, calendar, cfg, *, realtime: bool, seconds: int):
+    news_ttl = int((cfg.get("news") or {}).get("cache_ttl_s") or 300)
+    cal_ttl = int((cfg.get("calendar") or {}).get("cache_ttl_s") or 1800)
+    try:
+        fred_status = fred_feed_status(cfg)
+    except Exception:  # noqa: BLE001 — health must never break the board
+        fred_status = FredStatus(enabled=False, error="status check failed")
+    if fred_status is None:
+        fred_status = FredStatus(enabled=False)
+    try:
+        models = model_status_map((r.pair for r in rows), cfg)
+    except Exception:  # noqa: BLE001
+        models = None
+    bcfg = board_cfg(cfg)
+    return build_health_rows(
+        rows,
+        news_map=news_map,
+        calendar=calendar,
+        calendar_ttl_s=cal_ttl,
+        fred=fred_status,
+        gate=_yf_gate(),
+        realtime=realtime,
+        refresh_s=seconds,
+        news_ttl_s=news_ttl,
+        yf_min_interval_s=int(bcfg.get("yf_min_interval_s") or YF_MIN_INTERVAL_S),
+        models=models,
+    )
+
+
+def _remove_watch_pair(pair: str, cfg) -> None:
+    wl = load_watchlist(cfg=cfg, create=True)
+    try:
+        remove_pair(wl, pair)
+        save_watchlist(wl)
+    except WatchlistError as exc:
+        st.error(str(exc))
+        return
+    st.session_state.pop("watch_rows", None)
+    if st.session_state.get("board_detail_pair") == str(pair).upper():
+        st.session_state["board_detail_pair"] = None
+    st.rerun()
+
+
+def _render_watchlist_editor(wl, cfg, available, lab_iv) -> None:
+    """Add/remove pairs — always visible on Decision, saved to config/watchlist.yaml."""
+    st.markdown(
+        section_head_html("Watchlist", "Add pair", note="saved to config/watchlist.yaml"),
+        unsafe_allow_html=True,
+    )
+    with st.container(border=True):
+        watched = wl.pair_symbols()
+        addable = [p for p in available if p not in watched]
+        a1, a2, a3, a4 = st.columns([1.3, 1.2, 1.4, 1.1])
+        with a1:
+            pick = st.selectbox(
+                "Add pair",
+                options=addable or ["(all config pairs are listed)"],
+                disabled=not addable,
+                key="watch_add_pick",
+            )
+        with a2:
+            typed = st.text_input("Or type a pair", placeholder="EURUSD", key="watch_typed_pair")
+        with a3:
+            tf_choice = st.selectbox(
+                "Pair timeframe",
+                options=["lab default (" + lab_iv + ")"] + list(KNOWN_INTERVALS),
+                key="watch_add_tf",
+            )
+        with a4:
+            add_clicked = st.button("Add to watchlist", type="primary", use_container_width=True)
+        if add_clicked:
+            symbol = (typed or "").strip() or (pick if addable else "")
+            try:
+                iv = None if str(tf_choice).startswith("lab default") else str(tf_choice)
+                add_pair(wl, symbol, interval=iv)
+                save_watchlist(wl)
+                st.session_state["watch_clear_typed"] = True
+                st.session_state.pop("watch_rows", None)
+                st.rerun()
+            except WatchlistError as exc:
+                st.error(str(exc))
+        st.caption(
+            "New rows appear on the board. No cache → Data● MISSING — open Lab and Fetch "
+            "(or Run pipeline with Also fetch). × on a row removes it. Does not wipe the paper journal."
+        )
+
+
+def render_decision_mode(cfg) -> None:
+    """Decision: clock is in the masthead. Alerts + scan board + pair drawer only."""
     if st.session_state.pop("watch_clear_typed", False):
         st.session_state["watch_typed_pair"] = ""
     wl = load_watchlist(cfg=cfg, create=True)
     lab_iv = wl.lab_interval(cfg)
     available = ui_pairs(cfg)
 
-    st.markdown(
-        section_head_html("Nav", "Workspace", note=f"lab TF {lab_iv} · click a pair for the drawer"),
-        unsafe_allow_html=True,
-    )
     with st.container(border=True):
-        st.caption(
-            "BUY green / SELL red / HOLD grey. "
-            f"Watchlist: `{watchlist_path()}`. Presets do not wipe the paper journal."
-        )
         _render_workspace_bar(cfg, wl)
-        with st.expander("Column help (research only)"):
-            st.markdown(BOARD_HELP)
-
-        c_real, c_secs, c_sound, c_note = st.columns([1.0, 1.0, 1.15, 2.1])
+        c_real, c_secs, c_sound, c_help = st.columns([1.0, 1.0, 1.15, 2.1])
         realtime = c_real.checkbox(
             "Realtime",
             value=False,
@@ -1724,21 +1941,15 @@ def render_watch_board(cfg) -> None:
                 max_value=3600,
                 step=30,
                 key="board_refresh_s",
-                help="Realtime poll interval. Default 60s so yfinance is not hammered "
-                "(unofficial API, no SLA; 1h bars do not need faster OHLCV). "
-                "Workspace presets can switch this.",
+                help="Realtime poll interval. Default 60s. Not a broker stream.",
             )
         )
         if seconds != int(wl.refresh_seconds):
             wl.refresh_seconds = seconds
             save_watchlist(wl)
-        if realtime:
-            c_note.caption(
-                f"Auto-refresh every {seconds}s: signals from cache; OHLCV at most one pair/tick, "
-                "only if due. Research timer — not executable prices."
-            )
-        else:
-            c_note.caption("Realtime off: the board stays put until **Manual update**.")
+        with c_help:
+            with st.expander("Column help (research only)"):
+                st.markdown(BOARD_HELP)
 
     run_every = seconds if realtime else None
 
@@ -1762,12 +1973,7 @@ def render_watch_board(cfg) -> None:
         if rate_msg:
             st.warning(rate_msg)
 
-        calendar: CalendarBundle | None = None
-        try:
-            calendar = calendar_lab.fetch_calendar(cfg, force=bool(manual))
-        except Exception as exc:  # noqa: BLE001 — never break the math board
-            calendar = CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
-
+        calendar = _load_calendar(cfg, force=bool(manual))
         alert_state, alert_fresh = process_watch(
             rows,
             calendar=calendar,
@@ -1795,49 +2001,13 @@ def render_watch_board(cfg) -> None:
         except Exception:
             news_map = {}
 
-        try:
-            broker = _paper_broker(cfg)
-        except BrokerError as exc:
-            st.error(str(exc))
-            broker = None
-        if broker is not None:
-            refresh = getattr(broker, "refresh_from_ohlcv", None)
-            if callable(refresh):
-                for row in rows:
-                    refresh(
-                        row.pair,
-                        load_cached_ohlcv(row.pair, cfg, row.timeframe),
-                        cfg,
-                    )
+        broker = _load_broker(cfg)
+        _refresh_paper_marks(broker, rows, cfg)
 
-        news_ttl = int((cfg.get("news") or {}).get("cache_ttl_s") or 300)
-        cal_ttl = int((cfg.get("calendar") or {}).get("cache_ttl_s") or 1800)
-        try:
-            fred_status = fred_feed_status(cfg)
-        except Exception:  # noqa: BLE001 — health must never break the board
-            fred_status = FredStatus(enabled=False, error="status check failed")
-        if fred_status is None:
-            fred_status = FredStatus(enabled=False)
-        try:
-            models = model_status_map((r.pair for r in rows), cfg)
-        except Exception:  # noqa: BLE001
-            models = None
-        health = build_health_rows(
-            rows,
-            news_map=news_map,
-            calendar=calendar,
-            calendar_ttl_s=cal_ttl,
-            fred=fred_status,
-            gate=_yf_gate(),
-            realtime=realtime,
-            refresh_s=seconds,
-            news_ttl_s=news_ttl,
-            yf_min_interval_s=int(bcfg.get("yf_min_interval_s") or YF_MIN_INTERVAL_S),
-            models=models,
-        )
-        unhealthy = health_unhealthy(health)
         clock = now_utc()
         cal_events = list(calendar.events) if calendar is not None else []
+
+        _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
 
         st.markdown(
             section_head_html("Scan", "Board", note="pair row → detail drawer"),
@@ -1855,16 +2025,18 @@ def render_watch_board(cfg) -> None:
             )
             st.caption(
                 f"{refresh_bit}"
-                f"Session **{board_sess.badge()}** · {board_sess.note}. "
                 "Last is yfinance last/mid-ish — not broker bid/ask. "
                 "Spread is the config pip estimate (cost context). "
-                f"{clock_note(cfg)}"
+                + PAPER_STALE_CAPTION
+                + " "
+                + PAPER_GATE_CAPTION
             )
             if not rows:
                 _empty_state(
-                    "Watchlist is empty. Add a pair below.",
-                    "The board will not invent prices. Fetch / Train live in the Lab sidebar.",
+                    "Watchlist is empty. Use Add pair above.",
+                    "The board will not invent prices. After adding, Lab → Fetch (or Run pipeline).",
                     kicker="BOARD",
+                    action="Add pair, then Lab → Fetch.",
                 )
             else:
                 for row in rows:
@@ -1874,9 +2046,7 @@ def render_watch_board(cfg) -> None:
                     st.success(flash)
                 st.caption(
                     "Click a pair for chart / SHAP / news / risk / rationale. "
-                    + PAPER_STALE_CAPTION
-                    + " "
-                    + PAPER_GATE_CAPTION
+                    "News context, not a trade instruction."
                 )
                 _render_dense_header()
                 selected = st.session_state.get("board_detail_pair")
@@ -1899,7 +2069,7 @@ def render_watch_board(cfg) -> None:
             selected = None
         if selected:
             st.markdown(
-                section_head_html("Detail", str(selected), note="Chart / SHAP / News / Risk / Rationale"),
+                section_head_html("Detail", str(selected), note="signal brief"),
                 unsafe_allow_html=True,
             )
             open_row = next((r for r in rows if r.pair == selected), None)
@@ -1911,71 +2081,6 @@ def render_watch_board(cfg) -> None:
                     news_map.get(open_row.pair),
                     calendar,
                 )
-
-        st.markdown(
-            section_head_html("Health", "Alerts, awareness, digest"),
-            unsafe_allow_html=True,
-        )
-        with st.container(border=True):
-            _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
-            st.markdown(awareness_status_html(health), unsafe_allow_html=True)
-            if unhealthy:
-                st.warning(
-                    "Obsolete or failing inputs: "
-                    + " · ".join(
-                        f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy
-                    )
-                )
-            exp_label = "Awareness"
-            if unhealthy:
-                exp_label += " — " + ", ".join(
-                    f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
-                    for r in unhealthy[:4]
-                )
-            with st.expander(exp_label, expanded=False):
-                st.caption(
-                    "Every source this desk fetches or observes. "
-                    "STALE / FAIL / MISSING never display as OK. "
-                    f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
-                )
-                st.caption(health_strip(health))
-                if health:
-                    st.markdown(awareness_table_html(health), unsafe_allow_html=True)
-                else:
-                    _empty_state(
-                        "Watchlist is empty — no sources to report",
-                        "Add a pair below. Awareness lists every feed this desk observes.",
-                        kicker="AWARENESS",
-                    )
-            try:
-                _render_daily_digest(
-                    cfg,
-                    health=health,
-                    calendar=calendar,
-                    broker=broker,
-                    alert_state=alert_state,
-                    board_rows=rows,
-                )
-            except Exception:  # noqa: BLE001
-                pass
-
-        st.markdown(section_head_html("More", "Calendar, paper, table"), unsafe_allow_html=True)
-        with st.container(border=True):
-            with st.expander("Event calendar", expanded=False):
-                _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
-            if broker is not None:
-                closed_n = list(getattr(broker, "list_closed", lambda: [])())
-                has_book = bool(broker.list_positions() or closed_n)
-                with st.expander("Paper portfolio (practice desk — not a broker)", expanded=has_book):
-                    _render_paper_journal(broker, cfg)
-            if rows:
-                table = board_table(rows, events=cal_events, now=clock, cfg=cfg)
-                cols_help = " | ".join(BOARD_TABLE_COLS)
-                with st.expander(f"Table view ({cols_help})"):
-                    try:
-                        st.dataframe(style_board(table), use_container_width=True, hide_index=True)
-                    except Exception:
-                        st.dataframe(table, use_container_width=True, hide_index=True)
 
         ok_n = sum(1 for r in rows if r.validity == VALIDITY_OK)
         closed_n = sum(1 for r in rows if r.validity == VALIDITY_CLOSED)
@@ -1991,70 +2096,451 @@ def render_watch_board(cfg) -> None:
                 bits.append(f"{missing_n} MISSING/ERROR")
             b3.caption(" · ".join(bits))
 
+    _render_watchlist_editor(wl, cfg, available, lab_iv)
     _board_fragment()
 
+
+def render_calendar_mode(cfg) -> None:
     st.markdown(
-        section_head_html("Watch", "Watchlist", note="add / remove pairs"),
+        section_head_html(
+            "Mode",
+            "Event calendar",
+            note="unofficial feed — not a trade instruction",
+        ),
         unsafe_allow_html=True,
     )
-    with st.container(border=True):
-        watched = wl.pair_symbols()
-        addable = [p for p in available if p not in watched]
-        a1, a2, a3, a4 = st.columns([1.3, 1.2, 1.4, 1.1])
-        with a1:
-            pick = st.selectbox(
-                "Add pair",
-                options=addable or ["(all config pairs are listed)"],
-                disabled=not addable,
-                key="watch_add_pick",
-            )
-        with a2:
-            typed = st.text_input("Or type a pair", placeholder="EURUSD", key="watch_typed_pair")
-        with a3:
-            tf_choice = st.selectbox(
-                "Pair timeframe",
-                options=["lab default (" + lab_iv + ")"] + list(KNOWN_INTERVALS),
-                key="watch_add_tf",
-            )
-        with a4:
-            add_clicked = st.button("Add to watchlist", use_container_width=True)
-        if add_clicked:
-            symbol = (typed or "").strip() or (pick if addable else "")
-            try:
-                iv = None if str(tf_choice).startswith("lab default") else str(tf_choice)
-                add_pair(wl, symbol, interval=iv)
-                save_watchlist(wl)
-                st.session_state["watch_clear_typed"] = True
-                st.session_state.pop("watch_rows", None)
-                st.rerun()
-            except WatchlistError as exc:
-                st.error(str(exc))
+    st.caption(
+        "High-impact FX releases (NFP, FOMC, CPI, rate decisions). "
+        "Cached Forex Factory weekly JSON. Fail-soft if offline. "
+        f"{clock_note(cfg)}"
+    )
+    wl = load_watchlist(cfg=cfg, create=True)
+    calendar = _load_calendar(cfg)
+    _render_calendar_panel(calendar, wl.pair_symbols(), cfg)
 
-        d1, d2, d3 = st.columns([1.6, 1.2, 2.2])
-        with d1:
-            rm_index = max(len(watched) - 1, 0) if watched else 0
-            rm = st.selectbox(
-                "Remove pair",
-                options=watched or ["(watchlist empty)"],
-                index=rm_index,
-                disabled=not watched,
-                key="watch_remove_" + "-".join(watched) if watched else "watch_remove_empty",
+
+def render_paper_mode(cfg) -> None:
+    st.markdown(
+        section_head_html(
+            "Mode",
+            "Paper journal",
+            note="practice desk — BrokerPort, not a live venue",
+        ),
+        unsafe_allow_html=True,
+    )
+    broker = _load_broker(cfg)
+    if broker is None:
+        _empty_state(
+            "Paper BrokerPort unavailable",
+            "Fix broker.backend: paper in config. No live orders.",
+            kicker="PAPER",
+        )
+        return
+    wl = load_watchlist(cfg=cfg, create=True)
+    rows, _ = _sync_watch_rows(wl, cfg, manual=False, realtime=False)
+    _refresh_paper_marks(broker, rows, cfg)
+    _render_paper_journal(broker, cfg)
+
+
+def render_awareness_mode(cfg) -> None:
+    st.markdown(
+        section_head_html(
+            "Mode",
+            "Awareness",
+            note="every source this desk observes",
+        ),
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "OHLCV, news RSS, model files, calendar, optional FRED. "
+        "STALE / FAIL / MISSING never display as OK. "
+        f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged. "
+        "Daily digest is yesterday/today in Asia/Dhaka — not a live edge."
+    )
+    wl = load_watchlist(cfg=cfg, create=True)
+    bcfg = board_cfg(cfg)
+    seconds = int(st.session_state.get("board_refresh_s") or wl.refresh_seconds or 60)
+    rows, _ = _sync_watch_rows(wl, cfg, manual=False, realtime=False)
+    calendar = _load_calendar(cfg)
+    try:
+        news_map = fetch_watchlist_news([r.pair for r in rows], cfg, force=False)
+    except Exception:
+        news_map = {}
+    broker = _load_broker(cfg)
+    alert_state = load_alert_state(cfg)
+    health = _desk_health(
+        rows,
+        news_map,
+        calendar,
+        cfg,
+        realtime=False,
+        seconds=seconds,
+    )
+    st.markdown(awareness_status_html(health), unsafe_allow_html=True)
+    unhealthy = health_unhealthy(health)
+    if unhealthy:
+        st.warning(
+            "Obsolete or failing inputs: "
+            + " · ".join(f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy)
+        )
+    st.caption(health_strip(health))
+    if health:
+        st.markdown(awareness_table_html(health), unsafe_allow_html=True)
+    else:
+        _empty_state(
+            "Watchlist is empty — no sources to report",
+            "Add a pair on Decision with Add pair.",
+            kicker="AWARENESS",
+        )
+    try:
+        _render_daily_digest(
+            cfg,
+            health=health,
+            calendar=calendar,
+            broker=broker,
+            alert_state=alert_state,
+            board_rows=rows,
+            as_page=True,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _run_pipeline_with_progress(
+    pair: str,
+    cfg,
+    *,
+    fetch: bool,
+    period: str | None,
+    interval: str | None,
+    synthetic: bool,
+) -> None:
+    """One-click train → backtest → signals. Stops on first failure. Shows progress."""
+    steps: list[tuple[str, object]] = []
+    if fetch:
+        steps.append(
+            (
+                f"Fetch {pair}",
+                lambda: run_fetch(
+                    pair, period=period, interval=interval, synthetic=synthetic, cfg=cfg
+                ),
             )
-        with d2:
-            remove_clicked = st.button(
-                "Remove from watchlist",
-                disabled=not watched,
-                use_container_width=True,
+        )
+    steps.extend(
+        [
+            (f"Train {pair}", lambda: run_train(pair, cfg=cfg)),
+            (f"Backtest {pair}", lambda: run_backtest(pair, cfg=cfg)),
+            (f"Signals {pair}", lambda: run_signals(pair, cfg=cfg)),
+        ]
+    )
+    bar = st.progress(0)
+    status = st.empty()
+    n = len(steps)
+    failed = False
+    for i, (label, fn) in enumerate(steps):
+        status.caption(f"{label}…")
+        bar.progress(int(100 * i / n) if n else 0)
+        with st.spinner(f"{label}…"):
+            rc, log = fn()
+        _append_log(label, rc, log)
+        if rc != 0:
+            bar.empty()
+            status.empty()
+            st.error(f"{label} failed (exit {rc}). See Lab → Logs / Advanced.")
+            failed = True
+            break
+    if not failed:
+        bar.progress(100)
+        status.caption("Pipeline finished")
+        st.success(
+            f"Pipeline finished for {pair}: "
+            + ("Fetch → " if fetch else "")
+            + "Train → Backtest → Generate signals."
+        )
+        st.session_state.pop("watch_rows", None)
+
+
+def render_lab_mode(cfg) -> None:
+    st.markdown(
+        section_head_html("Mode", "Lab", note="Fetch / Run pipeline — not the scan board"),
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Secondary research surface. Open Decision to read signals. "
+        f"Project: `{project_root()}`. CLI is unchanged."
+    )
+    pairs = ui_pairs(cfg)
+    default_period = str(cfg.get("period") or "2y")
+    default_interval = str(cfg.get("interval") or "1h")
+    pair = st.selectbox("Pair", options=pairs, index=0, help="From config/default.yaml", key="lab_pair")
+    status = artifact_status(pair, cfg)
+    st.markdown(
+        f"- Data: {'yes' if status['data_exists'] else 'missing'}"
+        + (f" ({status['n_bars']} bars)" if status["n_bars"] is not None else "")
+        + f"\n- Model: {'yes' if status['model_exists'] else 'missing'}"
+        + f"\n- Signals CSV: {'yes' if status['signals_exist'] else 'missing'}"
+        + f"\n- Metrics JSON: {'yes' if status['metrics_exist'] else 'missing'}"
+    )
+    also_fetch = st.checkbox(
+        "Also fetch latest OHLCV",
+        value=False,
+        key="lab_pipeline_fetch",
+        help="Off by default. When on, Fetch runs before Train → Backtest → Signals. "
+        "Do not mix synthetic with live yfinance in the same report.",
+    )
+    if st.button(
+        "Run pipeline",
+        type="primary",
+        use_container_width=True,
+        help="Train → backtest → generate signals for this pair. Optional Fetch first.",
+    ):
+        _run_pipeline_with_progress(
+            pair,
+            cfg,
+            fetch=bool(also_fetch),
+            period=default_period,
+            interval=default_interval,
+            synthetic=False,
+        )
+
+    with st.expander("Advanced — Fetch, individual steps, retrain", expanded=False):
+        st.caption("Default UX is Run pipeline. These buttons are for debugging.")
+        st.subheader("Fetch")
+        with st.form("fetch_form"):
+            period = st.text_input("Period", value=default_period, help="yfinance period, e.g. 2y")
+            interval = st.selectbox(
+                "Interval",
+                options=["1h", "1d", "4h", "15m"],
+                index=["1h", "1d", "4h", "15m"].index(default_interval)
+                if default_interval in ("1h", "1d", "4h", "15m")
+                else 0,
             )
-        with d3:
-            st.caption("Persisted to disk so the list survives reruns.")
-        if remove_clicked and watched:
-            remove_pair(wl, str(rm))
-            save_watchlist(wl)
-            st.session_state.pop("watch_rows", None)
+            synthetic = st.checkbox(
+                "Synthetic OHLCV (offline demo)",
+                value=False,
+                help="Do not mix synthetic numbers with yfinance numbers in the same report.",
+            )
+            fetch_go = st.form_submit_button("Fetch")
+        if synthetic and status["data_exists"]:
+            st.caption("Synthetic fetch overwrites the existing pair CSV.")
+        if fetch_go:
+            _run_step(
+                f"Fetch {pair}",
+                lambda: run_fetch(
+                    pair, period=period.strip() or None, interval=interval, synthetic=synthetic, cfg=cfg
+                ),
+            )
+        st.subheader("Individual steps")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("Train", use_container_width=True):
+            _run_step(f"Train {pair}", lambda: run_train(pair, cfg=cfg))
+        if c2.button("Backtest", use_container_width=True):
+            _run_step(f"Backtest {pair}", lambda: run_backtest(pair, cfg=cfg))
+        if c3.button("Generate signals", use_container_width=True):
+            _run_step(f"Signals {pair}", lambda: run_signals(pair, cfg=cfg))
+        st.subheader("Champion / challenger")
+        st.caption(
+            "Walk-forward gate. Promotes only if PF, total return, and max DD all improve "
+            "(or the non-regression bar). Else **null** — champion stays. "
+            "First run seeds the slot (not a promotion). Not a live edge. Can take several minutes."
+        )
+        try:
+            champ = load_champion(pair, cfg)
+        except Exception:
+            champ = None
+        if champ:
+            m = champ.get("metrics") or {}
+            r1, r2 = st.columns(2)
+            r1.metric("PF", _fmt_num(m.get("profit_factor")))
+            r2.metric("Return", _fmt_num(m.get("total_return")))
+            r3, r4 = st.columns(2)
+            r3.metric("Max DD", _fmt_num(m.get("max_drawdown")))
+            r4.metric("Trades", str(m.get("n_trades") if m.get("n_trades") is not None else "n/a"))
+            st.caption(
+                f"{champ.get('verdict') or 'champion'} · "
+                f"{champ.get('promoted_at_display') or champ.get('promoted_at') or ''} · "
+                "research sample only — not a live edge"
+            )
+        else:
+            st.caption(
+                "No champion yet — **Retrain gate** seeds the slot "
+                "(not a promotion). **Retrain dry-run** compares only and "
+                "does not write champion JSON."
+            )
+        g1, g2 = st.columns(2)
+        if g1.button("Retrain gate", use_container_width=True):
+            _run_step(f"Retrain {pair}", lambda: run_retrain(pair, cfg=cfg))
+        if g2.button("Retrain dry-run", use_container_width=True):
+            _run_step(
+                f"Retrain dry-run {pair}",
+                lambda: run_retrain(pair, dry_run=True, cfg=cfg),
+            )
+        if st.button("Reload files", use_container_width=True):
             st.rerun()
 
-    st.divider()
+    signals = load_signals(cfg)
+    metrics = load_metrics(cfg)
+    trades = load_trades(cfg)
+    report = load_report(cfg)
+
+    st.markdown(
+        section_head_html("Artifacts", "Walk-forward CSV / metrics / equity / logs"),
+        unsafe_allow_html=True,
+    )
+    disk_pair = None
+    if metrics and metrics.get("pair"):
+        disk_pair = str(metrics["pair"]).upper()
+    elif signals is not None and not signals.empty and "pair" in signals.columns:
+        disk_pair = str(signals["pair"].iloc[-1]).upper()
+    if disk_pair and disk_pair != pair:
+        st.info(
+            f"On-disk signals/metrics are for **{disk_pair}**; selected pair is **{pair}**. "
+            "Run the pipeline steps for the selected pair to refresh."
+        )
+
+    latest_col, *metric_cols = st.columns([1.4, 1, 1, 1, 1, 1])
+    with latest_col:
+        if signals is not None and not signals.empty:
+            last = signals.iloc[-1]
+            sig = str(last.get("signal", "n/a")).upper()
+            st.metric("Latest signal", sig)
+            when = last.get("datetime", "")
+            close = last.get("close", "")
+            conf = last.get("confidence", "")
+            st.caption(
+                f"{last.get('pair', '')}  {relabel(when, cfg)}  close={close}  conf={conf}"
+            )
+        else:
+            st.metric("Latest signal", "—")
+            st.caption("No `signals/latest_signals.csv` yet.")
+
+    if signals is not None and not signals.empty:
+        last = signals.iloc[-1]
+        why_pair = str(last.get("pair") or pair).upper()
+        why_iv = str(cfg.get("interval") or "1h")
+        ohlcv = load_cached_ohlcv(why_pair, cfg, why_iv)
+        if ohlcv is not None and not ohlcv.empty:
+            tgt, _note = research_target(ohlcv, cfg, str(last.get("signal") or ""))
+            expl = explain_latest_signal(why_pair, ohlcv, cfg, last, target=tgt)
+            st.markdown("**Why this on-disk signal?** (same explainability as the board)")
+            _render_explanation(expl)
+        else:
+            st.info(f"No cached OHLCV for {why_pair} — run Fetch.")
+
+    model_m = (metrics or {}).get("model") or {}
+    labels = [
+        ("Win rate", _fmt_pct(model_m.get("win_rate"))),
+        ("Trades", str(model_m.get("n_trades") if model_m.get("n_trades") is not None else "—")),
+        ("Total return", _fmt_pct(model_m.get("total_return"))),
+        ("Max drawdown", _fmt_pct(model_m.get("max_drawdown"))),
+        ("Profit factor", _fmt_num(model_m.get("profit_factor"), 3)),
+    ]
+    for col, (lab, val) in zip(metric_cols, labels):
+        col.metric(lab, val)
+
+    wl = load_watchlist(cfg=cfg, create=True)
+    rows, _ = _sync_watch_rows(wl, cfg, manual=False, realtime=False)
+    if rows:
+        clock = now_utc()
+        calendar = _load_calendar(cfg)
+        cal_events = list(calendar.events) if calendar is not None else []
+        table = board_table(rows, events=cal_events, now=clock, cfg=cfg)
+        cols_help = " | ".join(BOARD_TABLE_COLS)
+        with st.expander(f"Table view ({cols_help})"):
+            try:
+                st.dataframe(style_board(table), use_container_width=True, hide_index=True)
+            except Exception:
+                st.dataframe(table, use_container_width=True, hide_index=True)
+
+    tabs = st.tabs(["Signals", "Metrics", "Equity", "Report", "Logs"])
+    with tabs[0]:
+        st.subheader("latest_signals.csv")
+        st.caption("Newest bar is the first row (highlighted). BUY/SELL/HOLD colors are research labels, not orders.")
+        if signals is None or signals.empty:
+            st.write("No signals file yet. Run **Run pipeline** (or Generate signals in Advanced).")
+        else:
+            try:
+                st.dataframe(style_signals(signals), use_container_width=True, hide_index=True)
+            except Exception:
+                st.dataframe(signals.iloc[::-1], use_container_width=True, hide_index=True)
+    with tabs[1]:
+        st.subheader("Walk-forward success metrics")
+        if not metrics:
+            st.write("No `reports/latest_metrics.json` yet. Run **Backtest**.")
+        else:
+            wr_lo, wr_hi = model_m.get("win_rate_lo"), model_m.get("win_rate_hi")
+            st.write(
+                f"Pair **{metrics.get('pair', 'n/a')}** · model `{metrics.get('model_type')}` · "
+                f"scheme `{metrics.get('label_scheme')}` · folds {metrics.get('folds')} · "
+                f"win-rate 95% CI {_fmt_pct(wr_lo)} – {_fmt_pct(wr_hi)}"
+            )
+            extra = st.columns(3)
+            extra[0].metric("Win rate BUY", _fmt_pct(model_m.get("win_rate_buy")))
+            extra[1].metric("Win rate SELL", _fmt_pct(model_m.get("win_rate_sell")))
+            extra[2].metric("Avg return / trade", _fmt_num(model_m.get("avg_return_per_trade"), 6))
+            table = metrics_table(metrics)
+            if not table.empty:
+                show = table.copy()
+                for c in ("win_rate", "total_return", "max_drawdown"):
+                    if c in show.columns:
+                        show[c] = show[c].map(_fmt_pct)
+                if "profit_factor" in show.columns:
+                    show["profit_factor"] = show["profit_factor"].map(lambda x: _fmt_num(x, 4))
+                if "avg_return_per_trade" in show.columns:
+                    show["avg_return_per_trade"] = show["avg_return_per_trade"].map(
+                        lambda x: _fmt_num(x, 6)
+                    )
+                st.markdown("**Vs baselines** (same windows, barriers, and costs)")
+                st.dataframe(show, use_container_width=True, hide_index=True)
+            stab = metrics.get("fold_stability") or {}
+            if stab:
+                st.markdown(
+                    f"Fold stability: win rate {_fmt_pct(stab.get('win_rate_mean'))} ± "
+                    f"{_fmt_pct(stab.get('win_rate_std'))}; "
+                    f"profit factor {_fmt_num(stab.get('profit_factor_mean'), 3)} ± "
+                    f"{_fmt_num(stab.get('profit_factor_std'), 3)} "
+                    f"(n={stab.get('folds_with_trades')} folds with trades)."
+                )
+            st.caption(
+                "A slightly higher win rate with worse profit factor or deeper drawdown "
+                "than the baseline is not a clear win. Profit factor below 1 means negative expectancy after costs."
+            )
+    with tabs[2]:
+        st.subheader("Equity and drawdown")
+        st.caption("From `reports/latest_trades.csv` (compounded net returns of sequential closed trades).")
+        if trades is None:
+            st.write("No trades CSV yet. Run **Backtest**.")
+        else:
+            curve = equity_from_trades(trades)
+            if curve.empty:
+                st.write("Trades file has no `net_return` column.")
+            else:
+                eq_col, dd_col = st.columns(2)
+                with eq_col:
+                    st.markdown("Equity (start = 1.0)")
+                    st.line_chart(curve[["equity"]], use_container_width=True)
+                with dd_col:
+                    st.markdown("Drawdown")
+                    st.line_chart(curve[["drawdown"]], use_container_width=True)
+                st.caption(f"{len(trades)} closed trades in the file.")
+    with tabs[3]:
+        st.subheader("latest_report.md")
+        if not report:
+            st.write("No report yet. Run **Backtest**.")
+        else:
+            st.markdown(report)
+    with tabs[4]:
+        st.subheader("Pipeline logs")
+        st.caption("Captured stdout from forex_lab commands (same functions as `python -m forex_lab`).")
+        if st.session_state.last_action:
+            st.write(f"Last action: **{st.session_state.last_action}**")
+        log_text = st.session_state.get("logs") or "(no pipeline steps run in this session)"
+        st.code(log_text, language="text")
+    st.caption(
+        "CLI is unchanged: `python -m forex_lab fetch|train|backtest|signals`. "
+        f"Artifacts live under `{Path(project_root())}` "
+        "(data/, models/, signals/, reports/)."
+    )
 
 
 def render() -> None:
@@ -2071,269 +2557,22 @@ def render() -> None:
         else:
             active_ws.min_confidence = float(st.session_state["ws_min_conf"])
     cfg = overlay_config(cfg, active_ws)
-    pairs = ui_pairs(cfg)
-    default_period = str(cfg.get("period") or "2y")
-    default_interval = str(cfg.get("interval") or "1h")
 
     _render_masthead(cfg)
-    st.caption(
-        "Math analysis + news context so you can decide. Manual only — no auto-trading. "
-        "Decision-support only — not financial advice. Paper fills are local. "
-        f"{clock_note(cfg)}"
-    )
+    mode = _render_mode_nav()
     with st.expander("Disclaimer (research only — not a live edge)", expanded=False):
         st.warning(DISCLAIMER)
 
-    render_watch_board(cfg)
-
-    with st.sidebar:
-        st.header("Lab")
-        st.caption("Secondary. Open when you need data or a model — not to read signals.")
-        pair = st.selectbox("Pair", options=pairs, index=0, help="From config/default.yaml")
-        status = artifact_status(pair, cfg)
-        with st.expander("Fetch / Train / Backtest", expanded=False):
-            st.caption(f"Project: `{project_root()}`")
-            st.markdown(
-                f"- Data: {'yes' if status['data_exists'] else 'missing'}"
-                + (f" ({status['n_bars']} bars)" if status["n_bars"] is not None else "")
-                + f"\n- Model: {'yes' if status['model_exists'] else 'missing'}"
-                + f"\n- Signals CSV: {'yes' if status['signals_exist'] else 'missing'}"
-                + f"\n- Metrics JSON: {'yes' if status['metrics_exist'] else 'missing'}"
-            )
-            st.subheader("Fetch")
-            with st.form("fetch_form"):
-                period = st.text_input("Period", value=default_period, help="yfinance period, e.g. 2y")
-                interval = st.selectbox(
-                    "Interval",
-                    options=["1h", "1d", "4h", "15m"],
-                    index=["1h", "1d", "4h", "15m"].index(default_interval)
-                    if default_interval in ("1h", "1d", "4h", "15m")
-                    else 0,
-                )
-                synthetic = st.checkbox(
-                    "Synthetic OHLCV (offline demo)",
-                    value=False,
-                    help="Do not mix synthetic numbers with yfinance numbers in the same report.",
-                )
-                fetch_go = st.form_submit_button("Fetch")
-            if synthetic and status["data_exists"]:
-                st.caption("Synthetic fetch overwrites the existing pair CSV.")
-            if fetch_go:
-                _run_step(
-                    f"Fetch {pair}",
-                    lambda: run_fetch(
-                        pair, period=period.strip() or None, interval=interval, synthetic=synthetic, cfg=cfg
-                    ),
-                )
-            st.subheader("Train / evaluate")
-            st.caption("Backtest is walk-forward and can take several minutes.")
-            c1, c2 = st.columns(2)
-            if c1.button("Train", use_container_width=True):
-                _run_step(f"Train {pair}", lambda: run_train(pair, cfg=cfg))
-            if c2.button("Backtest", use_container_width=True):
-                _run_step(f"Backtest {pair}", lambda: run_backtest(pair, cfg=cfg))
-            if st.button("Generate signals", use_container_width=True):
-                _run_step(f"Signals {pair}", lambda: run_signals(pair, cfg=cfg))
-            st.subheader("Champion / challenger")
-            st.caption(
-                "Walk-forward gate. Promotes only if PF, total return, and max DD all improve "
-                "(or the non-regression bar). Else **null** — champion stays. "
-                "First run seeds the slot (not a promotion). Not a live edge. Can take several minutes."
-            )
-            try:
-                champ = load_champion(pair, cfg)
-            except Exception:
-                champ = None
-            if champ:
-                m = champ.get("metrics") or {}
-                r1, r2 = st.columns(2)
-                r1.metric("PF", _fmt_num(m.get("profit_factor")))
-                r2.metric("Return", _fmt_num(m.get("total_return")))
-                r3, r4 = st.columns(2)
-                r3.metric("Max DD", _fmt_num(m.get("max_drawdown")))
-                r4.metric("Trades", str(m.get("n_trades") if m.get("n_trades") is not None else "n/a"))
-                st.caption(
-                    f"{champ.get('verdict') or 'champion'} · "
-                    f"{champ.get('promoted_at_display') or champ.get('promoted_at') or ''} · "
-                    "research sample only — not a live edge"
-                )
-            else:
-                st.caption(
-                    "No champion yet — **Retrain gate** seeds the slot "
-                    "(not a promotion). **Retrain dry-run** compares only and "
-                    "does not write champion JSON."
-                )
-            g1, g2 = st.columns(2)
-            if g1.button("Retrain gate", use_container_width=True):
-                _run_step(f"Retrain {pair}", lambda: run_retrain(pair, cfg=cfg))
-            if g2.button("Retrain dry-run", use_container_width=True):
-                _run_step(
-                    f"Retrain dry-run {pair}",
-                    lambda: run_retrain(pair, dry_run=True, cfg=cfg),
-                )
-            if st.button("Reload files", use_container_width=True):
-                st.rerun()
-
-    signals = load_signals(cfg)
-    metrics = load_metrics(cfg)
-    trades = load_trades(cfg)
-    report = load_report(cfg)
-
-    with st.expander("Research lab — CSV, walk-forward metrics, equity, logs", expanded=False):
-        st.caption(
-            "Secondary. The flash board above is the trader screen. "
-            "These tabs are the same walk-forward artifacts as the CLI."
-        )
-        disk_pair = None
-        if metrics and metrics.get("pair"):
-            disk_pair = str(metrics["pair"]).upper()
-        elif signals is not None and not signals.empty and "pair" in signals.columns:
-            disk_pair = str(signals["pair"].iloc[-1]).upper()
-        if disk_pair and disk_pair != pair:
-            st.info(
-                f"On-disk signals/metrics are for **{disk_pair}**; selected pair is **{pair}**. "
-                "Run the pipeline steps for the selected pair to refresh."
-            )
-
-        latest_col, *metric_cols = st.columns([1.4, 1, 1, 1, 1, 1])
-        with latest_col:
-            if signals is not None and not signals.empty:
-                last = signals.iloc[-1]
-                sig = str(last.get("signal", "n/a")).upper()
-                st.metric("Latest signal", sig)
-                when = last.get("datetime", "")
-                close = last.get("close", "")
-                conf = last.get("confidence", "")
-                st.caption(
-                    f"{last.get('pair', '')}  {relabel(when, cfg)}  close={close}  conf={conf}"
-                )
-            else:
-                st.metric("Latest signal", "—")
-                st.caption("No `signals/latest_signals.csv` yet.")
-
-        why = st.container()
-        with why:
-            if signals is not None and not signals.empty:
-                last = signals.iloc[-1]
-                why_pair = str(last.get("pair") or pair).upper()
-                why_iv = str(cfg.get("interval") or "1h")
-                ohlcv = load_cached_ohlcv(why_pair, cfg, why_iv)
-                if ohlcv is not None and not ohlcv.empty:
-                    tgt, _note = research_target(ohlcv, cfg, str(last.get("signal") or ""))
-                    expl = explain_latest_signal(why_pair, ohlcv, cfg, last, target=tgt)
-                    st.markdown("**Why this on-disk signal?** (same explainability as the board)")
-                    _render_explanation(expl)
-                else:
-                    st.info(f"No cached OHLCV for {why_pair} — run Fetch.")
-
-        model_m = (metrics or {}).get("model") or {}
-        labels = [
-            ("Win rate", _fmt_pct(model_m.get("win_rate"))),
-            ("Trades", str(model_m.get("n_trades") if model_m.get("n_trades") is not None else "—")),
-            ("Total return", _fmt_pct(model_m.get("total_return"))),
-            ("Max drawdown", _fmt_pct(model_m.get("max_drawdown"))),
-            ("Profit factor", _fmt_num(model_m.get("profit_factor"), 3)),
-        ]
-        for col, (lab, val) in zip(metric_cols, labels):
-            col.metric(lab, val)
-
-        tabs = st.tabs(["Signals", "Metrics", "Equity", "Report", "Logs"])
-
-        with tabs[0]:
-            st.subheader("latest_signals.csv")
-            st.caption("Newest bar is the first row (highlighted). BUY/SELL/HOLD colors are research labels, not orders.")
-            if signals is None or signals.empty:
-                st.write("No signals file yet. Run **Generate signals** after fetch + train.")
-            else:
-                try:
-                    st.dataframe(style_signals(signals), use_container_width=True, hide_index=True)
-                except Exception:
-                    st.dataframe(signals.iloc[::-1], use_container_width=True, hide_index=True)
-
-        with tabs[1]:
-            st.subheader("Walk-forward success metrics")
-            if not metrics:
-                st.write("No `reports/latest_metrics.json` yet. Run **Backtest**.")
-            else:
-                wr_lo, wr_hi = model_m.get("win_rate_lo"), model_m.get("win_rate_hi")
-                st.write(
-                    f"Pair **{metrics.get('pair', 'n/a')}** · model `{metrics.get('model_type')}` · "
-                    f"scheme `{metrics.get('label_scheme')}` · folds {metrics.get('folds')} · "
-                    f"win-rate 95% CI {_fmt_pct(wr_lo)} – {_fmt_pct(wr_hi)}"
-                )
-                extra = st.columns(3)
-                extra[0].metric("Win rate BUY", _fmt_pct(model_m.get("win_rate_buy")))
-                extra[1].metric("Win rate SELL", _fmt_pct(model_m.get("win_rate_sell")))
-                extra[2].metric("Avg return / trade", _fmt_num(model_m.get("avg_return_per_trade"), 6))
-                table = metrics_table(metrics)
-                if not table.empty:
-                    show = table.copy()
-                    for c in ("win_rate", "total_return", "max_drawdown"):
-                        if c in show.columns:
-                            show[c] = show[c].map(_fmt_pct)
-                    if "profit_factor" in show.columns:
-                        show["profit_factor"] = show["profit_factor"].map(lambda x: _fmt_num(x, 4))
-                    if "avg_return_per_trade" in show.columns:
-                        show["avg_return_per_trade"] = show["avg_return_per_trade"].map(
-                            lambda x: _fmt_num(x, 6)
-                        )
-                    st.markdown("**Vs baselines** (same windows, barriers, and costs)")
-                    st.dataframe(show, use_container_width=True, hide_index=True)
-                stab = metrics.get("fold_stability") or {}
-                if stab:
-                    st.markdown(
-                        f"Fold stability: win rate {_fmt_pct(stab.get('win_rate_mean'))} ± "
-                        f"{_fmt_pct(stab.get('win_rate_std'))}; "
-                        f"profit factor {_fmt_num(stab.get('profit_factor_mean'), 3)} ± "
-                        f"{_fmt_num(stab.get('profit_factor_std'), 3)} "
-                        f"(n={stab.get('folds_with_trades')} folds with trades)."
-                    )
-                takeaway = (
-                    "A slightly higher win rate with worse profit factor or deeper drawdown "
-                    "than the baseline is not a clear win. Profit factor below 1 means negative expectancy after costs."
-                )
-                st.caption(takeaway)
-
-        with tabs[2]:
-            st.subheader("Equity and drawdown")
-            st.caption("From `reports/latest_trades.csv` (compounded net returns of sequential closed trades).")
-            if trades is None:
-                st.write("No trades CSV yet. Run **Backtest**.")
-            else:
-                curve = equity_from_trades(trades)
-                if curve.empty:
-                    st.write("Trades file has no `net_return` column.")
-                else:
-                    eq_col, dd_col = st.columns(2)
-                    with eq_col:
-                        st.markdown("Equity (start = 1.0)")
-                        st.line_chart(curve[["equity"]], use_container_width=True)
-                    with dd_col:
-                        st.markdown("Drawdown")
-                        st.line_chart(curve[["drawdown"]], use_container_width=True)
-                    st.caption(f"{len(trades)} closed trades in the file.")
-
-        with tabs[3]:
-            st.subheader("latest_report.md")
-            if not report:
-                st.write("No report yet. Run **Backtest**.")
-            else:
-                st.markdown(report)
-
-        with tabs[4]:
-            st.subheader("Pipeline logs")
-            st.caption("Captured stdout from forex_lab commands (same functions as `python -m forex_lab`).")
-            if st.session_state.last_action:
-                st.write(f"Last action: **{st.session_state.last_action}**")
-            log_text = st.session_state.get("logs") or "(no pipeline steps run in this session)"
-            st.code(log_text, language="text")
-
-    st.divider()
-    st.caption(
-        "CLI is unchanged: `python -m forex_lab fetch|train|backtest|signals`. "
-        f"Artifacts live under `{Path(project_root())}` "
-        "(data/, models/, signals/, reports/)."
-    )
+    if mode == "Decision":
+        render_decision_mode(cfg)
+    elif mode == "Calendar":
+        render_calendar_mode(cfg)
+    elif mode == "Paper":
+        render_paper_mode(cfg)
+    elif mode == "Lab":
+        render_lab_mode(cfg)
+    else:
+        render_awareness_mode(cfg)
 
 
 render()

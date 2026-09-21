@@ -46,7 +46,7 @@ def test_theme_config_is_dark_terminal():
     assert "#16c784" in cfg
     assert "toolbarMode" in cfg and "minimal" in cfg
     assert "backgroundColor" in cfg
-    assert "baseFontSize = 16" in cfg
+    assert "baseFontSize = 17" in cfg
     assert "textColor = \"#f2f5f8\"" in cfg
     assert "showWidgetBorder = true" in cfg
     assert "borderColor = \"#4a5d73\"" in cfg
@@ -69,14 +69,15 @@ def test_buy_sell_hold_are_high_contrast():
     assert "fx-masthead" in css
     assert "fx-empty" in css
     assert "fx-legend" in css
-    assert "fx-scan" in css
+    assert "--fx-scan" in css or "fx-scan" in css
+    assert "st-key-desk_nav" in css
     assert "flex-end" in css
     assert "st-key-paper_close" in css
     assert BUY == "#16c784" and SELL == "#ea3943"
 
 
 def test_muted_captions_and_labels_are_readable():
-    """Body 16px, captions 14px, secondary #c8d0db+ — not dark grey on dark."""
+    """Body 17px, captions 15px, secondary #c8d0db+ — not dark grey on dark."""
     from forex_lab.ui.health import awareness_table_html
     from forex_lab.ui.theme import (
         BG,
@@ -91,11 +92,11 @@ def test_muted_captions_and_labels_are_readable():
         validity_badge_html,
     )
 
-    assert FONT_BODY == "16px"
-    assert FONT_CAPTION == "14px"
-    assert FONT_LABEL == "14px"
-    assert FONT_CELL == "15px"
-    assert FONT_EXPANDER == "16px"
+    assert FONT_BODY == "17px"
+    assert FONT_CAPTION == "15px"
+    assert FONT_LABEL == "15px"
+    assert FONT_CELL == "16px"
+    assert FONT_EXPANDER == "17px"
     assert min(_rgb(MUTED)) >= 200
     assert MUTED.lower() >= "#c8d0db"
     assert _contrast(MUTED, BG) >= 10.0
@@ -107,13 +108,13 @@ def test_muted_captions_and_labels_are_readable():
     assert "--fx-muted" in css
     assert "stSidebar" in css
     assert "stTooltipContent" in css
-    assert "font-size: 16px" in css
-    assert "font-size: 14px" in css
+    assert "font-size: 17px" in css
+    assert "font-size: 15px" in css
     # Old too-small caption / widget-label rem sizes must not remain.
     assert "font-size: 0.70rem !important" not in css
     assert "font-size: 0.62rem !important" not in css
     stale = validity_badge_html("STALE", compact=True)
-    assert "14px" in stale
+    assert "15px" in stale
     table = awareness_table_html(
         [
             {
@@ -126,7 +127,7 @@ def test_muted_captions_and_labels_are_readable():
         ]
     )
     assert MUTED in table
-    assert "15px" in table
+    assert "16px" in table
     assert "data stale" in table
 
 
@@ -280,12 +281,14 @@ def test_stale_outranks_buy_sell_hold():
 
 
 def test_chrome_cards_borders_and_section_heads():
-    """Elevated cards, visible borders, masthead/nav, clickable drawer tabs."""
+    """Elevated cards, visible borders, masthead, and exclusive mode nav."""
     from forex_lab.ui.theme import (
         BG,
         BORDER,
         BORDER_STRONG,
         CARD,
+        DEFAULT_MODE,
+        DESK_MODES,
         ELEVATED,
         card_html,
         section_head_html,
@@ -302,6 +305,11 @@ def test_chrome_cards_borders_and_section_heads():
         ".fx-card",
         ".fx-card-title",
         ".fx-masthead-top",
+        ".fx-nav",
+        ".fx-brief",
+        ".fx-advice-line",
+        ".fx-invalid",
+        "st-key-desk_nav",
         '[data-testid="stTabs"]',
         '[data-testid="stVerticalBlockBorderWrapper"]',
         '[data-testid="stExpander"]',
@@ -325,14 +333,38 @@ def test_chrome_cards_borders_and_section_heads():
     head = section_head_html("Scan", "Board", note="pair row → detail drawer")
     assert "fx-section-kicker" in head and "Scan" in head
     assert "Board" in head and "pair row" in head
+    assert DESK_MODES == ("Decision", "Calendar", "Paper", "Lab", "Awareness")
+    assert DEFAULT_MODE == "Decision"
     source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
     assert 'section_head_html("Scan", "Board"' in source
     assert 'section_head_html("Detail"' in source
-    assert 'section_head_html("Health", "Alerts, awareness, digest")' in source
+    assert "def render_decision_mode" in source
+    assert "def render_calendar_mode" in source
+    assert "def render_paper_mode" in source
+    assert "def render_lab_mode" in source
+    assert "def render_awareness_mode" in source
+    assert "desk_nav_" in source
+    assert 'if mode == "Decision"' in source
+    assert 'elif mode == "Calendar"' in source
+    assert 'elif mode == "Paper"' in source
+    assert 'elif mode == "Lab"' in source
+    # Dump-zone stack is gone: health/calendar/paper are not siblings under the board.
+    assert 'section_head_html("Health", "Alerts, awareness, digest")' not in source
+    assert 'section_head_html("More", "Calendar, paper, table")' not in source
     scan_at = source.find('section_head_html("Scan", "Board"')
     detail_at = source.find('section_head_html("Detail"')
-    health_at = source.find('section_head_html("Health", "Alerts, awareness, digest")')
-    assert 0 < scan_at < detail_at < health_at
-    # Duplicate scan board must not return after Health.
+    assert 0 < scan_at < detail_at
     assert source.count('section_head_html("Scan", "Board"') == 1
     assert "fx-masthead-top" in source
+    # Decision default — Calendar/Paper/Lab/Awareness are exclusive destinations.
+    assert "render_calendar_mode(cfg)" in source
+    assert source.find("render_decision_mode") < source.find("render_calendar_mode(cfg)")
+    css = terminal_css()
+    assert '[data-testid="stHeader"]' in css
+    assert "display: none" in css
+    assert "padding-top: 1.85rem" in css
+    assert ".fx-nav-gap" in css
+    assert "position: relative !important" in css
+    assert "build_signal_brief" in source
+    assert "Run pipeline" in source
+    assert "Add pair" in source

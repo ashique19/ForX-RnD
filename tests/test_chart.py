@@ -10,9 +10,14 @@ from forex_lab.data import generate_synthetic_ohlcv
 from forex_lab.freshness import VALIDITY_MISSING, VALIDITY_OK, VALIDITY_STALE
 from forex_lab.ui.chart import (
     CANDLE_BARS_DEFAULT,
+    CHART_HEIGHT,
+    CHART_INTERVALS,
+    cached_chart_intervals,
     candle_bar_count,
     candlestick_figure,
     chart_blocked_reason,
+    last_bar_ohlc,
+    ohlc_header_text,
     ohlc_window,
 )
 from forex_lab.ui.theme import BG, BUY, SELL, SURFACE
@@ -81,6 +86,13 @@ def test_candlestick_plotly_dark_theme_buy_sell_and_volume():
     assert str(layout.plot_bgcolor).lower() == SURFACE.lower()
     assert layout.xaxis.rangeslider.visible is False
     assert "EURUSD" in str(layout.title.text or "")
+    assert "O " in str(layout.title.text or "")
+    assert "Vol" in str(layout.title.text or "")
+    assert layout.height >= 420
+    assert layout.height == CHART_HEIGHT
+    names = [str(getattr(tr, "name", "") or "") for tr in fig.data]
+    assert any(n.startswith("EMA") for n in names)
+    assert any(n.startswith("RSI") for n in names)
     assert len(candle.x) == 120
 
 
@@ -103,3 +115,38 @@ def test_chart_helper_does_not_import_broker():
     assert "plotly_chart" in app
     cfg = Path("config/default.yaml").read_text(encoding="utf-8")
     assert "candle_bars" in cfg
+    assert "CHART_INTERVALS" in source
+    assert "1m" in CHART_INTERVALS and "1h" in CHART_INTERVALS
+    app = Path("streamlit_app.py").read_text(encoding="utf-8")
+    assert "_render_chart_toolbar" in app
+    assert "build_signal_brief" in app
+    assert "Run pipeline" in app
+    assert "Add pair" in app
+
+
+def test_last_bar_ohlc_and_header():
+    df = generate_synthetic_ohlcv(bars=40, seed=4)
+    win = ohlc_window(df, n=20)
+    stats = last_bar_ohlc(win, pair="EURUSD")
+    assert stats["close"] == pytest.approx(float(win["Close"].iloc[-1]))
+    assert "vol_s" in stats
+    text = ohlc_header_text(stats, pair="EURUSD", timeframe="1h")
+    assert "EURUSD" in text and "1h" in text
+    assert "O " in text and "C " in text
+
+
+def test_cached_intervals_sees_repo_sample():
+    found = cached_chart_intervals("EURUSD", {"paths": {"data_dir": "data"}})
+    assert "1h" in found
+
+
+def test_ema200_trace_when_series_is_long_enough():
+    df = generate_synthetic_ohlcv(bars=280, seed=9)
+    fig, _note = candlestick_figure(
+        df, n=120, pair="EURUSD", timeframe="1h", validity=VALIDITY_OK, show_rsi=False
+    )
+    assert fig is not None
+    names = [str(getattr(tr, "name", "") or "") for tr in fig.data]
+    assert "EMA 50" in names
+    assert "EMA 200" in names
+    assert not any(n.startswith("RSI") for n in names)

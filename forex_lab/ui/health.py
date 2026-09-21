@@ -490,16 +490,16 @@ def awareness_table_html(rows: list[dict[str, str]]) -> str:
             if col == "Status":
                 cells.append(
                     f'<td style="padding:7px 10px;background:{bg};color:{fg};'
-                    f'font-weight:800;font-size:15px">{val}</td>'
+                    f'font-weight:800;font-size:16px">{val}</td>'
                 )
             elif col == "Last OK":
                 cells.append(
                     f'<td style="padding:7px 10px;color:{TEXT};font-variant-numeric:tabular-nums;'
-                    f'white-space:nowrap;font-size:15px">{val}</td>'
+                    f'white-space:nowrap;font-size:16px">{val}</td>'
                 )
             else:
                 cells.append(
-                    f'<td style="padding:7px 10px;color:{TEXT};font-size:15px">{val}</td>'
+                    f'<td style="padding:7px 10px;color:{TEXT};font-size:16px">{val}</td>'
                 )
         body_parts.append(f"<tr>{''.join(cells)}</tr>")
     body = "".join(body_parts) or (
@@ -508,7 +508,7 @@ def awareness_table_html(rows: list[dict[str, str]]) -> str:
     return (
         f'<div class="fx-awareness-table" style="overflow-x:auto;border:1px solid {BORDER};'
         f'background:{ELEVATED};border-radius:4px">'
-        f'<table style="width:100%;border-collapse:collapse;font-size:15px;'
+        f'<table style="width:100%;border-collapse:collapse;font-size:16px;'
         f'font-variant-numeric:tabular-nums;color:{TEXT}"><thead><tr>{head}</tr></thead>'
         f"<tbody>{body}</tbody></table></div>"
     )
