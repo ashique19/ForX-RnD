@@ -50,7 +50,7 @@ REM skip the Y/N prompt
 set INSTALL_QUIET=1
 INSTALL.bat
 
-REM install then launch http://localhost:8501
+REM install then launch the Decision desk http://127.0.0.1:5173
 set INSTALL_LAUNCH_UI=1
 INSTALL.bat --launch-ui
 ```
@@ -68,6 +68,36 @@ Any OS with Python 3.11+ already on PATH:
 python -m forex_lab.install_check --preflight
 python -m forex_lab.install_check --install
 ```
+
+## Decision desk (React + API)
+
+The trader **Decision** screen is a Vite app in `desk/`. It talks to a thin FastAPI in `api/` that calls the existing `forex_lab` board, bars, and pipeline. **Streamlit remains the Lab UI** (`RUN_LAB.bat`, http://localhost:8501). This path does not remove or rewrite models.
+
+| Process | Command | URL |
+|---------|---------|-----|
+| API | `python -m uvicorn api.main:app --host 127.0.0.1 --port 8000` | http://127.0.0.1:8000 |
+| Desk | `cd desk` then `npm install` and `npm run dev` | http://127.0.0.1:5173 |
+
+The desk proxies `/health`, `/watchlist`, `/assets`, `/board`, `/brief`, `/consensus`, `/ohlcv`, `/refresh`, `/paper`, and `/pipeline` to port **8000**. Clocks on the desk are **Asia/Dhaka**. `STALE` / `MISSING` stay labeled — a stale row is not a live BUY/SELL. Paper Buy/Sell/Close writes only the local `PaperBroker` journal. External forecasters (DailyForex, Investing.com, FXStreet) are fetched into `data/consensus_cache.json` (gitignored, about 30 minutes). A direction is shown only when the page states one. A throttled network refresh is a muted “updated from cache” note (`FORX_REFRESH_MIN_S`, default 18s); the reload button still re-reads the local board.
+
+Windows, one launcher (API window + desk window):
+
+```bat
+RUN_UI.bat
+```
+
+Primary UI: http://127.0.0.1:5173. Close the **ForX API** and **ForX Desk** windows to stop. Lab: `RUN_LAB.bat` → http://localhost:8501.
+
+Or two terminals (`.venv` is used when present):
+
+```bat
+RUN_API.bat
+RUN_DESK.bat
+```
+
+Approved layout reference: `design/decision-mock/index.html`.
+
+API tests: `python -m pytest tests/test_api_decision.py`.
 
 ## Quick start
 
@@ -145,7 +175,7 @@ Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit 
 
 ```bat
 cd C:\AI\forex-lab
-RUN_UI.bat
+RUN_LAB.bat
 ```
 
 Or:
@@ -170,6 +200,7 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `config/workspaces/scalp.yaml` | Scalp board preset (15m, liquid majors, min conf 0.45) |
 | `config/workspaces/swing.yaml` | Swing board preset (1h, majors + AUD, min conf 0.40) |
 | `data/workspaces/` | User-saved presets + `active.yaml` last-applied pointer (local; gitignored) |
+| `data/consensus_cache.json` | Optional external-forecaster cache for the Decision API (local; gitignored; missing sources stay MISSING) |
 | `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
 | `data/calendar_cache.json` | Forex Factory weekly JSON cache for the event calendar (local; gitignored) |
 | `data/alert_state.json` | Last-seen watchlist signals + undismissed alerts for the strip (local; gitignored) |
@@ -337,7 +368,8 @@ Tests check causal features (future bar edits must not change past rows), triple
 ```
 streamlit_app.py # trader signal screen (streamlit run streamlit_app.py)
 INSTALL.bat      # Windows installer: OK/MISSING checklist, .venv, requirements, optional RUN_UI.bat
-RUN_UI.bat       # Windows helper: venv + streamlit on localhost:8501
+RUN_UI.bat       # Decision desk: API on 127.0.0.1:8000 + Vite on 5173
+RUN_LAB.bat      # Streamlit lab on localhost:8501
 forex_lab/
   console.py     # ASCII-safe CLI prints + UTF-8 stdio
   data.py        # yfinance fetch + synthetic fallback

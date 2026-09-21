@@ -24,3 +24,8 @@ models/*_champion.json
 models/*_challenger.*
 # user workspace presets + last-applied pointer (builtins live in config/workspaces/)
 data/workspaces/
+# external-forecaster cache for the Decision API (never seeded with invented calls)
+data/consensus_cache.json
+data/consensus_cache.json.tmp
+desk/node_modules/
+desk/dist/

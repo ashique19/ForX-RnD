@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ForX — Decision</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --surface: #ffffff;
+      --surface-2: #f8f9fb;
+      --border: #e4e7ec;
+      --border-strong: #d0d5dd;
+      --text: #101828;
+      --text-2: #344054;
+      --muted: #667085;
+      --faint: #98a2b3;
+      --green: #12b76a;
+      --green-bg: #ecfdf3;
+      --green-border: #abefc6;
+      --red: #f04438;
+      --red-bg: #fef3f2;
+      --red-border: #fecdca;
+      --blue: #1570ef;
+      --blue-bg: #eff8ff;
+      --amber: #f79009;
+      --amber-bg: #fffaeb;
+      --nav-h: 48px;
+      --radius: 8px;
+      --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+      --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* —— Top nav —— */
+    .topnav {
+      height: var(--nav-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 24px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-decoration: none;
+      flex-shrink: 0;
+    }
+    .brand-mark {
+      width: 24px; height: 24px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #1570ef 0%, #004eeb 100%);
+      display: grid; place-items: center;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .modes {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2px;
+    }
+    .mode {
+      padding: 5px 12px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 12.5px;
+      cursor: default;
+      border: none;
+      background: transparent;
+    }
+    .mode.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      font-weight: 600;
+    }
+    .nav-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .clock {
+      font-variant-numeric: tabular-nums;
+      color: var(--text-2);
+      font-size: 12.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .clock .tz {
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .clock .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 2px var(--green-bg);
+    }
+    .user-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 8px 4px 4px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--surface);
+    }
+    .avatar {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: #d1e0ff; color: var(--blue);
+      display: grid; place-items: center;
+      font-size: 10px; font-weight: 700;
+    }
+    .user-chip span { font-size: 12px; font-weight: 500; color: var(--text-2); }
+
+    /* —— App shell —— */
+    .app {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 8px;
+      padding: 8px;
+      height: calc(100vh - var(--nav-h));
+      min-height: 640px;
+    }
+
+    /* —— Alerts strip —— */
+    .alerts {
+      grid-column: 1 / -1;
+      background: var(--amber-bg);
+      border: 1px solid #fedf89;
+      border-radius: var(--radius);
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #93370d;
+    }
+    .alerts .tag {
+      background: #fef0c7;
+      border: 1px solid #fec84b;
+      color: #93370d;
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .alerts .sep { color: #d0d5dd; }
+
+    /* —— Panels —— */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .panel-hd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .panel-hd h2 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: var(--text);
+    }
+    .panel-hd .meta { color: var(--faint); font-size: 11px; margin-left: 4px; }
+    .panel-hd .spacer { flex: 1; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: default;
+    }
+    .btn.primary {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+    .btn.icon {
+      padding: 4px 6px;
+      color: var(--muted);
+    }
+    .btn.sm { padding: 3px 8px; font-size: 11px; }
+
+    /* —— Left column: watchlist —— */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+    .watchlist { flex: 1; min-height: 0; }
+    .watchlist .panel-body { overflow: auto; flex: 1; }
+
+    table.wl {
+      width: 100%;
+      border-collapse: collapse;
+      font-variant-numeric: tabular-nums;
+    }
+    table.wl th {
+      text-align: left;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+      position: sticky;
+      top: 0;
+    }
+    table.wl td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+    table.wl tr { cursor: default; }
+    table.wl tbody tr:hover { background: #f9fafb; }
+    table.wl tbody tr.selected {
+      background: var(--blue-bg);
+    }
+    table.wl tbody tr.selected td { color: var(--text); }
+    .pair { font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+    .tf-pill {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .sig {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-weight: 700; font-size: 11.5px;
+      letter-spacing: 0.02em;
+    }
+    .sig.buy { color: var(--green); }
+    .sig.sell { color: var(--red); }
+    .sig .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .sig.buy .dot { background: var(--green); }
+    .sig.sell .dot { background: var(--red); }
+    .mono { font-family: var(--mono); font-size: 12px; }
+    .session {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      background: #f2f4f7;
+      color: var(--muted);
+    }
+    .session.london { background: #eef4ff; color: #3538cd; }
+    .session.ny { background: #f4f3ff; color: #5925dc; }
+    .session.asia { background: #fdf2fa; color: #c11574; }
+    .data-ok { color: var(--green); font-size: 11px; font-weight: 500; }
+    .data-lag { color: var(--amber); font-size: 11px; font-weight: 500; }
+    .last { color: var(--faint); font-size: 11px; }
+
+    /* —— Right column —— */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    /* —— Signal brief —— */
+    .brief .panel-body { padding: 12px; overflow: auto; }
+    .bias-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .bias-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+    }
+    .bias-tag.buy {
+      background: var(--green-bg);
+      color: #027a48;
+      border: 1px solid var(--green-border);
+    }
+    .bias-tag.sell {
+      background: var(--red-bg);
+      color: #b42318;
+      border: 1px solid var(--red-border);
+    }
+    .bias-headline {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .bias-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+    .tf-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .tf-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      overflow: hidden;
+    }
+    .tf-card-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .tf-card-hd h3 {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .tf-card-hd .chip {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .chip.buy { background: var(--green-bg); color: #027a48; }
+    .chip.sell { background: var(--red-bg); color: #b42318; }
+    .tf-card-bd { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+
+    .levels {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    .lvl {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .lvl .lbl {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 2px;
+    }
+    .lvl .val {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .lvl .val.stop { color: var(--red); }
+    .lvl .val.tgt { color: var(--green); }
+
+    .section-lbl {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+    .forecasters, .ranges {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .fc-row, .rg-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      padding: 3px 0;
+    }
+    .fc-row .site, .rg-row .site { color: var(--text-2); }
+    .fc-row .dir.buy { color: var(--green); font-weight: 600; }
+    .fc-row .dir.sell { color: var(--red); font-weight: 600; }
+    .rg-row .rng {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .scenario {
+      margin-top: 2px;
+      padding: 6px 8px;
+      background: #f9fafb;
+      border-left: 2px solid var(--border-strong);
+      border-radius: 0 4px 4px 0;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+
+    /* —— Chart panel —— */
+    .chart { flex: 1; min-height: 280px; }
+    .chart-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .tf-chips {
+      display: flex;
+      gap: 2px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+    }
+    .tf-chip {
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--muted);
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      cursor: default;
+    }
+    .tf-chip.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      font-weight: 600;
+    }
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-2);
+      font-weight: 500;
+      margin-left: 4px;
+    }
+    .switch .track {
+      width: 28px; height: 16px;
+      border-radius: 8px;
+      background: var(--blue);
+      position: relative;
+    }
+    .switch .thumb {
+      position: absolute;
+      top: 2px; right: 2px;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,.15);
+    }
+    .ohlc {
+      margin-left: auto;
+      display: flex;
+      gap: 12px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .ohlc b { color: var(--text); font-weight: 600; }
+    .ohlc .up { color: var(--green); }
+    .ohlc .dn { color: var(--red); }
+
+    .chart-area {
+      flex: 1;
+      position: relative;
+      background: #fafbfc;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-svg {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 220px;
+    }
+    .vol-bar {
+      height: 48px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      padding: 4px 0 0;
+    }
+    .chart-legend {
+      position: absolute;
+      top: 8px; left: 12px;
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .chart-legend .item { display: flex; align-items: center; gap: 4px; }
+    .chart-legend .swatch {
+      width: 12px; height: 2px; border-radius: 1px;
+    }
+
+    /* —— Aux collapsed —— */
+    .aux {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .aux summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: default;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      user-select: none;
+    }
+    .aux summary::-webkit-details-marker { display: none; }
+    .aux .chev {
+      width: 14px; height: 14px;
+      color: var(--faint);
+      transition: transform .15s;
+      flex-shrink: 0;
+    }
+    .aux[open] .chev { transform: rotate(90deg); }
+    .aux .aux-body {
+      padding: 0 12px 10px 34px;
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .aux .aux-body code {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      background: var(--surface-2);
+      padding: 1px 4px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+
+    /* —— MOCK badge —— */
+    .mock-badge {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      z-index: 100;
+      background: #1d2939;
+      color: #f9fafb;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 3px 7px;
+      border-radius: 4px;
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 300px 1fr; }
+      .levels { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 860px) {
+      .app {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      .tf-cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Slim top nav -->
+  <header class="topnav">
+    <a class="brand" href="#">
+      <span class="brand-mark">FX</span>
+      ForX
+    </a>
+    <nav class="modes" aria-label="Modes">
+      <button class="mode active" type="button">Decision</button>
+      <button class="mode" type="button">Calendar</button>
+      <button class="mode" type="button">Paper</button>
+      <button class="mode" type="button">Lab</button>
+      <button class="mode" type="button">Awareness</button>
+    </nav>
+    <div class="nav-right">
+      <div class="clock" title="Asia/Dhaka">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="dhaka-clock">Mon 21 Sep 2026 · 22:45:00</span>
+        <span class="tz">Dhaka</span>
+      </div>
+      <div class="user-chip">
+        <span class="avatar">AI</span>
+        <span>Ashiqul Islam</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="app">
+    <!-- Compact alerts strip -->
+    <div class="alerts" role="status">
+      <span class="tag">Alert</span>
+      <span>EURUSD H1 target hit proximity — 1.0872 within 6 pips of TP1</span>
+      <span class="sep">·</span>
+      <span>USD session open in 1h 15m</span>
+    </div>
+
+    <!-- Left: Watchlist -->
+    <div class="left-col">
+      <section class="panel watchlist">
+        <div class="panel-hd">
+          <h2>Watchlist</h2>
+          <span class="meta">4 pairs</span>
+          <span class="spacer"></span>
+          <button class="btn primary sm" type="button">+ Add pair</button>
+        </div>
+        <div class="panel-body">
+          <table class="wl">
+            <thead>
+              <tr>
+                <th>Pair</th>
+                <th>TF</th>
+                <th>Signal</th>
+                <th>Target</th>
+                <th>Data</th>
+                <th>Session</th>
+                <th>Last</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="selected">
+                <td class="pair">EURUSD</td>
+                <td><span class="tf-pill">H1</span></td>
+                <td><span class="sig buy"><span class="dot"></span>BUY</span></td>
+                <td class="mono">1.0878</td>
+                <td><span class="data-ok">Live</span></td>
+                <td><span class="session london">London</span></td>
+                <td class="last">2s</td>
+              </tr>
+              <tr>
+                <td class="pair">GBPUSD</td>
+                <td><span class="tf-pill">H4</span></td>
+                <td><span class="sig sell"><span class="dot"></span>SELL</span></td>
+                <td class="mono">1.2610</td>
+                <td><span class="data-ok">Live</span></td>
+                <td><span class="session london">London</span></td>
+                <td class="last">5s</td>
+              </tr>
+              <tr>
+                <td class="pair">USDJPY</td>
+                <td><span class="tf-pill">H1</span></td>
+                <td><span class="sig buy"><span class="dot"></span>BUY</span></td>
+                <td class="mono">149.85</td>
+                <td><span class="data-lag">12s</span></td>
+                <td><span class="session asia">Asia</span></td>
+                <td class="last">12s</td>
+              </tr>
+              <tr>
+                <td class="pair">XAUUSD</td>
+                <td><span class="tf-pill">D1</span></td>
+                <td><span class="sig sell"><span class="dot"></span>SELL</span></td>
+                <td class="mono">2642.0</td>
+                <td><span class="data-ok">Live</span></td>
+                <td><span class="session ny">NY</span></td>
+                <td class="last">3s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Auxiliary: collapsed -->
+      <details class="aux">
+        <summary>
+          <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+          Nav help / Workspace / Lab TF hints
+        </summary>
+        <div class="aux-body">
+          Decision focuses on active bias + levels. Switch to <strong>Lab</strong> for experiment TFs
+          (<code>M15</code>, <code>H1</code>, <code>H4</code>). Workspace shortcuts: <code>W</code> watchlist,
+          <code>/</code> search pairs. Calendar overlays high-impact USD events on the chart.
+        </div>
+      </details>
+    </div>
+
+    <!-- Right: Signal brief + Chart -->
+    <div class="right-col">
+      <section class="panel brief">
+        <div class="panel-hd">
+          <h2>Signal brief</h2>
+          <span class="meta">EURUSD · selected</span>
+          <span class="spacer"></span>
+          <button class="btn sm icon" type="button" title="Refresh" aria-label="Refresh">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 8a5.5 5.5 0 019.6-3.7M13.5 8a5.5 5.5 0 01-9.6 3.7"/><path d="M12.5 2.5v2.5H10M3.5 13.5v-2.5H6"/></svg>
+          </button>
+        </div>
+        <div class="panel-body">
+          <div class="bias-row">
+            <span class="bias-tag buy">BUY bias</span>
+            <div>
+              <div class="bias-headline">EURUSD — bullish continuation into London close</div>
+              <div class="bias-sub">Consensus lean buy · H1 aligned with D1 · ATR 14 ≈ 62 pips</div>
+            </div>
+          </div>
+
+          <div class="tf-cards">
+            <!-- Hourly -->
+            <article class="tf-card">
+              <div class="tf-card-hd">
+                <h3>Hourly</h3>
+                <span class="chip buy">Potential BUY</span>
+              </div>
+              <div class="tf-card-bd">
+                <div class="levels">
+                  <div class="lvl">
+                    <div class="lbl">Now at</div>
+                    <div class="val">1.0864</div>
+                  </div>
+                  <div class="lvl">
+                    <div class="lbl">Stop</div>
+                    <div class="val stop">1.0831</div>
+                  </div>
+                  <div class="lvl">
+                    <div class="lbl">Target</div>
+                    <div class="val tgt">1.0878</div>
+                  </div>
+                  <div class="lvl">
+                    <div class="lbl">Duration</div>
+                    <div class="val">4–8 h</div>
+                  </div>
+                </div>
+                <div>
+                  <div class="section-lbl">Other forecasters</div>
+                  <div class="forecasters">
+                    <div class="fc-row"><span class="site">DailyForex</span><span class="dir buy">Buy</span></div>
+                    <div class="fc-row"><span class="site">Investing.com</span><span class="dir buy">Buy</span></div>
+                    <div class="fc-row"><span class="site">FXStreet</span><span class="dir sell">Sell</span></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="section-lbl">Ranges</div>
+                  <div class="ranges">
+                    <div class="rg-row"><span class="site">DailyForex</span><span class="rng">1.0848 – 1.0882 within session</span></div>
+                    <div class="rg-row"><span class="site">Investing.com</span><span class="rng">1.0850 – 1.0875 within 6h</span></div>
+                  </div>
+                </div>
+                <div class="scenario">If scenario changes: break below 1.0831 flips H1 bias to neutral / sell.</div>
+              </div>
+            </article>
+
+            <!-- Daily -->
+            <article class="tf-card">
+              <div class="tf-card-hd">
+                <h3>Daily</h3>
+                <span class="chip buy">Potential BUY</span>
+              </div>
+              <div class="tf-card-bd">
+                <div class="levels">
+                  <div class="lvl">
+                    <div class="lbl">Now at</div>
+                    <div class="val">1.0864</div>
+                  </div>
+                  <div class="lvl">
+                    <div class="lbl">Stop</div>
+                    <div class="val stop">1.0788</div>
+                  </div>
+                  <div class="lvl">
+                    <div class="lbl">Target</div>
+                    <div class="val tgt">1.0945</div>
+                  </div>
+                  <div class="lvl">
+                    <div class="lbl">Duration</div>
+                    <div class="val">2–5 d</div>
+                  </div>
+                </div>
+                <div>
+                  <div class="section-lbl">Other forecasters</div>
+                  <div class="forecasters">
+                    <div class="fc-row"><span class="site">DailyForex</span><span class="dir buy">Buy</span></div>
+                    <div class="fc-row"><span class="site">TradingView community</span><span class="dir buy">Buy</span></div>
+                    <div class="fc-row"><span class="site">ActionForex</span><span class="dir buy">Buy</span></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="section-lbl">Ranges</div>
+                  <div class="ranges">
+                    <div class="rg-row"><span class="site">DailyForex</span><span class="rng">1.0805 – 1.0950 within week</span></div>
+                    <div class="rg-row"><span class="site">ActionForex</span><span class="rng">1.0820 – 1.0920 within 5d</span></div>
+                  </div>
+                </div>
+                <div class="scenario">If scenario changes: daily close under 1.0788 invalidates swing buy.</div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chart -->
+      <section class="panel chart">
+        <div class="chart-toolbar">
+          <div class="tf-chips" role="group" aria-label="Timeframe">
+            <button class="tf-chip" type="button">15m</button>
+            <button class="tf-chip active" type="button">1h</button>
+            <button class="tf-chip" type="button">4h</button>
+            <button class="tf-chip" type="button">1d</button>
+          </div>
+          <label class="switch" title="Realtime feeds">
+            <span class="track"><span class="thumb"></span></span>
+            Realtime
+          </label>
+          <button class="btn icon" type="button" title="Reload chart" aria-label="Reload">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 8a5.5 5.5 0 019.6-3.7M13.5 8a5.5 5.5 0 01-9.6 3.7"/><path d="M12.5 2.5v2.5H10M3.5 13.5v-2.5H6"/></svg>
+          </button>
+          <div class="ohlc">
+            <span>O <b>1.0851</b></span>
+            <span>H <b class="up">1.0869</b></span>
+            <span>L <b class="dn">1.0844</b></span>
+            <span>C <b class="up">1.0864</b></span>
+            <span>+0.0013 (0.12%)</span>
+          </div>
+        </div>
+        <div class="chart-area">
+          <div class="chart-legend">
+            <span class="item"><span class="swatch" style="background:#1570ef"></span> EMA 21</span>
+            <span class="item"><span class="swatch" style="background:#12b76a"></span> Bull candle</span>
+            <span class="item"><span class="swatch" style="background:#f04438"></span> Bear candle</span>
+          </div>
+          <!-- Static candlestick + EMA SVG (EURUSD-ish path) -->
+          <svg class="chart-svg" viewBox="0 0 800 280" preserveAspectRatio="none" aria-label="EURUSD H1 chart mock">
+            <!-- grid -->
+            <g stroke="#e4e7ec" stroke-width="1">
+              <line x1="0" y1="40" x2="800" y2="40"/>
+              <line x1="0" y1="90" x2="800" y2="90"/>
+              <line x1="0" y1="140" x2="800" y2="140"/>
+              <line x1="0" y1="190" x2="800" y2="190"/>
+              <line x1="0" y1="240" x2="800" y2="240"/>
+            </g>
+            <!-- price labels -->
+            <g fill="#98a2b3" font-family="JetBrains Mono, monospace" font-size="10">
+              <text x="792" y="44" text-anchor="end">1.0890</text>
+              <text x="792" y="94" text-anchor="end">1.0875</text>
+              <text x="792" y="144" text-anchor="end">1.0860</text>
+              <text x="792" y="194" text-anchor="end">1.0845</text>
+              <text x="792" y="244" text-anchor="end">1.0830</text>
+            </g>
+            <!-- EMA 21 (smooth curve through mid prices) -->
+            <path d="M20,178 C60,172 90,165 120,158 S180,145 210,140 S270,128 300,122 S360,115 390,110 S450,105 480,100 S540,95 570,92 S630,88 660,82 S720,78 760,72"
+                  fill="none" stroke="#1570ef" stroke-width="1.75" opacity="0.9"/>
+            <!-- Candles: wick + body. y: higher price = lower y. Map ~1.0830→240, 1.0890→40 -->
+            <!-- Helper: price p -> y = 240 - (p-1.0830)/(0.006)*200 -->
+            <g stroke-width="1.2">
+              <!-- candle set, roughly rising then pullback then push -->
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="28" y1="168" x2="28" y2="198"/><rect x="23" y="175" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="52" y1="158" x2="52" y2="188"/><rect x="47" y="162" width="10" height="18"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="76" y1="150" x2="76" y2="175"/><rect x="71" y="152" width="10" height="14"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="100" y1="148" x2="100" y2="182"/><rect x="95" y="155" width="10" height="18"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="124" y1="140" x2="124" y2="170"/><rect x="119" y="142" width="10" height="20"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="148" y1="132" x2="148" y2="158"/><rect x="143" y="135" width="10" height="16"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="172" y1="130" x2="172" y2="162"/><rect x="167" y="138" width="10" height="15"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="196" y1="122" x2="196" y2="152"/><rect x="191" y="125" width="10" height="18"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="220" y1="115" x2="220" y2="142"/><rect x="215" y="118" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="244" y1="108" x2="244" y2="135"/><rect x="239" y="110" width="10" height="18"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="268" y1="105" x2="268" y2="140"/><rect x="263" y="112" width="10" height="20"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="292" y1="110" x2="292" y2="148"/><rect x="287" y="118" width="10" height="22"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="316" y1="108" x2="316" y2="138"/><rect x="311" y="112" width="10" height="18"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="340" y1="100" x2="340" y2="128"/><rect x="335" y="102" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="364" y1="95" x2="364" y2="122"/><rect x="359" y="98" width="10" height="14"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="388" y1="92" x2="388" y2="125"/><rect x="383" y="100" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="412" y1="88" x2="412" y2="118"/><rect x="407" y="92" width="10" height="18"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="436" y1="82" x2="436" y2="110"/><rect x="431" y="85" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="460" y1="78" x2="460" y2="105"/><rect x="455" y="80" width="10" height="15"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="484" y1="76" x2="484" y2="112"/><rect x="479" y="85" width="10" height="18"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="508" y1="88" x2="508" y2="125"/><rect x="503" y="95" width="10" height="20"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="532" y1="90" x2="532" y2="120"/><rect x="527" y="95" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="556" y1="85" x2="556" y2="112"/><rect x="551" y="88" width="10" height="15"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="580" y1="78" x2="580" y2="105"/><rect x="575" y="80" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="604" y1="72" x2="604" y2="98"/><rect x="599" y="75" width="10" height="14"/>
+              </g>
+              <g stroke="#f04438" fill="#f04438">
+                <line x1="628" y1="70" x2="628" y2="100"/><rect x="623" y="78" width="10" height="14"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="652" y1="68" x2="652" y2="95"/><rect x="647" y="70" width="10" height="16"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="676" y1="62" x2="676" y2="88"/><rect x="671" y="65" width="10" height="14"/>
+              </g>
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="700" y1="58" x2="700" y2="85"/><rect x="695" y="60" width="10" height="15"/>
+              </g>
+              <!-- last candle (current) -->
+              <g stroke="#12b76a" fill="#12b76a">
+                <line x1="724" y1="55" x2="724" y2="82"/><rect x="719" y="58" width="10" height="16"/>
+              </g>
+            </g>
+            <!-- target / stop dashed refs -->
+            <line x1="0" y1="72" x2="780" y2="72" stroke="#12b76a" stroke-width="1" stroke-dasharray="4 3" opacity="0.55"/>
+            <text x="8" y="68" fill="#027a48" font-size="10" font-family="Inter,sans-serif" font-weight="600">TP 1.0878</text>
+            <line x1="0" y1="208" x2="780" y2="208" stroke="#f04438" stroke-width="1" stroke-dasharray="4 3" opacity="0.55"/>
+            <text x="8" y="220" fill="#b42318" font-size="10" font-family="Inter,sans-serif" font-weight="600">SL 1.0831</text>
+          </svg>
+          <div class="vol-bar">
+            <svg width="100%" height="40" viewBox="0 0 800 40" preserveAspectRatio="none" aria-hidden="true">
+              <g fill="#d0d5dd">
+                <rect x="22" y="18" width="8" height="18"/><rect x="46" y="12" width="8" height="24"/>
+                <rect x="70" y="20" width="8" height="16"/><rect x="94" y="8" width="8" height="28"/>
+                <rect x="118" y="14" width="8" height="22"/><rect x="142" y="16" width="8" height="20"/>
+                <rect x="166" y="10" width="8" height="26"/><rect x="190" y="15" width="8" height="21"/>
+                <rect x="214" y="18" width="8" height="18"/><rect x="238" y="6" width="8" height="30"/>
+                <rect x="262" y="12" width="8" height="24"/><rect x="286" y="4" width="8" height="32"/>
+                <rect x="310" y="14" width="8" height="22"/><rect x="334" y="16" width="8" height="20"/>
+                <rect x="358" y="20" width="8" height="16"/><rect x="382" y="11" width="8" height="25"/>
+                <rect x="406" y="13" width="8" height="23"/><rect x="430" y="17" width="8" height="19"/>
+                <rect x="454" y="9" width="8" height="27"/><rect x="478" y="7" width="8" height="29"/>
+                <rect x="502" y="5" width="8" height="31"/><rect x="526" y="15" width="8" height="21"/>
+                <rect x="550" y="18" width="8" height="18"/><rect x="574" y="12" width="8" height="24"/>
+                <rect x="598" y="14" width="8" height="22"/><rect x="622" y="16" width="8" height="20"/>
+                <rect x="646" y="10" width="8" height="26"/><rect x="670" y="13" width="8" height="23"/>
+                <rect x="694" y="8" width="8" height="28"/><rect x="718" y="11" width="8" height="25" fill="#98a2b3"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="mock-badge" aria-hidden="true">MOCK</div>
+
+  <script>
+    /* Live Asia/Dhaka clock — display only; all other data is mock */
+    (function () {
+      const el = document.getElementById("dhaka-clock");
+      const fmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Dhaka",
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+      function tick() {
+        const parts = fmt.formatToParts(new Date());
+        const g = (t) => (parts.find((p) => p.type === t) || {}).value || "";
+        el.textContent =
+          g("weekday") + " " + g("day") + " " + g("month") + " " + g("year") +
+          " · " + g("hour") + ":" + g("minute") + ":" + g("second");
+      }
+      tick();
+      setInterval(tick, 1000);
+    })();
+  </script>
+</body>
+</html>
