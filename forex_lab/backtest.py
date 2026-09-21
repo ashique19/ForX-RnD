@@ -429,6 +429,8 @@ def walk_forward_backtest(
             "cost_aware": bool(b.get("cost_aware", False)),
             "calibrate": (cfg.get("model") or {}).get("calibrate"),
             "prune_bottom_frac": (cfg.get("model") or {}).get("prune_bottom_frac", 0.0),
+            "gates_enabled": bool((cfg.get("gates") or {}).get("enabled")),
+            "gates_require_mtf_agree": bool((cfg.get("gates") or {}).get("require_mtf_agree", False)),
         },
     }
     return result, model_trades, preds
@@ -549,7 +551,7 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
         f"sessions={costs.get('sessions') or 'all'} min_vol_regime={costs.get('min_vol_regime')} "
         f"min_tp_pips={costs.get('min_tp_pips')} one_position={costs.get('one_position')} "
         f"calibrate={costs.get('calibrate')} prune={costs.get('prune_bottom_frac')} "
-        f"cost_aware={costs.get('cost_aware')}",
+        f"cost_aware={costs.get('cost_aware')} gates_enabled={costs.get('gates_enabled')}",
         (
             f"- Label mix (full labeled set): BUY {fmt_pct(dist.get('buy'))} / "
             f"SELL {fmt_pct(dist.get('sell'))} / HOLD {fmt_pct(dist.get('hold'))} (n={dist.get('n', 0)})"

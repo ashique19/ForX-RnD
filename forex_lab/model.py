@@ -145,7 +145,13 @@ def apply_signal_filters(pred_frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.Se
             buy_ok = (raw != LABEL_MAP["BUY"]) | (slope > 0)
             sell_ok = (raw != LABEL_MAP["SELL"]) | (slope < 0)
             keep = keep & buy_ok.fillna(False) & sell_ok.fillna(False)
-    return raw.where(keep, LABEL_MAP["HOLD"]).astype(int)
+    filtered = raw.where(keep, LABEL_MAP["HOLD"]).astype(int)
+    try:
+        from forex_lab.gates import apply_frame_gates
+
+        return apply_frame_gates(filtered, pred_frame, cfg)
+    except Exception:
+        return filtered
 
 
 def _calibrate_method(cfg: dict[str, Any]) -> str | None:

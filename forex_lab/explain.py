@@ -370,6 +370,37 @@ def evaluate_signal_rules(
                 "off (London+NY and similar filters hurt EURUSD in prior screens)",
             )
         )
+    try:
+        from forex_lab.gates import gates_enabled, gate_min_confidence, no_new_opens_in_event_window, require_mtf_agree
+
+        if gates_enabled(cfg):
+            floor = gate_min_confidence(cfg)
+            bits = []
+            if require_mtf_agree(cfg):
+                bits.append("MTF agree")
+            if floor:
+                bits.append(f"min_conf={floor:.2f}")
+            if no_new_opens_in_event_window(cfg):
+                bits.append("no-new-opens in event window")
+            rules.append(
+                RuleCheck(
+                    "gates",
+                    True,
+                    True,
+                    "on: " + ", ".join(bits) + " (fail-soft if calendar/MTF missing; not a live edge)",
+                )
+            )
+        else:
+            rules.append(
+                RuleCheck(
+                    "gates",
+                    False,
+                    None,
+                    "off (default; EURUSD WF did not clear PF/return/DD bar — see reports/gate_screen.md)",
+                )
+            )
+    except Exception:
+        pass
     return rules
 
 
