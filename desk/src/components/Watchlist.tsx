@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "../api";
 import type { BoardRow } from "../types";
 
 export function WatchlistPanel({
@@ -18,10 +19,34 @@ export function WatchlistPanel({
   const [pair, setPair] = useState("");
   const [interval, setInterval] = useState("");
   const [error, setError] = useState("");
+  const [assets, setAssets] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    api
+      .assets()
+      .then((payload) => {
+        if (!cancel) setAssets(payload.assets.map((item) => item.pair));
+      })
+      .catch(() => {
+        if (!cancel) setAssets([]);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open, rows]);
+
+  const watched = new Set(rows.map((row) => row.pair));
+  const choices = assets.filter((item) => !watched.has(item));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (!pair) {
+      setError("Select a pair");
+      return;
+    }
     try {
       await onAdd(pair.trim(), interval);
       setPair("");
@@ -42,13 +67,12 @@ export function WatchlistPanel({
         </button>
         {open && (
           <form className="add-pop" onSubmit={submit}>
-            <input
-              aria-label="Pair"
-              placeholder="GBPUSD"
-              value={pair}
-              onChange={(e) => setPair(e.target.value.toUpperCase())}
-              autoFocus
-            />
+            <select aria-label="Pair" value={pair} onChange={(e) => setPair(e.target.value)} autoFocus>
+              <option value="">{choices.length ? "Select pair" : "No pairs left"}</option>
+              {choices.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
             <select aria-label="Timeframe" value={interval} onChange={(e) => setInterval(e.target.value)}>
               <option value="">Lab TF</option>
               <option value="15m">15m</option>
@@ -72,12 +96,13 @@ export function WatchlistPanel({
               <th>Data</th>
               <th>Session</th>
                 <th>Last</th>
+              <th></th>
               </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="last">No pairs — add one. Empty is not a signal.</td>
+                <td colSpan={8} className="last">No pairs — add one. Empty is not a signal.</td>
               </tr>
             )}
             {rows.map((row) => {
@@ -102,8 +127,8 @@ export function WatchlistPanel({
                     <span className={dataClass(row.data.tone)}>{row.data.text}</span>
                   </td>
                   <td><span className={`session ${row.session.key}`}>{row.session.text}</span></td>
-                  <td className="last" title={row.last_bar_dhaka}>
-                    {row.age}
+                  <td className="last" title={row.last_bar_dhaka}>{row.age}</td>
+                  <td>
                     <button
                       className="wl-remove"
                       type="button"
@@ -113,7 +138,7 @@ export function WatchlistPanel({
                         void onRemove(row.pair);
                       }}
                     >
-                      ×
+                      Remove
                     </button>
                   </td>
                 </tr>

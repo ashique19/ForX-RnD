@@ -1,4 +1,5 @@
-import type { Consensus, Suggestion } from "../types";
+import { useEffect, useState } from "react";
+import type { Consensus, PaperState, Suggestion } from "../types";
 
 function RefreshIcon() {
   return (
@@ -16,7 +17,18 @@ function dirClass(direction: string | null, status: string): string {
   return "dir miss";
 }
 
+function sourceLabel(status: string, direction: string | null): string {
+  if (status === "OK" && direction) return direction;
+  if (status === "ERROR") return "ERROR";
+  return "MISSING";
+}
+
+function sourceTitle(row: { reason?: string; url?: string; fetched_at?: string | null }): string {
+  return [row.reason, row.fetched_at, row.url].filter(Boolean).join(" · ");
+}
+
 function rangeText(row: Consensus["ranges"][number], pair: string): string {
+  if (row.status === "ERROR") return "ERROR";
   if (row.status !== "OK" || row.low == null || row.high == null) return "MISSING";
   const digits = pair.includes("JPY") ? 3 : pair.includes("XAU") ? 1 : 5;
   const low = row.low.toFixed(digits);
@@ -56,8 +68,8 @@ function Card({ title, suggestion, consensus, pair }: { title: string; suggestio
             {consensus.forecasters.map((row) => (
               <div className="fc-row" key={row.source}>
                 <span className="site">{row.source}</span>
-                <span className={dirClass(row.direction, row.status)} title={row.reason || undefined}>
-                  {row.status === "OK" && row.direction ? row.direction : "MISSING"}
+                <span className={dirClass(row.direction, row.status)} title={sourceTitle(row) || undefined}>
+                  {sourceLabel(row.status, row.direction)}
                 </span>
               </div>
             ))}
@@ -69,7 +81,7 @@ function Card({ title, suggestion, consensus, pair }: { title: string; suggestio
             {consensus.ranges.map((row) => (
               <div className="rg-row" key={row.source}>
                 <span className="site">{row.source}</span>
-                <span className="rng">{rangeText(row, pair)}</span>
+                <span className="rng" title={row.reason || undefined}>{rangeText(row, pair)}</span>
               </div>
             ))}
           </div>
@@ -90,7 +102,10 @@ export function SignalBrief({
   hourly,
   daily,
   consensus,
+  paper,
+  toast,
   onRefresh,
+  onOrder,
   busy,
 }: {
   pair: string;
@@ -101,9 +116,19 @@ export function SignalBrief({
   hourly: Suggestion | null;
   daily: Suggestion | null;
   consensus: { hourly: Consensus; daily: Consensus } | null;
+  paper: PaperState | null;
+  toast: string | null;
   onRefresh: () => void;
+  onOrder: (side: "BUY" | "SELL" | "CLOSE", size: number) => Promise<void>;
   busy: boolean;
 }) {
+  const [size, setSize] = useState(paper?.default_size ?? 1);
+  const [orderError, setOrderError] = useState("");
+  useEffect(() => {
+    if (paper?.default_size) setSize(paper.default_size);
+  }, [paper?.default_size, pair]);
+  const open = paper?.position ?? null;
+  const canOpen = Boolean(paper?.allowed) && !open && !busy;
   return (
     <section className="panel brief">
       <div className="panel-hd">
@@ -121,6 +146,69 @@ export function SignalBrief({
             <div className="bias-headline">{headline}</div>
             <div className="bias-sub">{sub}</div>
           </div>
+        </div>
+        <div className="paper-row">
+          <button
+            className="btn paper-buy"
+            type="button"
+            disabled={!canOpen}
+            title={paper?.block_reason || "Paper buy at the cached last close"}
+            onClick={() => {
+              setOrderError("");
+              void onOrder("BUY", size).catch((err: unknown) => {
+                setOrderError(err instanceof Error ? err.message : "Paper order failed");
+              });
+            }}
+          >
+            Buy
+          </button>
+          <button
+            className="btn paper-sell"
+            type="button"
+            disabled={!canOpen}
+            title={paper?.block_reason || "Paper sell at the cached last close"}
+            onClick={() => {
+              setOrderError("");
+              void onOrder("SELL", size).catch((err: unknown) => {
+                setOrderError(err instanceof Error ? err.message : "Paper order failed");
+              });
+            }}
+          >
+            Sell
+          </button>
+          <button
+            className="btn"
+            type="button"
+            disabled={!open || busy}
+            title={open ? "Close the open paper position" : "No open paper position"}
+            onClick={() => {
+              setOrderError("");
+              void onOrder("CLOSE", size).catch((err: unknown) => {
+                setOrderError(err instanceof Error ? err.message : "Paper close failed");
+              });
+            }}
+          >
+            Close
+          </button>
+          <label className="paper-size">
+            Lots
+            <input
+              aria-label="Paper size"
+              type="number"
+              min={0.01}
+              step={0.01}
+              value={size}
+              onChange={(e) => setSize(Number(e.target.value))}
+            />
+          </label>
+          {open && (
+            <span className="paper-pos">
+              Paper {open.side} {open.size} @ {open.entry_price} · {open.entry_time_dhaka}
+            </span>
+          )}
+          {!open && paper?.block_reason && <span className="paper-note">{paper.block_reason}</span>}
+          {toast && <span className="paper-toast">{toast}</span>}
+          {orderError && <span className="paper-note">{orderError}</span>}
         </div>
         {hourly && daily && consensus ? (
           <div className="tf-cards">

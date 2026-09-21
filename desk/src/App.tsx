@@ -18,13 +18,16 @@ export function App() {
   const [chartTf, setChartTf] = useState("1h");
   const [realtime, setRealtime] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [noticeUntil, setNoticeUntil] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
+  const [paperToast, setPaperToast] = useState<string | null>(null);
 
   const loadBoard = useCallback(async () => {
     const next = await api.board();
     setBoard(next);
-    setSelected((cur) => (next.rows.some((row) => row.pair === cur) ? cur : next.rows[0]?.pair ?? cur));
+    setSelected((cur) => (next.rows.some((row) => row.pair === cur) ? cur : next.rows[0]?.pair ?? ""));
     setError(null);
     return next;
   }, []);
@@ -78,15 +81,37 @@ export function App() {
     return () => window.clearInterval(id);
   }, [realtime, mode, board?.refresh_seconds]);
 
+  useEffect(() => {
+    if (!noticeUntil) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [noticeUntil]);
+
+  const noticeLeft = noticeUntil ? Math.max(0, Math.ceil((noticeUntil - nowMs) / 1000)) : 0;
+
+  function armCacheNotice(retryAfter: number) {
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 18;
+    setNoticeUntil(Date.now() + wait * 1000);
+    setNowMs(Date.now());
+    setError(null);
+  }
+
   async function reload() {
     setBusy(true);
     try {
-      await api.refresh(selected, chartTf);
-      setError(null);
+      const result = await api.refresh(selected, chartTf);
+      if (result.rate_limited) {
+        armCacheNotice(Number(result.retry_after_s ?? 18));
+      } else {
+        setNoticeUntil(null);
+        setError(null);
+      }
     } catch (err) {
       const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : 0;
-      if (status === 429) {
-        setError("Refresh is rate-limited. Showing the cached board.");
+      const payload =
+        err && typeof err === "object" && "payload" in err ? (err as { payload?: { retry_after_s?: number; error?: string } }).payload : undefined;
+      if (status === 429 || payload?.error === "rate_limited") {
+        armCacheNotice(Number(payload?.retry_after_s ?? 18));
       } else {
         setError(err instanceof Error ? err.message : "Refresh failed");
       }
@@ -118,6 +143,11 @@ export function App() {
               <span className="tag">{error ? "API" : "Alert"}</span>
               <span>{alertText}</span>
             </div>
+            {noticeLeft > 0 && (
+              <div className="notice" role="status">
+                Updated from cache · next network refresh in {noticeLeft}s
+              </div>
+            )}
             <div className="left-col">
               <WatchlistPanel
                 rows={board?.rows ?? []}
@@ -140,6 +170,10 @@ export function App() {
                 }}
                 onRemove={async (pair) => {
                   await api.removePair(pair);
+                  if (pair === selected) {
+                    const rest = (board?.rows ?? []).filter((row) => row.pair !== pair);
+                    setSelected(rest[0]?.pair ?? "");
+                  }
                   setTick((n) => n + 1);
                 }}
               />
@@ -155,7 +189,14 @@ export function App() {
                 hourly={brief?.hourly ?? null}
                 daily={brief?.daily ?? null}
                 consensus={brief?.consensus ?? null}
+                paper={brief?.paper ?? null}
+                toast={paperToast}
                 onRefresh={() => void reload()}
+                onOrder={async (side, size) => {
+                  const result = await api.paperOrder(selected, side, size, rowTf);
+                  setPaperToast(result.message);
+                  setTick((n) => n + 1);
+                }}
                 busy={busy}
               />
               <ChartPanel

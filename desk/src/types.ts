@@ -7,11 +7,17 @@ export interface WatchPair {
   interval_override: string | null;
 }
 
+export interface AssetOption {
+  pair: string;
+  watched: boolean;
+}
+
 export interface Watchlist {
   refresh_seconds: number;
   interval: string;
   count: number;
   pairs: WatchPair[];
+  assets?: AssetOption[];
 }
 
 export interface BoardRow {
@@ -55,6 +61,9 @@ export interface ForecastRow {
   direction: string | null;
   status: string;
   reason: string;
+  url?: string;
+  entry?: number | null;
+  fetched_at?: string | null;
 }
 
 export interface RangeRow {
@@ -70,9 +79,28 @@ export interface Consensus {
   pair: string;
   horizon: string;
   status: string;
+  fetched_at?: string | null;
   forecasters: ForecastRow[];
   ranges: RangeRow[];
   note: string;
+}
+
+export interface PaperPosition {
+  id: string;
+  pair: string;
+  side: string;
+  size: number;
+  entry_price: number;
+  entry_time_dhaka: string;
+  sl: number | null;
+  tp: number | null;
+}
+
+export interface PaperState {
+  allowed: boolean;
+  block_reason: string;
+  default_size: number;
+  position: PaperPosition | null;
 }
 
 export interface Suggestion {
@@ -105,6 +133,7 @@ export interface Brief {
   hourly: Suggestion;
   daily: Suggestion;
   consensus: { hourly: Consensus; daily: Consensus };
+  paper?: PaperState;
 }
 
 export interface Bar {

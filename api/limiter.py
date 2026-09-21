@@ -5,7 +5,7 @@ import os
 import threading
 import time
 
-DEFAULT_MIN_S = 60.0
+DEFAULT_MIN_S = 18.0
 
 _lock = threading.Lock()
 _last: dict[str, float] = {}

@@ -10,9 +10,9 @@ if exist .venv\Scripts\activate.bat (
   echo No .venv found - using current Python. Run INSTALL.bat first if imports fail.
 )
 
-python -c "import streamlit" 2>nul
+python -c "import fastapi,uvicorn" 2>nul
 if errorlevel 1 (
-  echo Installing requirements including Streamlit...
+  echo Installing requirements including FastAPI...
   python -m pip install -U pip
   python -m pip install -r requirements.txt
   if errorlevel 1 (
@@ -22,10 +22,27 @@ if errorlevel 1 (
   )
 )
 
+if not exist desk\node_modules (
+  echo Installing desk packages...
+  pushd desk
+  call npm install
+  if errorlevel 1 (
+    echo npm install failed.
+    popd
+    pause
+    exit /b 1
+  )
+  popd
+)
+
 echo.
-echo Forex Research Lab UI - research only, no live orders
-echo Browser: http://localhost:8501
-echo Stop with Ctrl+C
+echo ForX Decision desk
+echo   API   http://127.0.0.1:8000
+echo   Desk  http://127.0.0.1:5173
+echo Stop by closing the "ForX API" and "ForX Desk" windows.
+echo Streamlit lab stays on RUN_LAB.bat  http://localhost:8501
 echo.
-python -m streamlit run streamlit_app.py --server.address localhost --server.port 8501
-if errorlevel 1 pause
+
+start "ForX API" cmd /k "cd /d %~dp0 && if exist .venv\Scripts\activate.bat call .venv\Scripts\activate.bat && python -m uvicorn api.main:app --host 127.0.0.1 --port 8000"
+start "ForX Desk" cmd /k "cd /d %~dp0desk && npm run dev"
+start "" http://127.0.0.1:5173

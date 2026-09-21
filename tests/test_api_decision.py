@@ -18,6 +18,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("FORX_WATCHLIST_PATH", str(tmp_path / "watchlist.yaml"))
     monkeypatch.setenv("FORX_ALERT_STATE", str(tmp_path / "alerts.json"))
     monkeypatch.setenv("FORX_CONSENSUS_CACHE", str(tmp_path / "consensus.json"))
+    monkeypatch.setenv("FORX_CONSENSUS_NETWORK", "0")
+    monkeypatch.setenv("FORX_PAPER_STORE", str(tmp_path / "paper.json"))
     monkeypatch.setenv("FORX_REFRESH_MIN_S", "60")
     reset_limiter()
     from api.main import create_app
@@ -54,6 +56,15 @@ def test_watchlist_add_and_remove(client: TestClient):
     removed = client.delete("/watchlist/GBPUSD")
     assert removed.status_code == 200
     assert "GBPUSD" not in [p["pair"] for p in removed.json()["pairs"]]
+
+    assets = client.get("/assets")
+    assert assets.status_code == 200
+    names = [item["pair"] for item in assets.json()["assets"]]
+    assert "EURUSD" in names
+    assert "XAUUSD" in names
+    assert "GBPUSD" in names
+    junk = client.post("/watchlist", json={"pair": "ABCDEF", "interval": "1h"})
+    assert junk.status_code == 400
 
 
 def test_consensus_missing_without_cache(client: TestClient):
@@ -188,10 +199,11 @@ def test_session_alert_is_clock_only():
 
 
 def test_refresh_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    calls = {"n": 0}
+    calls = {"n": 0, "refresh": []}
 
     def _fake_row(*_a, **_k):
         calls["n"] += 1
+        calls["refresh"].append(bool(_k.get("refresh_data")))
         from types import SimpleNamespace
 
         return SimpleNamespace(
@@ -222,9 +234,13 @@ def test_refresh_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyP
     assert first.json()["ok"] is True
     assert calls["n"] == 1
     second = client.post("/refresh/EURUSD", params={"interval": "1h"})
-    assert second.status_code == 429
-    assert second.json()["error"] == "rate_limited"
-    assert calls["n"] == 1
+    assert second.status_code == 200
+    body = second.json()
+    assert body["ok"] is True
+    assert body["rate_limited"] is True
+    assert body["retry_after_s"] > 0
+    assert body["board"]["from_cache"] is True
+    assert calls["refresh"] == [True, False]
 
 
 def test_pipeline_stops_on_train_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -252,3 +268,49 @@ def test_pipeline_stops_on_train_failure(client: TestClient, monkeypatch: pytest
     assert body["failed"] == "train"
     assert order == ["train"]
     assert body["steps"][0]["step"] == "train"
+
+
+def _paper_row(validity: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        pair="EURUSD",
+        timeframe="1h",
+        validity=validity,
+        buy_sell="BUY" if validity == "OK" else "—",
+        raw_signal="BUY",
+        close=1.1,
+        confidence=None,
+        dir_edge=None,
+        p_buy=None,
+        p_sell=None,
+        p_hold=None,
+        rationale="",
+        last_bar_at="",
+        gate_blocked=False,
+        gate_reason="",
+    )
+
+
+def test_paper_buy_blocked_when_stale(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: _paper_row("STALE"))
+    res = client.post("/paper/order", json={"pair": "EURUSD", "side": "BUY", "size": 1})
+    assert res.status_code == 409
+    assert "STALE" in res.json()["detail"]
+
+
+def test_paper_buy_and_close_when_ok(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: _paper_row("OK"))
+    opened = client.post("/paper/order", json={"pair": "EURUSD", "side": "BUY", "size": 1})
+    assert opened.status_code == 200
+    body = opened.json()
+    assert body["ok"] is True
+    assert "local journal" in body["message"]
+    pos = body["paper"]["position"]
+    assert pos["side"] == "BUY"
+    assert "Asia/Dhaka" in pos["entry_time_dhaka"]
+    assert body["paper"]["allowed"] is False
+    closed = client.post("/paper/order", json={"pair": "EURUSD", "side": "CLOSE"})
+    assert closed.status_code == 200
+    assert closed.json()["paper"]["position"] is None
+    assert (tmp_path / "paper.json").exists()

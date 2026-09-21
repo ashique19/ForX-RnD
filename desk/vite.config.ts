@@ -18,6 +18,8 @@ export default defineConfig({
       "/ohlcv": api,
       "/refresh": api,
       "/pipeline": api,
+      "/paper": api,
+      "/assets": api,
     },
   },
 });

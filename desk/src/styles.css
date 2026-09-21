@@ -673,17 +673,66 @@
       color: #b42318;
     }
     .wl-remove {
-      border: none;
-      background: transparent;
-      color: var(--muted);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text-2);
       cursor: pointer;
-      font-size: 14px;
-      line-height: 1;
-      padding: 0 0 0 6px;
+      font-size: 11px;
+      line-height: 1.2;
+      padding: 2px 6px;
+      border-radius: 4px;
       font-family: inherit;
-      opacity: 0;
+      opacity: 1;
     }
-    tr:hover .wl-remove, tr:focus-within .wl-remove { opacity: 1; }
+    .wl-remove:hover { border-color: var(--red-border); color: #b42318; }
+    .notice {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .paper-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 12px;
+    }
+    .btn.paper-buy {
+      background: var(--green-bg);
+      color: #067647;
+      border: 1px solid var(--green-border);
+      font-weight: 600;
+    }
+    .btn.paper-sell {
+      background: var(--red-bg);
+      color: #b42318;
+      border: 1px solid var(--red-border);
+      font-weight: 600;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .paper-size {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .paper-size input {
+      width: 72px;
+      font-family: inherit;
+      font-size: 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      padding: 3px 6px;
+    }
+    .paper-pos, .paper-toast, .paper-note {
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .paper-toast { color: var(--text-2); }
     .panel-hd { position: relative; }
     .add-pop {
       position: absolute;

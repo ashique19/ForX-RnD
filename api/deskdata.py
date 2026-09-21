@@ -39,7 +39,7 @@ from forex_lab.ui.watchlist import (
     save_watchlist,
 )
 
-from api.consensus import lean_label, read_consensus
+from api.consensus import ensure_consensus, lean_label, read_consensus
 
 TF_LABELS = {
     "15m": "M15",
@@ -63,6 +63,20 @@ INTERVAL_ALIASES = {
 HOURLY_INTERVAL = "1h"
 DAILY_INTERVAL = "1d"
 OHLCV_INTERVALS = frozenset({"15m", "1h", "4h", "1d"})
+ASSET_ALLOW = (
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "USDCHF",
+    "AUDUSD",
+    "USDCAD",
+    "NZDUSD",
+    "EURGBP",
+    "EURJPY",
+    "GBPJPY",
+    "XAUUSD",
+    "XAGUSD",
+)
 PROXIMITY_PIPS = 6.0
 LIVE_SIGNALS = frozenset({"BUY", "SELL"})
 
@@ -239,6 +253,31 @@ def load_wl(cfg: dict[str, Any] | None = None):
     return load_watchlist(watchlist_path(), cfg, create=False)
 
 
+def supported_assets(cfg: dict[str, Any] | None = None) -> list[str]:
+    cfg = cfg if cfg is not None else app_config()
+    out: list[str] = []
+    seen: set[str] = set()
+    for sym in ASSET_ALLOW:
+        seen.add(sym)
+        out.append(sym)
+    for key in cfg.get("pairs") or {}:
+        try:
+            pair = normalize_pair(str(key))
+        except WatchlistError:
+            continue
+        if pair not in seen:
+            seen.add(pair)
+            out.append(pair)
+    return out
+
+
+def assets_payload(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = cfg if cfg is not None else app_config()
+    wl = load_wl(cfg)
+    watched = set(wl.pair_symbols())
+    return {"assets": [{"pair": pair, "watched": pair in watched} for pair in supported_assets(cfg)]}
+
+
 def watchlist_json(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfg if cfg is not None else app_config()
     wl = load_wl(cfg)
@@ -246,6 +285,7 @@ def watchlist_json(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "refresh_seconds": int(wl.refresh_seconds),
         "interval": wl.lab_interval(cfg),
         "count": len(wl.pairs),
+        "assets": assets_payload(cfg)["assets"],
         "pairs": [
             {
                 "pair": item.pair,
@@ -270,6 +310,8 @@ def mutate_watchlist(pair: str, *, interval: str | None = None, remove: bool = F
     if remove:
         remove_pair(wl, symbol)
     else:
+        if symbol not in supported_assets(cfg):
+            raise WatchlistError(f"{symbol} is not in the research asset list")
         add_pair(wl, symbol, iv)
     save_watchlist(wl, watchlist_path())
     return watchlist_json(cfg)
@@ -553,8 +595,10 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
     hourly = suggestion_from_row(hourly_row, cfg, ohlcv=hourly_bars)
     daily = suggestion_from_row(daily_row, cfg, ohlcv=daily_bars)
     primary = suggestion_from_row(primary_row, cfg, ohlcv=primary_bars)
+    ensure_consensus(symbol, cfg)
     hourly_c = read_consensus(symbol, "hourly", cfg)
     daily_c = read_consensus(symbol, "daily", cfg)
+    from api.paperdesk import paper_snapshot
     tone, bias, headline = _headline(symbol, primary)
     parts = [lean_label(hourly_c if primary_iv != DAILY_INTERVAL else daily_c)]
     if primary.get("mtf") or getattr(primary_row, "mtf", None) is not None:
@@ -582,6 +626,7 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "hourly": hourly,
         "daily": daily,
         "consensus": {"hourly": hourly_c, "daily": daily_c},
+        "paper": paper_snapshot(symbol, cfg, primary_row),
     }
 
 
@@ -659,8 +704,11 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     symbol = normalize_pair(pair)
     iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
     row = build_board_row(symbol, cfg, interval=iv, refresh_data=True, regenerate=True)
+    ensure_consensus(symbol, cfg)
     return {
         "ok": True,
+        "rate_limited": False,
+        "retry_after_s": 0,
         "pair": symbol,
         "interval": iv,
         "row": row_json(row),

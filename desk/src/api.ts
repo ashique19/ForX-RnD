@@ -1,4 +1,4 @@
-import type { Board, Brief, Ohlcv, Watchlist } from "./types";
+import type { AssetOption, Board, Brief, Ohlcv, PaperState, Watchlist } from "./types";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
@@ -37,6 +37,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
+  assets: () => request<{ assets: AssetOption[] }>("/assets"),
   watchlist: () => request<Watchlist>("/watchlist"),
   addPair: (pair: string, interval?: string) =>
     request<Watchlist>("/watchlist", {
@@ -52,10 +53,15 @@ export const api = {
       `/ohlcv/${encodeURIComponent(pair)}?interval=${encodeURIComponent(interval)}&bars=${bars}`,
     ),
   refresh: (pair: string, interval?: string) =>
-    request<{ ok: boolean; source?: string }>(
+    request<{ ok: boolean; rate_limited?: boolean; retry_after_s?: number; source?: string }>(
       `/refresh/${encodeURIComponent(pair)}${interval ? `?interval=${encodeURIComponent(interval)}` : ""}`,
       { method: "POST" },
     ),
+  paperOrder: (pair: string, side: string, size?: number, interval?: string) =>
+    request<{ ok: boolean; message: string; paper: PaperState }>("/paper/order", {
+      method: "POST",
+      body: JSON.stringify({ pair, side, size: size ?? null, interval: interval || null }),
+    }),
   pipeline: (pair: string, fetchBars: boolean) =>
     request<{ ok: boolean; failed: string | null; steps: { step: string; ok: boolean; log: string }[] }>(
       `/pipeline/${encodeURIComponent(pair)}?fetch=${fetchBars ? "true" : "false"}`,

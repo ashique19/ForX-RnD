@@ -26,5 +26,6 @@ models/*_challenger.*
 data/workspaces/
 # external-forecaster cache for the Decision API (never seeded with invented calls)
 data/consensus_cache.json
+data/consensus_cache.json.tmp
 desk/node_modules/
 desk/dist/

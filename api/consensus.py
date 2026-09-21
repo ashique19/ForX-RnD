@@ -1,15 +1,14 @@
 """External-forecaster adapters for the Decision brief.
 
-PR #18 (``cursor/desk-ux-hierarchy-1f34``) is a Streamlit desk overhaul and is
-not merged. It does not ship a consensus module. Until a real adapter writes
-``data/consensus_cache.json``, every source is **MISSING**.
-
-This module never invents Buy/Sell calls or price ranges.
+DailyForex, Investing.com, and FXStreet are fetched when the cache is stale.
+Only a parsed bias and numeric levels are kept. Article text is not stored,
+and a direction is never invented from pivots or an idle default.
 """
 from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,25 +17,24 @@ from forex_lab.paths import resolve_under_root
 
 HORIZONS = ("hourly", "daily")
 DIRECTIONS = frozenset({"Buy", "Sell", "Neutral"})
-DEFAULT_TTL_S = 6 * 3600
+DEFAULT_TTL_S = 30 * 60
 DEFAULT_CACHE = "data/consensus_cache.json"
 
-# Names match the approved Decision mock. They are labels for adapters,
-# not scraped results.
 FORECASTERS: dict[str, tuple[str, ...]] = {
     "hourly": ("DailyForex", "Investing.com", "FXStreet"),
-    "daily": ("DailyForex", "TradingView community", "ActionForex"),
+    "daily": ("DailyForex", "Investing.com", "FXStreet"),
 }
 RANGES: dict[str, tuple[str, ...]] = {
     "hourly": ("DailyForex", "Investing.com"),
-    "daily": ("DailyForex", "ActionForex"),
+    "daily": ("DailyForex", "Investing.com"),
 }
 
 NOTE = (
-    "External forecasters are not scraped in this build. "
-    "A cache hit is shown only when a real adapter wrote it; otherwise MISSING. "
-    "Nothing here is invented."
+    "Public pages are fetched for DailyForex, Investing.com, and FXStreet. "
+    "A direction is shown only when that page states one. Nothing is invented."
 )
+
+_fetch_lock = threading.Lock()
 
 
 class ConsensusError(ValueError):
@@ -95,6 +93,28 @@ def _ttl_s(cfg: dict[str, Any] | None) -> int:
     except (TypeError, ValueError):
         ttl = DEFAULT_TTL_S
     return max(60, ttl)
+
+
+def network_enabled() -> bool:
+    raw = os.environ.get("FORX_CONSENSUS_NETWORK", "1").strip().lower()
+    return raw not in {"0", "false", "off", "no"}
+
+
+def save_cache(payload: dict[str, Any], path: Path | None = None) -> None:
+    p = path or cache_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.replace(p)
+
+
+def _horizon_fresh(block: dict[str, Any] | None, cfg: dict[str, Any] | None, clock: datetime) -> bool:
+    if not isinstance(block, dict):
+        return False
+    fetched = _parse_fetched_at(block.get("fetched_at"))
+    if fetched is None:
+        return False
+    return (clock - fetched).total_seconds() <= _ttl_s(cfg)
 
 
 def _direction(value: object) -> str | None:
@@ -170,49 +190,17 @@ def read_consensus(
     ok_dirs = 0
     for name in FORECASTERS[hz]:
         row = fc_rows.get(name) or {}
-        direction = _direction(row.get("direction") or row.get("bias"))
-        if fresh and direction:
+        forecasters.append(_forecaster_view(name, row, fresh=fresh, stale_reason=reason))
+        if forecasters[-1]["status"] == "OK":
             ok_dirs += 1
-            forecasters.append(
-                {"source": name, "direction": direction, "status": "OK", "reason": ""}
-            )
-        else:
-            why = reason if not fresh else "direction missing or not Buy/Sell/Neutral"
-            forecasters.append(
-                {"source": name, "direction": None, "status": "MISSING", "reason": why}
-            )
 
     ranges: list[dict[str, Any]] = []
     ok_ranges = 0
     for name in RANGES[hz]:
         row = rg_rows.get(name) or {}
-        low = _num(row.get("low"))
-        high = _num(row.get("high"))
-        window = str(row.get("window") or row.get("label") or "").strip()
-        if fresh and low is not None and high is not None and high >= low:
+        ranges.append(_range_view(name, row, fresh=fresh, stale_reason=reason))
+        if ranges[-1]["status"] == "OK":
             ok_ranges += 1
-            ranges.append(
-                {
-                    "source": name,
-                    "low": low,
-                    "high": high,
-                    "window": window,
-                    "status": "OK",
-                    "reason": "",
-                }
-            )
-        else:
-            why = reason if not fresh else "range missing or invalid"
-            ranges.append(
-                {
-                    "source": name,
-                    "low": None,
-                    "high": None,
-                    "window": None,
-                    "status": "MISSING",
-                    "reason": why,
-                }
-            )
 
     if ok_dirs == 0 and ok_ranges == 0:
         status = "MISSING"
@@ -230,6 +218,112 @@ def read_consensus(
         "ranges": ranges,
         "note": NOTE,
     }
+
+
+def _forecaster_view(name: str, row: dict[str, Any], *, fresh: bool, stale_reason: str) -> dict[str, Any]:
+    explicit = str(row.get("status") or "").upper()
+    direction = _direction(row.get("direction") or row.get("bias"))
+    url = str(row.get("url") or "")
+    fetched = row.get("fetched_at")
+    entry = _num(row.get("entry"))
+    if not fresh:
+        status, why, direction = "MISSING", stale_reason, None
+    elif explicit == "ERROR":
+        status, why, direction = "ERROR", str(row.get("reason") or "fetch failed"), None
+    elif direction and explicit in {"", "OK"}:
+        status, why = "OK", ""
+    elif explicit == "MISSING":
+        status, why, direction = "MISSING", str(row.get("reason") or "empty parse"), None
+    else:
+        status, why, direction = "MISSING", "direction missing or not Buy/Sell/Neutral", None
+    return {
+        "source": name,
+        "direction": direction,
+        "status": status,
+        "reason": why,
+        "url": url,
+        "entry": entry if status == "OK" else None,
+        "fetched_at": None if not fresh else (str(fetched) if fetched else None),
+    }
+
+
+def _range_view(name: str, row: dict[str, Any], *, fresh: bool, stale_reason: str) -> dict[str, Any]:
+    explicit = str(row.get("status") or "").upper()
+    low = _num(row.get("low"))
+    high = _num(row.get("high"))
+    window = str(row.get("window") or row.get("label") or "").strip()
+    valid = low is not None and high is not None and high >= low
+    if not fresh:
+        status, why, low, high, window = "MISSING", stale_reason, None, None, None
+    elif explicit == "ERROR":
+        status, why, low, high, window = "ERROR", str(row.get("reason") or "fetch failed"), None, None, None
+    elif valid and explicit in {"", "OK"}:
+        status, why = "OK", ""
+    elif explicit == "MISSING":
+        status, why, low, high = "MISSING", str(row.get("reason") or "range missing or invalid"), None, None
+        window = None
+    else:
+        status, why, low, high, window = "MISSING", "range missing or invalid", None, None, None
+    return {
+        "source": name,
+        "low": low,
+        "high": high,
+        "window": window,
+        "status": status,
+        "reason": why,
+    }
+
+
+def ensure_consensus(pair: str, cfg: dict[str, Any] | None = None, *, now: datetime | None = None) -> None:
+    """Refresh both horizons when the cache is older than the TTL. No-op if network is off."""
+    if not network_enabled():
+        return
+    pair_u = str(pair or "").strip().upper()
+    if not pair_u:
+        return
+    clock = _utc_now(now)
+    with _fetch_lock:
+        payload = load_cache()
+        node = payload.get(pair_u) if isinstance(payload.get(pair_u), dict) else {}
+        if _horizon_fresh(node.get("hourly"), cfg, clock) and _horizon_fresh(node.get("daily"), cfg, clock):
+            return
+        from api.consensus_fetch import fetch_pair_consensus
+
+        try:
+            fetched = fetch_pair_consensus(pair_u, now=clock)
+        except Exception:
+            stamp = clock.strftime("%Y-%m-%dT%H:%M:%SZ")
+            fetched = {}
+            for hz in HORIZONS:
+                fetched[hz] = {
+                    "fetched_at": stamp,
+                    "forecasters": [
+                        {
+                            "source": name,
+                            "direction": None,
+                            "status": "ERROR",
+                            "reason": "consensus fetch failed",
+                            "url": "",
+                            "entry": None,
+                            "fetched_at": stamp,
+                        }
+                        for name in FORECASTERS[hz]
+                    ],
+                    "ranges": [
+                        {
+                            "source": name,
+                            "low": None,
+                            "high": None,
+                            "window": "",
+                            "status": "ERROR",
+                            "reason": "consensus fetch failed",
+                            "fetched_at": stamp,
+                        }
+                        for name in RANGES[hz]
+                    ],
+                }
+        payload[pair_u] = fetched
+        save_cache(payload)
 
 
 def lean_label(snapshot: dict[str, Any]) -> str:
