@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_pair
+from forex_lab.score import filter_journal
 from forex_lab.calendar import CalendarBundle, countdown_label
 from forex_lab import calendar as calendar_lab
 from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag, zoneinfo_for
@@ -107,6 +108,7 @@ DISCLAIMER = (
     "Spread is the **config pip estimate** (cost context), not your broker’s live spread. "
     "Session is a UTC-window clock badge (Asia/London/NY); times on the desk are **Asia/Dhaka**. "
     "Paper uPnL is a local mark vs that last/mid-ish cache — **not** live broker PnL. "
+    "Paper RIGHT/WRONG is a local lookback vs cached bars (TP/SL or horizon), not a live edge. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
     "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
@@ -155,7 +157,11 @@ Research suggestion only: **no lot size, no auto-submit, no live broker order**.
 
 **Paper desk** — Buy / Sell / Close talk only to `BrokerPort` (`broker.backend: paper`).
 Fills at the last cached close like a practice book: open position, uPnL, SL/TP hits.
-A future `mt5` / `oanda` backend would implement the same four methods. **Not** a live order.
+Lookback scores PENDING → RIGHT/WRONG when later bars hit TP/SL or the horizon
+(signed move at timeout). The journal shows hit rate by session / confidence /
+STALE-vs-OK, filters wrongs, and short “how to improve” notes. **Not** a live
+edge and **not** a broker order. A future `mt5` / `oanda` backend would implement
+the same four methods.
 
 **Alerts** — compact top strip when a watchlist pair **flips** BUY/SELL/HOLD vs the
 previous refresh, or validity becomes **STALE / MISSING**. Last-seen signals persist
@@ -671,10 +677,16 @@ def _render_paper_actions(
         position=open_pos,
     )
     if open_pos:
+        bars = open_pos.get("bars_held")
+        horizon = open_pos.get("horizon")
+        held = ""
+        if bars is not None and horizon:
+            held = f"  ·  lookback {int(bars)}/{int(horizon)} bars"
         st.caption(
             f"Open {open_pos['side']} {float(open_pos['size']):g} @ "
             f"{_fmt_num(open_pos['entry_price'], 5)}  ·  "
-            f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  {open_pos.get('outcome') or 'PENDING'}"
+            f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  "
+            f"{open_pos.get('outcome') or 'PENDING'}{held}"
         )
         st.caption("paper mark vs last/mid-ish cache — not live broker PnL")
         if st.button("Paper CLOSE", key=f"paper_close_{row.pair}_{row.timeframe}", use_container_width=True):
@@ -742,12 +754,34 @@ def _render_paper_actions(
         st.error(str(exc))
 
 
+def _pct_label(value: object) -> str:
+    if value is None:
+        return "n/a"
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if pd.isna(v):
+        return "n/a"
+    return f"{100 * v:.0f}%"
+
+
+def _rate_frame(block: list) -> pd.DataFrame:
+    df = pd.DataFrame(block)
+    for col in ("hit_rate", "error_rate"):
+        if col in df.columns:
+            df[col] = [_pct_label(x) for x in df[col]]
+    return df
+
+
 def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
     backend = "paper"
     st.caption(
         f"Practice book via BrokerPort (`broker.backend: {backend}`). "
-        "RIGHT = TP before SL on later cached bars; WRONG = SL first; "
-        "TIMEOUT = horizon; FLAT = manual close. PENDING until enough bars pass. "
+        "Lookback: RIGHT = TP before SL (or a positive signed move at the horizon); "
+        "WRONG = SL first (or a non-positive move at the horizon); "
+        "PENDING until enough cached bars pass; FLAT = manual close. "
+        "Hit rate is paper-only — not a live edge. "
         "A live mt5/oanda backend would use the same submit/close/list_positions/list_fills "
         "methods — this repo does not store API keys."
     )
@@ -756,12 +790,47 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
     fills = broker.list_fills()
     unreal = sum(float(p.get("unrealized") or 0) for p in positions)
     realized = sum(float(c.get("realized") or 0) for c in closed)
-    b1, b2, b3, b4 = st.columns(4)
-    b1.metric("Open positions", str(len(positions)))
-    b2.metric("Unrealized (paper)", _fmt_num(unreal, 5))
-    b3.metric("Realized (paper)", _fmt_num(realized, 5))
-    b4.metric("Fills", str(len(fills)))
-    st.caption("Paper marks use last/mid-ish cache — not live broker PnL.")
+
+    agg_fn = getattr(broker, "aggregates", None)
+    agg = agg_fn() if callable(agg_fn) else None
+    st.markdown("**Paper book stats** (lookback vs cached bars — not live broker PnL)")
+    s1, s2, s3, s4, s5 = st.columns(5)
+    if agg:
+        s1.metric("Hit rate", _pct_label(agg.get("hit_rate")))
+        s2.metric("Right", str(agg["right"]))
+        s3.metric("Wrong", str(agg["wrong"]))
+        s4.metric("Pending", str(agg["n_pending"]))
+        s5.metric("Scored", str(agg.get("n_scored") if agg.get("n_scored") is not None else agg["right"] + agg["wrong"]))
+        st.caption(
+            f"Timeout exits {agg['timeout']} · manual/flat {agg['flat']} · closed {agg['n_closed']} · "
+            f"error rate {_pct_label(agg.get('error_rate'))}. "
+            "Horizon timeouts are scored RIGHT/WRONG from the signed move."
+        )
+        for title, key in (
+            ("By session", "by_session"),
+            ("By confidence bucket", "by_confidence"),
+            ("By validity at entry (STALE vs OK)", "by_validity"),
+            ("By pair", "by_pair"),
+        ):
+            block = agg.get(key) or []
+            if block:
+                st.markdown(f"**{title}**")
+                st.dataframe(_rate_frame(block), use_container_width=True, hide_index=True)
+        st.markdown("**How to improve** (from this journal — not a live edge)")
+        for note in agg.get("notes") or []:
+            st.caption("• " + note)
+    else:
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("Open positions", str(len(positions)))
+        b2.metric("Unrealized (paper)", _fmt_num(unreal, 5))
+        b3.metric("Realized (paper)", _fmt_num(realized, 5))
+        b4.metric("Fills", str(len(fills)))
+
+    p1, p2 = st.columns(2)
+    p1.metric("Unrealized (paper)", _fmt_num(unreal, 5))
+    p2.metric("Realized (paper)", _fmt_num(realized, 5))
+    st.caption("Paper marks use last/mid-ish cache — not live broker PnL. Times are Asia/Dhaka.")
+
     if positions:
         st.markdown("**Open book**")
         st.dataframe(
@@ -779,6 +848,11 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
                         "uPnL": p.get("unrealized"),
                         "validity": p.get("validity_at_entry"),
                         "model": p.get("model_signal"),
+                        "conf": p.get("confidence"),
+                        "session": p.get("session"),
+                        "bars": p.get("bars_held"),
+                        "horizon": p.get("horizon"),
+                        "outcome": p.get("outcome") or "PENDING",
                     }
                     for p in positions
                 ]
@@ -786,18 +860,35 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
             use_container_width=True,
             hide_index=True,
         )
+
     journal_fn = getattr(broker, "journal", None)
-    rows = list(journal_fn()) if callable(journal_fn) else list(reversed(closed)) + list(reversed(positions))
-    wrong_only = st.checkbox("Wrong trades only", key="paper_wrong_only")
-    if wrong_only:
-        rows = [r for r in rows if str(r.get("outcome")) == "WRONG"]
-    if not rows:
+    all_rows = list(journal_fn()) if callable(journal_fn) else list(reversed(closed)) + list(reversed(positions))
+    st.markdown("**Mistake review**")
+    sessions = ["All"] + sorted({str(r.get("session") or "n/a") for r in all_rows})
+    validities = ["All"] + sorted({str(r.get("validity_at_entry") or "n/a") for r in all_rows})
+    confs = ["All"] + sorted({str(r.get("conf_bucket") or "n/a") for r in all_rows})
+    f1, f2, f3, f4 = st.columns(4)
+    wrong_only = f1.checkbox("Wrong trades only", key="paper_wrong_only")
+    session_pick = f2.selectbox("Session", sessions, key="paper_session_filter")
+    val_pick = f3.selectbox("Validity at entry", validities, key="paper_validity_filter")
+    conf_pick = f4.selectbox("Confidence bucket", confs, key="paper_conf_filter")
+    rows = filter_journal(
+        all_rows,
+        wrong_only=wrong_only,
+        session=session_pick,
+        validity=val_pick,
+        conf=conf_pick,
+    )
+    if not all_rows:
         st.info("No paper trades yet. Use Paper BUY / SELL on a card.")
+    elif not rows:
+        st.info("No paper trades match these filters.")
     else:
         show = pd.DataFrame(
             [
                 {
                     "when": relabel(r.get("entry_time"), cfg, seconds=True),
+                    "exit_when": relabel(r.get("exit_time"), cfg, seconds=True) if r.get("exit_time") else "",
                     "pair": r.get("pair"),
                     "side": r.get("side"),
                     "status": r.get("status"),
@@ -810,6 +901,7 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
                     "validity": r.get("validity_at_entry"),
                     "model": r.get("model_signal"),
                     "conf": r.get("confidence"),
+                    "conf_bucket": r.get("conf_bucket"),
                     "session": r.get("session"),
                     "news": r.get("news_bias"),
                     "news_note": r.get("news_note"),
@@ -820,39 +912,20 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
             ]
         )
         st.dataframe(show, use_container_width=True, hide_index=True)
-        if wrong_only:
-            for r in rows[:8]:
+        review = [r for r in rows if str(r.get("outcome")) == "WRONG"] if not wrong_only else rows
+        if wrong_only or review:
+            st.markdown("**Entry context (wrongs)**")
+            for r in review[:12]:
+                when = relabel(r.get("entry_time"), cfg, seconds=True)
                 st.markdown(
-                    f"- **{r.get('pair')} {r.get('side')}**  validity={r.get('validity_at_entry')}  "
-                    f"model={r.get('model_signal')}  conf={r.get('confidence')}  "
+                    f"- **{r.get('pair')} {r.get('side')}**  {when}  "
+                    f"signal={r.get('model_signal') or 'n/a'}  "
+                    f"conf={r.get('confidence')} ({r.get('conf_bucket') or 'n/a'})  "
+                    f"session={r.get('session') or 'n/a'}  "
                     f"news={r.get('news_bias') or 'n/a'}  "
-                    f"{(r.get('rationale') or r.get('news_note') or '')[:180]}"
+                    f"validity={r.get('validity_at_entry') or 'n/a'}  "
+                    f"{(r.get('rationale') or r.get('news_note') or r.get('drivers') or '')[:180]}"
                 )
-    agg_fn = getattr(broker, "aggregates", None)
-    if callable(agg_fn):
-        agg = agg_fn()
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Right", str(agg["right"]))
-        m2.metric("Wrong", str(agg["wrong"]))
-        m3.metric("Pending", str(agg["n_pending"]))
-        err = agg.get("error_rate")
-        m4.metric("Error rate", "n/a" if err is None else f"{100 * err:.0f}%")
-        st.caption(
-            f"Timeout {agg['timeout']} · manual/flat {agg['flat']} · closed {agg['n_closed']}"
-        )
-        for title, key in (
-            ("By pair", "by_pair"),
-            ("By session", "by_session"),
-            ("By validity at entry", "by_validity"),
-            ("By confidence bucket", "by_confidence"),
-        ):
-            block = agg.get(key) or []
-            if block:
-                st.markdown(f"**{title}**")
-                st.dataframe(pd.DataFrame(block), use_container_width=True, hide_index=True)
-        st.markdown("**How to improve (stubs from this journal)**")
-        for note in agg.get("notes") or []:
-            st.caption("• " + note)
     if fills:
         st.markdown("**Fills** (`BrokerPort.list_fills`)")
         fill_rows = []
@@ -1254,7 +1327,9 @@ def render_watch_board(cfg) -> None:
                             )
 
             if broker is not None:
-                with st.expander("Paper portfolio (practice desk — not a broker)", expanded=False):
+                closed_n = list(getattr(broker, "list_closed", lambda: [])())
+                has_book = bool(broker.list_positions() or closed_n)
+                with st.expander("Paper portfolio (practice desk — not a broker)", expanded=has_book):
                     _render_paper_journal(broker, cfg)
 
             table = board_table(rows)

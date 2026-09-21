@@ -165,10 +165,13 @@ def test_aggregates_and_improvement_notes(tmp_path):
     assert agg["right"] == 1
     assert agg["wrong"] == 2
     assert agg["error_rate"] == pytest.approx(2 / 3)
+    assert agg["hit_rate"] == pytest.approx(1 / 3)
     notes = " ".join(agg["notes"]).lower()
     assert "stale" in notes
+    assert "not a live edge" in notes
     assert "min_confidence" in notes or "confidence" in notes
     assert any("STALE" in r["bucket"] for r in agg["by_validity"])
+    assert any(r.get("hit_rate") is not None for r in agg["by_session"])
 
 
 def test_persists_to_disk(tmp_path):

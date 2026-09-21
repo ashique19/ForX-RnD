@@ -20,8 +20,19 @@ import pandas as pd
 
 from forex_lab.config_loader import pip_size_for_pair
 from forex_lab.paths import resolve_under_root
+from forex_lab.score import (
+    conf_bucket,
+    filter_journal,
+    improvement_notes,
+    journal_aggregates,
+    normalize_outcome,
+    outcome_from_exit,
+    score_from_ohlcv,
+    signed_return,
+    walk_barriers,
+)
 
-CLOSED_OUTCOMES = ("RIGHT", "WRONG", "TIMEOUT", "FLAT")
+CLOSED_OUTCOMES = ("RIGHT", "WRONG", "FLAT")
 
 
 class BrokerError(RuntimeError):
@@ -120,84 +131,10 @@ def session_name(ts: object, cfg: dict[str, Any] | None = None) -> str:
     return classify_session(py, cfg).name
 
 
-def conf_bucket(confidence: object) -> str:
-    try:
-        c = float(confidence)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return "n/a"
-    if pd.isna(c):
-        return "n/a"
-    if c < 0.40:
-        return "<0.40"
-    if c < 0.60:
-        return "0.40-0.60"
-    return ">=0.60"
-
-
 def _spread_frac(pair: str, cfg: dict[str, Any], price: float) -> float:
     pips = float(cfg.get("spread_pips", 1.0)) + float(cfg.get("commission_pips", 0.0))
     pip = pip_size_for_pair(pair, cfg)
     return (pips * pip) / max(price, 1e-12)
-
-
-def _signed_return(side: str, entry: float, exit_px: float) -> float:
-    if side == "BUY":
-        return (exit_px - entry) / entry
-    return (entry - exit_px) / entry
-
-
-def _walk_barriers(
-    ohlcv: pd.DataFrame,
-    *,
-    start_loc: int,
-    horizon: int,
-    side: str,
-    entry: float,
-    sl: float | None,
-    tp: float | None,
-    path: str = "high_low",
-) -> tuple[str, float | None, str | None, int]:
-    """Scan from start_loc. Returns (pending|closed, exit_px, reason, bars_seen)."""
-    n = len(ohlcv)
-    if start_loc < 0 or start_loc >= n:
-        return "pending", None, None, 0
-    end = min(n, start_loc + max(1, int(horizon)))
-    use_hl = path != "close"
-    high = ohlcv["High"].to_numpy()
-    low = ohlcv["Low"].to_numpy()
-    close = ohlcv["Close"].to_numpy()
-    bars = 0
-    for i in range(start_loc, end):
-        bars += 1
-        px_up = float(high[i] if use_hl else close[i])
-        px_dn = float(low[i] if use_hl else close[i])
-        if side == "BUY":
-            hit_tp = tp is not None and px_up >= tp
-            hit_sl = sl is not None and px_dn <= sl
-        else:
-            hit_tp = tp is not None and px_dn <= tp
-            hit_sl = sl is not None and px_up >= sl
-        if hit_tp and hit_sl:
-            return "closed", float(sl) if sl is not None else float(close[i]), "sl", bars
-        if hit_sl:
-            return "closed", float(sl) if sl is not None else float(close[i]), "sl", bars
-        if hit_tp:
-            return "closed", float(tp) if tp is not None else float(close[i]), "tp", bars
-    if bars >= int(horizon):
-        return "closed", float(close[end - 1]), "timeout", bars
-    return "pending", float(close[end - 1]) if bars else None, None, bars
-
-
-def _outcome(reason: str | None, side: str) -> str:
-    if reason == "tp":
-        return "RIGHT"
-    if reason in {"sl", "sl_conflict"}:
-        return "WRONG"
-    if reason == "timeout":
-        return "TIMEOUT"
-    if reason in {"manual", "flat"}:
-        return "FLAT"
-    return "PENDING"
 
 
 class PaperBroker(BrokerPort):
@@ -353,8 +290,14 @@ class PaperBroker(BrokerPort):
         entry = float(pos["entry_price"])
         qty = float(pos["size"])
         spread = float(pos.get("spread_frac") or 0.0)
-        realized = (_signed_return(str(pos["side"]), entry, exit_px) - spread) * qty
-        outcome = _outcome(reason, str(pos["side"]))
+        realized = (signed_return(str(pos["side"]), entry, exit_px) - spread) * qty
+        outcome = outcome_from_exit(
+            reason,
+            side=str(pos["side"]),
+            entry=entry,
+            exit_px=float(exit_px),
+            spread_frac=spread,
+        )
         fid = _new_id("fill")
         fill = {
             "id": fid,
@@ -457,51 +400,26 @@ class PaperBroker(BrokerPort):
         ohlcv: pd.DataFrame | None,
         cfg: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        """Mark-to-market and auto-close on paper SL/TP/timeout when bars exist."""
+        """Mark-to-market and auto-close on paper SL/TP/horizon when bars exist."""
         if ohlcv is None or ohlcv.empty:
             return []
         cfg = cfg if cfg is not None else self.cfg
-        path = str((cfg.get("barrier") or {}).get("path") or "high_low")
         events: list[dict[str, Any]] = []
         last_close = float(ohlcv["Close"].iloc[-1])
         last_ts = str(ohlcv.index[-1])
         for pos in list(self.list_positions()):
             if str(pos.get("pair")).upper() != str(pair).upper():
                 continue
-            entry_bar = pd.to_datetime(pos.get("entry_bar_time"), utc=True, errors="coerce")
-            if pd.isna(entry_bar):
-                u = _signed_return(str(pos["side"]), float(pos["entry_price"]), last_close)
-                u -= float(pos.get("spread_frac") or 0.0)
-                pos["unrealized"] = u * float(pos["size"])
-                self._touch_open(pos)
-                continue
-            entry_naive = entry_bar.tz_convert("UTC").tz_localize(None)
-            idx = pd.to_datetime(ohlcv.index, utc=True).tz_convert("UTC").tz_localize(None)
-            later_idx = [i for i, ts in enumerate(idx) if ts > entry_naive]
-            if not later_idx:
-                u = _signed_return(str(pos["side"]), float(pos["entry_price"]), last_close)
-                u -= float(pos.get("spread_frac") or 0.0)
-                pos["unrealized"] = u * float(pos["size"])
-                self._touch_open(pos)
-                continue
-            start_loc = later_idx[0]
-            status, exit_px, reason, _bars = _walk_barriers(
-                ohlcv,
-                start_loc=start_loc,
-                horizon=int(pos.get("horizon") or cfg.get("horizon") or 8),
-                side=str(pos["side"]),
-                entry=float(pos["entry_price"]),
-                sl=pos.get("sl"),
-                tp=pos.get("tp"),
-                path=path,
-            )
-            if status == "closed" and exit_px is not None and reason:
-                events.append(self._finalize(pos, float(exit_px), reason, last_ts))
+            scored = score_from_ohlcv(pos, ohlcv, cfg)
+            mark = float(scored.exit_px) if scored.exit_px is not None else last_close
+            u = signed_return(str(pos["side"]), float(pos["entry_price"]), mark)
+            u -= float(pos.get("spread_frac") or 0.0)
+            pos["unrealized"] = u * float(pos["size"])
+            pos["bars_held"] = scored.bars_seen
+            pos["outcome"] = scored.outcome
+            if scored.status == "closed" and scored.exit_px is not None and scored.reason:
+                events.append(self._finalize(pos, float(scored.exit_px), scored.reason, last_ts))
             else:
-                mark = float(exit_px) if exit_px is not None else last_close
-                u = _signed_return(str(pos["side"]), float(pos["entry_price"]), mark)
-                u -= float(pos.get("spread_frac") or 0.0)
-                pos["unrealized"] = u * float(pos["size"])
                 self._touch_open(pos)
         return events
 
@@ -514,110 +432,29 @@ class PaperBroker(BrokerPort):
         self._save()
 
     def journal(self) -> list[dict[str, Any]]:
-        open_rows = [{**p, "outcome": p.get("outcome") or "PENDING"} for p in self.list_positions()]
-        return list(reversed(self.list_closed())) + list(reversed(open_rows))
+        closed = [{**c, "outcome": normalize_outcome(c)} for c in self.list_closed()]
+        open_rows = [{**p, "outcome": normalize_outcome(p)} for p in self.list_positions()]
+        return list(reversed(closed)) + list(reversed(open_rows))
 
     def aggregates(self) -> dict[str, Any]:
         return journal_aggregates(self.list_closed(), self.list_positions())
 
 
-def journal_aggregates(
-    closed: list[dict[str, Any]],
-    open_rows: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    closed = list(closed or [])
-    pending_n = len(open_rows or [])
-    right = [r for r in closed if r.get("outcome") == "RIGHT"]
-    wrong = [r for r in closed if r.get("outcome") == "WRONG"]
-    timeout = [r for r in closed if r.get("outcome") == "TIMEOUT"]
-    flat = [r for r in closed if r.get("outcome") == "FLAT"]
-    scored = len(right) + len(wrong)
-    err = (len(wrong) / scored) if scored else None
-
-    def _rate(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
-        buckets: dict[str, list[dict[str, Any]]] = {}
-        for r in rows:
-            buckets.setdefault(str(r.get(key) or "n/a"), []).append(r)
-        out = []
-        for name, group in sorted(buckets.items()):
-            w = sum(1 for x in group if x.get("outcome") == "WRONG")
-            ok = sum(1 for x in group if x.get("outcome") == "RIGHT")
-            n = ok + w
-            out.append(
-                {
-                    "bucket": name,
-                    "n_scored": n,
-                    "wrong": w,
-                    "right": ok,
-                    "error_rate": None if n == 0 else w / n,
-                }
-            )
-        return out
-
-    scored_rows = [r for r in closed if r.get("outcome") in {"RIGHT", "WRONG"}]
-    return {
-        "n_closed": len(closed),
-        "n_pending": pending_n,
-        "right": len(right),
-        "wrong": len(wrong),
-        "timeout": len(timeout),
-        "flat": len(flat),
-        "error_rate": err,
-        "by_pair": _rate(scored_rows, "pair"),
-        "by_session": _rate(scored_rows, "session"),
-        "by_validity": _rate(scored_rows, "validity_at_entry"),
-        "by_confidence": _rate(scored_rows, "conf_bucket"),
-        "notes": improvement_notes(closed, err, scored_rows),
-    }
-
-
-def improvement_notes(
-    closed: list[dict[str, Any]],
-    error_rate: float | None,
-    scored_rows: list[dict[str, Any]],
-) -> list[str]:
-    notes = [
-        "Paper only — not linked to any broker. Use this desk to practice the same "
-        "decisions you would make live, then inspect mistakes.",
-        "If the system ever grows a live backend, it should implement BrokerPort the "
-        "same way PaperBroker does (submit / close / list_positions / list_fills) "
-        "behind broker.backend — do not call a vendor SDK from the UI.",
-    ]
-    if not scored_rows:
-        notes.append(
-            "No scored (RIGHT/WRONG) paper trades yet. PENDING until enough bars pass "
-            "to hit TP, SL, or the label horizon."
-        )
-        return notes
-    stale = [r for r in scored_rows if str(r.get("validity_at_entry")).upper() == "STALE"]
-    ok = [r for r in scored_rows if str(r.get("validity_at_entry")).upper() == "OK"]
-
-    def _err(rows: list[dict[str, Any]]) -> float | None:
-        n = len(rows)
-        if not n:
-            return None
-        return sum(1 for r in rows if r.get("outcome") == "WRONG") / n
-
-    se, oe = _err(stale), _err(ok)
-    if se is not None and oe is not None and se > oe:
-        notes.append(
-            "Avoid entries when validity is STALE — that bucket was wrong more often than OK."
-        )
-    elif stale:
-        notes.append("Prefer OK validity; STALE flashes are not live calls on the board.")
-    low = [r for r in scored_rows if r.get("conf_bucket") == "<0.40"]
-    high = [r for r in scored_rows if r.get("conf_bucket") == ">=0.60"]
-    le, he = _err(low), _err(high)
-    if le is not None and he is not None and le > he:
-        notes.append("Raise signals.min_confidence — the low-confidence bucket was wrong more often.")
-    if error_rate is not None and error_rate >= 0.5:
-        notes.append(
-            "Scored error rate is high. Consider an event gate (skip around known news) "
-            "and keep the news lane as context, not a trigger."
-        )
-    else:
-        notes.append(
-            "News remains context only. An event gate (skip entries around scheduled "
-            "releases) is a later filter, not auto-trading."
-        )
-    return notes
+__all__ = [
+    "BrokerError",
+    "BrokerPort",
+    "CLOSED_OUTCOMES",
+    "OrderGateway",
+    "PaperBroker",
+    "broker_cfg",
+    "conf_bucket",
+    "filter_journal",
+    "improvement_notes",
+    "journal_aggregates",
+    "make_broker",
+    "normalize_outcome",
+    "position_for_pair",
+    "score_from_ohlcv",
+    "session_name",
+    "walk_barriers",
+]
