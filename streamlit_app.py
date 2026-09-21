@@ -442,7 +442,7 @@ def render_watch_board(cfg) -> None:
                         _signal_badge(row.buy_sell)
                         st.caption(f"Target  {row.target}")
                         if row.validity == VALIDITY_STALE:
-                            st.warning(row.validity_reason or "data stale — refresh required")
+                            st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
                         elif row.validity == VALIDITY_CLOSED:
                             st.caption(row.validity_reason)
                         elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {
