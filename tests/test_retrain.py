@@ -158,6 +158,7 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
     )
     assert promoted["verdict"] == VERDICT_PROMOTE
     assert promoted["promote"] is True
+    assert promoted["champion_written"] is True
     assert promoted["trained"] is True
     assert trained["n"] == 1
     assert promoted["live_edge"] is False
@@ -185,6 +186,7 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
     )
     assert kept["verdict"] == VERDICT_NULL
     assert kept["promote"] is False
+    assert kept["champion_written"] is False
     assert kept["trained"] is False
     assert trained["n"] == 0
     still = load_champion("EURUSD", cfg)
@@ -216,10 +218,57 @@ def test_run_retrain_gate_seeds_without_claiming_improve(tmp_path):
     # dry_run False + no champion + metrics provided -> seed, no train
     assert seeded["verdict"] == VERDICT_SEED
     assert seeded["promote"] is False
+    assert seeded["champion_written"] is True
     stored = load_champion("EURUSD", cfg)
     assert stored is not None
     assert stored["source"] == "seed"
     assert stored["live_edge"] is False
+
+
+def test_dry_run_does_not_write_champion(tmp_path):
+    cfg = {
+        "ui": {"timezone": "Asia/Dhaka"},
+        "retrain": {
+            "store": str(tmp_path / "champion"),
+            "train_on_promote": True,
+            "fail_soft": True,
+            "seed_from_metrics": True,
+        },
+        "model": {"type": "xgboost"},
+        "paths": {"models_dir": str(tmp_path / "models")},
+    }
+    preview = run_retrain_gate(
+        "EURUSD",
+        cfg,
+        challenger_metrics=_m(pf=0.978, ret=-0.0206, dd=-0.077, n=10),
+        dry_run=True,
+        persist=True,
+    )
+    assert preview["verdict"] == VERDICT_SEED
+    assert preview["promote"] is False
+    assert preview["champion_written"] is False
+    assert preview["trained"] is False
+    assert load_champion("EURUSD", cfg) is None
+    text = format_retrain_text(preview)
+    assert "dry-run" in text.lower()
+    assert "not written" in text.lower()
+    text.encode("ascii")
+
+    save_champion("EURUSD", cfg, {"pair": "EURUSD", "metrics": _m(pf=0.90, ret=-0.05, dd=-0.10)})
+    better = run_retrain_gate(
+        "EURUSD",
+        cfg,
+        challenger_metrics=_m(pf=1.20, ret=0.05, dd=-0.04, n=40),
+        dry_run=True,
+        persist=True,
+    )
+    assert better["promote"] is True
+    assert better["verdict"] == VERDICT_PROMOTE
+    assert better["champion_written"] is False
+    assert better["trained"] is False
+    still = load_champion("EURUSD", cfg)
+    assert still["metrics"]["profit_factor"] == 0.90
+    assert "dry-run" in format_retrain_text(better).lower()
 
 
 def test_fail_soft_walk_forward_error_keeps_champion(tmp_path):

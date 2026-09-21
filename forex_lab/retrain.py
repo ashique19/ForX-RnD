@@ -463,12 +463,16 @@ def format_retrain_text(result: Mapping[str, Any]) -> str:
         )
     if result.get("error"):
         lines.append(f"fail-soft: {result.get('error')}")
-    if result.get("trained"):
+    if result.get("dry_run"):
+        lines.append("dry-run: champion not written (compare only)")
+    elif result.get("champion_written") and result.get("verdict") == VERDICT_SEED:
+        lines.append("champion seeded (first record - not a claimed improvement)")
+    elif result.get("trained"):
         lines.append("production joblib refreshed (train_on_promote)")
     elif result.get("verdict") == VERDICT_NULL:
         lines.append("champion unchanged (null)")
     elif result.get("verdict") == VERDICT_SEED:
-        lines.append("champion seeded (first record - not a claimed improvement)")
+        lines.append("champion not written (seed preview)")
     from forex_lab.console import ascii_text
 
     return ascii_text("\n".join(lines) + "\n")
@@ -504,6 +508,7 @@ def run_retrain_gate(
         "error": None,
         "dry_run": bool(dry_run),
         "trained": False,
+        "champion_written": False,
         "copied": {},
         "honest_note": HONEST_NOTE,
         "live_edge": False,
@@ -657,9 +662,10 @@ def run_retrain_gate(
                 "live_edge": False,
                 **stamps,
             }
-            save_champion(pair_u, cfg, record)
+            written = save_champion(pair_u, cfg, record)
             result["champion"] = record
             result["champion_metrics"] = chal_metrics
+            result["champion_written"] = written is not None
 
         if persist:
             _write_json(challenger_meta_path(pair_u, cfg), result)

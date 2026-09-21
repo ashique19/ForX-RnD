@@ -117,7 +117,7 @@ from forex_lab.data import load_cached_ohlcv
 from forex_lab.digest import (
     build_digest,
     digest_cfg,
-    format_digest_markdown,
+    format_digest_text,
     persist_digest,
 )
 from forex_lab.explain import SignalExplanation, explain_latest_signal
@@ -1142,7 +1142,56 @@ def _render_daily_digest(
             "calendar ahead, Awareness FAIL/STALE. "
             "Paper lookback only — **not a live edge**. BrokerPort unchanged."
         )
-        st.markdown(format_digest_markdown(payload))
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("RIGHT", str(paper.get("right", 0)))
+        k2.metric("WRONG", str(paper.get("wrong", 0)))
+        k3.metric("Flips", str(n_flips))
+        k4.metric("FAIL/STALE", str(issues))
+        windows = payload.get("windows") or []
+        win_bits = ", ".join(f"{w.get('label')} {w.get('local_date')}" for w in windows)
+        st.caption(
+            f"Generated {payload.get('generated_at') or ''} · {win_bits or 'n/a'} · "
+            "paper lookback, not a live edge"
+        )
+        fresh = list(payload.get("freshness") or [])
+        if fresh:
+            st.markdown("**Data freshness**")
+            st.dataframe(pd.DataFrame(fresh), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No watchlist freshness rows.")
+        flips = list(payload.get("flips") or [])
+        if flips:
+            st.markdown("**Signal flips (BUY/SELL/HOLD)**")
+            st.dataframe(pd.DataFrame(flips), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No BUY/SELL/HOLD flips in the window.")
+        by_w = list(paper.get("by_window") or [])
+        if by_w:
+            st.markdown("**Paper RIGHT/WRONG by day**")
+            show = pd.DataFrame(by_w)
+            if "hit_rate" in show.columns:
+                show["hit_rate"] = [_pct_label(x) for x in show["hit_rate"]]
+            drop = [c for c in ("note",) if c in show.columns]
+            st.dataframe(show.drop(columns=drop, errors="ignore"), use_container_width=True, hide_index=True)
+        ahead = list(payload.get("calendar_ahead") or [])
+        if payload.get("calendar_error") and not ahead:
+            st.caption(f"Calendar unavailable: {payload.get('calendar_error')}")
+        elif ahead:
+            st.markdown("**Calendar ahead**")
+            st.dataframe(pd.DataFrame(ahead), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No calendar events in the lookahead window.")
+        aw_issues = list((payload.get("awareness") or {}).get("issues") or [])
+        if aw_issues:
+            st.markdown("**Awareness FAIL/STALE/MISSING**")
+            st.dataframe(pd.DataFrame(aw_issues), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No FAIL/STALE/MISSING sources.")
+        errs = list(payload.get("errors") or [])
+        if errs:
+            st.caption("Fail-soft: " + " · ".join(str(e) for e in errs))
+        with st.expander("CLI text", expanded=False):
+            st.code(format_digest_text(payload), language=None)
 
 
 def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
@@ -1993,15 +2042,22 @@ def render() -> None:
                 champ = None
             if champ:
                 m = champ.get("metrics") or {}
-                st.markdown(
-                    f"Saved champion `{pair}`: PF `{m.get('profit_factor')}` · "
-                    f"ret `{m.get('total_return')}` · DD `{m.get('max_drawdown')}` · "
-                    f"{champ.get('promoted_at_display') or champ.get('promoted_at') or ''}"
+                r1, r2 = st.columns(2)
+                r1.metric("PF", _fmt_num(m.get("profit_factor")))
+                r2.metric("Return", _fmt_num(m.get("total_return")))
+                r3, r4 = st.columns(2)
+                r3.metric("Max DD", _fmt_num(m.get("max_drawdown")))
+                r4.metric("Trades", str(m.get("n_trades") if m.get("n_trades") is not None else "n/a"))
+                st.caption(
+                    f"{champ.get('verdict') or 'champion'} · "
+                    f"{champ.get('promoted_at_display') or champ.get('promoted_at') or ''} · "
+                    "research sample only — not a live edge"
                 )
             else:
                 st.caption(
-                    "No champion yet — first **Retrain gate** seeds from "
-                    "`reports/latest_metrics.json` or a new walk-forward."
+                    "No champion yet — **Retrain gate** seeds the slot "
+                    "(not a promotion). **Retrain dry-run** compares only and "
+                    "does not write champion JSON."
                 )
             g1, g2 = st.columns(2)
             if g1.button("Retrain gate", use_container_width=True):

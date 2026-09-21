@@ -294,6 +294,7 @@ def test_build_digest_assembles_sections_and_honest_note():
     assert "not a live edge" in text.lower()
     assert "\u2192" not in text  # ASCII arrow for Windows consoles
     assert HONEST_NOTE.split("—")[0].strip()[:20] in text or "Research digest" in text
+    text.encode("ascii")
 
 
 def test_collect_digest_fail_soft_empty_tmp(tmp_path, monkeypatch):
