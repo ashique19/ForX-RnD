@@ -208,6 +208,10 @@ ui:
   timezone_tag: Asia/Dhaka # suffix on timestamps so the zone is obvious
 
 # Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
+# Workspace presets (config/workspaces/scalp.yaml, swing.yaml) overlay watchlist
+# pairs, interval/TF, board.realtime_seconds, and signals.min_confidence in memory.
+# Apply / Save / Reset on the desk. They do not rewrite this file, the paper
+# journal (broker.store), or BrokerPort. User copies: data/workspaces/ (gitignored).
 
 # Paper practice desk (UI Buy/Sell/Close). Not a live venue.
 # Future mt5 / oanda would implement forex_lab.broker.BrokerPort the same way;

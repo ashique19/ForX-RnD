@@ -77,6 +77,18 @@ from forex_lab.ui.watchlist import (
     save_watchlist,
     watchlist_path,
 )
+from forex_lab.ui.workspace import (
+    Workspace,
+    WorkspaceError,
+    apply_workspace,
+    capture_current,
+    list_workspaces,
+    overlay_config,
+    reset_workspace,
+    resolve_active_workspace,
+    save_active,
+    save_workspace,
+)
 from forex_lab.data import load_cached_ohlcv
 from forex_lab.explain import SignalExplanation, explain_latest_signal
 from forex_lab.freshness import (
@@ -123,7 +135,10 @@ DISCLAIMER = (
     "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
     "it never auto-submits via BrokerPort. Optional alert sound is **off by default**. "
     "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket. "
-    "Click a board row for chart / SHAP / news / risk / rationale."
+    "Click a board row for chart / SHAP / news / risk / rationale. "
+    "**Workspace** presets (scalp / swing / save-as) switch watchlist pairs, TF, "
+    "realtime interval, and min-confidence display only — they do **not** wipe the "
+    "paper journal or change BrokerPort."
 )
 
 BOARD_HELP = """
@@ -160,6 +175,8 @@ This is the **trader screen**: one dense scan board. Click a pair for the detail
 **Alerts** — compact top strip on BUY/SELL/HOLD flips or STALE/MISSING. Optional event-within-60m. Sound off by default. Times **Asia/Dhaka**. Never places orders.
 
 **Awareness** — **Feeds:** line plus expander. Opens itself when a feed is STALE/FAIL/MISSING.
+
+**Workspace** — scalp / swing (or a saved custom) switch **pairs, TF, refresh, min conf**. Apply / Save current / Reset. Does **not** rewrite `config/default.yaml`, the paper journal, or BrokerPort. Clocks stay **Asia/Dhaka**.
 
 **Realtime** (default 60s) rebuilds from **local** cache. yfinance at most one pair/tick. Not broker quotes.
 
@@ -1292,6 +1309,146 @@ def _sync_watch_rows(wl, cfg, *, manual: bool, realtime: bool) -> tuple[list, st
     return rows, rate_msg
 
 
+def _after_workspace_change(ws: Workspace) -> None:
+    """Queue widget defaults for the next run — do not mutate live widget keys."""
+    pending: dict = {"pick": ws.name}
+    if ws.refresh_seconds is not None:
+        pending["refresh"] = max(60, int(ws.refresh_seconds))
+    if ws.min_confidence is not None:
+        pending["min_conf"] = float(ws.min_confidence)
+    st.session_state["_ws_pending"] = pending
+    st.session_state.pop("watch_rows", None)
+    st.rerun()
+
+
+def _apply_workspace_pending() -> None:
+    pending = st.session_state.pop("_ws_pending", None)
+    if not pending:
+        return
+    if pending.get("pick"):
+        st.session_state["ws_pick"] = pending["pick"]
+    if pending.get("refresh") is not None:
+        st.session_state["board_refresh_s"] = int(pending["refresh"])
+    if pending.get("min_conf") is not None:
+        st.session_state["ws_min_conf"] = float(pending["min_conf"])
+        st.session_state["_ws_min_conf_saved"] = float(pending["min_conf"])
+
+
+def _render_workspace_bar(cfg, wl) -> None:
+    """Select / save / reset presets. Paper journal is not touched."""
+    _apply_workspace_pending()
+    presets = list_workspaces()
+    names = [p.name for p in presets]
+    labels = {p.name: p.display_label() for p in presets}
+    active = resolve_active_workspace()
+    current_name = active.name if active is not None else None
+    options = names or ["(none)"]
+    if "ws_pick" not in st.session_state or st.session_state.get("ws_pick") not in options:
+        st.session_state["ws_pick"] = current_name if current_name in options else options[0]
+    default_conf = float((cfg.get("signals") or {}).get("min_confidence") or 0.40)
+    if active is not None and active.min_confidence is not None:
+        default_conf = float(active.min_confidence)
+    if "ws_min_conf" not in st.session_state:
+        st.session_state["ws_min_conf"] = default_conf
+    if "ws_save_as" not in st.session_state:
+        st.session_state["ws_save_as"] = "custom"
+
+    c1, c2, c3, c4, c5, c6 = st.columns([1.35, 0.7, 0.7, 1.05, 0.85, 1.15])
+    with c1:
+        pick = st.selectbox(
+            "Workspace",
+            options=options,
+            format_func=lambda n: labels.get(n, n),
+            disabled=not names,
+            key="ws_pick",
+            help="Scalp / swing (or a saved custom) switch watchlist pairs, TF, "
+            "realtime interval, and min-confidence display. Does not wipe the "
+            "paper journal or change BrokerPort.",
+        )
+    apply_clicked = c2.button("Apply", disabled=not names, use_container_width=True)
+    reset_clicked = c3.button("Reset", disabled=not names, use_container_width=True)
+    with c4:
+        save_as = st.text_input(
+            "Save as",
+            key="ws_save_as",
+            help="Slug for a custom preset under data/workspaces/. Not a broker store.",
+        )
+    save_clicked = c5.button("Save current", use_container_width=True)
+    with c6:
+        conf = float(
+            st.number_input(
+                "Min conf",
+                min_value=0.0,
+                max_value=1.0,
+                step=0.05,
+                format="%.2f",
+                key="ws_min_conf",
+                help="Board display floor overlay (signals.min_confidence in memory). "
+                "Does not rewrite config/default.yaml.",
+            )
+        )
+
+    if current_name and "_ws_min_conf_saved" in st.session_state:
+        prev = st.session_state.get("_ws_min_conf_saved")
+        if prev is not None and abs(float(prev) - conf) > 1e-9:
+            try:
+                save_active(current_name, min_confidence=conf)
+                st.session_state["_ws_min_conf_saved"] = conf
+            except WorkspaceError as exc:
+                st.error(str(exc))
+    elif current_name:
+        st.session_state["_ws_min_conf_saved"] = conf
+
+    bits = ["Workspace presets switch **pairs / TF / refresh / min conf** only."]
+    if current_name:
+        iv = (active.interval if active is not None else None) or wl.lab_interval(cfg)
+        bits.append(
+            f"Active **{labels.get(current_name, current_name)}** · TF {iv} · "
+            f"min conf {conf:.2f}."
+        )
+    bits.append("Paper journal and BrokerPort stay put. Clocks **Asia/Dhaka**.")
+    st.caption(" ".join(bits))
+
+    if apply_clicked and names:
+        try:
+            ws = next((p for p in presets if p.name == pick), None) or presets[0]
+            if current_name == pick and abs(conf - float(ws.min_confidence or conf)) > 1e-9:
+                ws.min_confidence = conf
+            apply_workspace(ws, cfg=cfg)
+            _after_workspace_change(ws)
+        except WorkspaceError as exc:
+            st.error(str(exc))
+    if reset_clicked and names:
+        try:
+            target = pick if pick in names else (current_name or names[0])
+            wl_reset = reset_workspace(str(target), cfg=cfg)
+            restored = next((p for p in list_workspaces() if p.name == target), None)
+            if restored is None:
+                restored = Workspace(
+                    name=str(target),
+                    pairs=wl_reset.pair_symbols(),
+                    interval=wl_reset.interval,
+                    refresh_seconds=wl_reset.refresh_seconds,
+                    min_confidence=conf,
+                )
+            _after_workspace_change(restored)
+        except WorkspaceError as exc:
+            st.error(str(exc))
+    if save_clicked:
+        try:
+            ws = capture_current(
+                wl,
+                name=str(save_as or "custom"),
+                cfg=cfg,
+                min_confidence=conf,
+            )
+            save_workspace(ws)
+            apply_workspace(ws, cfg=cfg)
+            _after_workspace_change(ws)
+        except (WorkspaceError, WatchlistError) as exc:
+            st.error(str(exc))
+
+
 def render_watch_board(cfg) -> None:
     """Top-of-page multi-pair research board + persisted watchlist controls."""
     if st.session_state.pop("watch_clear_typed", False):
@@ -1305,6 +1462,7 @@ def render_watch_board(cfg) -> None:
         f"Dense board — seconds to decide. Lab timeframe **{lab_iv}**. "
         f"Click a pair for the detail drawer. Watchlist: `{watchlist_path()}`."
     )
+    _render_workspace_bar(cfg, wl)
     with st.expander("Column help (research only)"):
         st.markdown(BOARD_HELP)
 
@@ -1325,15 +1483,18 @@ def render_watch_board(cfg) -> None:
     )
     bcfg = board_cfg(cfg)
     default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
+    if "board_refresh_s" not in st.session_state:
+        st.session_state["board_refresh_s"] = max(60, int(wl.refresh_seconds) or default_rt)
     seconds = int(
         c_secs.number_input(
             "Refresh (s)",
             min_value=60,
             max_value=3600,
-            value=max(60, int(wl.refresh_seconds) or default_rt),
             step=30,
+            key="board_refresh_s",
             help="Realtime poll interval. Default 60s so yfinance is not hammered "
-            "(unofficial API, no SLA; 1h bars do not need faster OHLCV).",
+            "(unofficial API, no SLA; 1h bars do not need faster OHLCV). "
+            "Workspace presets can switch this.",
         )
     )
     if seconds != int(wl.refresh_seconds):
@@ -1601,6 +1762,16 @@ def render_watch_board(cfg) -> None:
 def render() -> None:
     _init_state()
     cfg = load_config()
+    active_ws = resolve_active_workspace()
+    if "ws_min_conf" in st.session_state:
+        if active_ws is None:
+            active_ws = Workspace(
+                name="session",
+                min_confidence=float(st.session_state["ws_min_conf"]),
+            )
+        else:
+            active_ws.min_confidence = float(st.session_state["ws_min_conf"])
+    cfg = overlay_config(cfg, active_ws)
     pairs = ui_pairs(cfg)
     default_period = str(cfg.get("period") or "2y")
     default_interval = str(cfg.get("interval") or "1h")

@@ -17,3 +17,5 @@ data/fred_cache/
 data/paper_broker.json
 data/paper_broker.json.tmp
 data/alert_state.json
+# user workspace presets + last-applied pointer (builtins live in config/workspaces/)
+data/workspaces/

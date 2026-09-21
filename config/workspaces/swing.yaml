@@ -1,0 +1,13 @@
+# Swing workspace — majors + AUD, 1h lab TF. Board view only.
+# Apply from the Streamlit desk. Does not rewrite config/default.yaml,
+# the paper journal (data/paper_broker.json), or BrokerPort.
+name: swing
+label: Swing
+pairs:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+  - AUDUSD
+interval: 1h
+refresh_seconds: 120
+min_confidence: 0.40
