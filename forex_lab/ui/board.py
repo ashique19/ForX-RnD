@@ -32,8 +32,10 @@ from forex_lab.mtf import (
     assess_mtf,
     conflict_flash_mode,
 )
+from forex_lab.session import SessionState, classify_session
 from forex_lab.signals import generate_signals
 from forex_lab.ui.pipeline import artifact_status, load_signals
+from forex_lab.ui.quote import QuoteView, quote_from_ohlcv
 from forex_lab.ui.watchlist import Watchlist
 
 NEED_FETCH_TRAIN = "need Fetch/Train"
@@ -99,14 +101,21 @@ class BoardRow:
     risk: RiskBox | None = None
     mtf: MtfStatus | None = None
     flash_weak: bool = False
+    quote: QuoteView | None = None
+    session: SessionState | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
         mtf_label = self.mtf.status if self.mtf is not None else "n/a"
+        q = self.quote
+        sess = self.session.badge() if self.session is not None else "n/a"
         return {
             "Pair": self.pair,
             "Timeframe": self.timeframe,
             "Validity": self.validity,
+            "Last": q.as_table_last() if q is not None else "n/a",
+            "Spread": q.as_table_spread() if q is not None else "n/a",
+            "Session": sess,
             "Buy/Sell": self.buy_sell,
             "MTF": mtf_label,
             "Target": self.target,
@@ -270,12 +279,27 @@ def sparkline_closes(ohlcv: pd.DataFrame | None, n: int = SPARKLINE_BARS) -> lis
     return [float(x) for x in s.tail(max(2, int(n))).tolist()]
 
 
+def attach_quote_session(
+    row: BoardRow,
+    ohlcv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+    *,
+    now: Any = None,
+) -> BoardRow:
+    """Last/mid + config spread + clock session. No invented bid/ask."""
+    row.quote = quote_from_ohlcv(ohlcv, row.pair, cfg)
+    row.session = classify_session(now, cfg)
+    return row
+
+
 def attach_visuals(
     row: BoardRow,
     ohlcv: pd.DataFrame | None,
     cfg: dict[str, Any],
+    *,
+    now: Any = None,
 ) -> BoardRow:
-    """Sparkline + risk box from cached bars. Never invents prices."""
+    """Sparkline + risk box + quote/session from cached bars. Never invents prices."""
     n = int((cfg.get("board") or {}).get("sparkline_bars") or SPARKLINE_BARS)
     if row.validity in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR} or ohlcv is None or ohlcv.empty:
         row.sparkline = []
@@ -292,6 +316,7 @@ def attach_visuals(
             else "no sparkline — close series empty"
         )
     row.risk = research_risk(ohlcv, cfg, row.buy_sell, validity=row.validity)
+    attach_quote_session(row, ohlcv, cfg, now=now)
     return attach_mtf(row, ohlcv, cfg)
 
 
@@ -416,7 +441,7 @@ def row_from_signal(
         last_signal_at=_fmt_when(get("datetime")),
         validity=VALIDITY_OK,
     )
-    return apply_mtf_flash(attach_visuals(row, ohlcv, cfg), cfg)
+    return apply_mtf_flash(attach_visuals(row, ohlcv, cfg, now=None), cfg)
 
 
 def _status_row(
@@ -554,6 +579,7 @@ def build_board_row(
             ),
             None,
             cfg,
+            now=clock,
         )
     if not status.get("model_exists"):
         ohlcv_only = load_cached_ohlcv(pair, cfg, interval)
@@ -575,6 +601,7 @@ def build_board_row(
             apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at),
             ohlcv_only,
             cfg,
+            now=clock,
         )
 
     ohlcv = load_cached_ohlcv(pair, cfg, interval)
@@ -592,6 +619,7 @@ def build_board_row(
             ),
             None,
             cfg,
+            now=clock,
         )
 
     last: pd.Series | dict[str, Any] | None = None
@@ -614,6 +642,7 @@ def build_board_row(
                 ),
                 ohlcv,
                 cfg,
+                now=clock,
             )
         except Exception as exc:  # noqa: BLE001 — surface as row status
             fresh_e = assess_ohlcv(ohlcv, interval, cfg, now=clock)
@@ -630,7 +659,7 @@ def build_board_row(
                 last_bar_at=fresh_e.last_bar_label,
                 last_fetch_at=fetch_at if fetch_at != "n/a" else None,
             )
-            return attach_visuals(row, ohlcv, cfg)
+            return attach_visuals(row, ohlcv, cfg, now=clock)
         if sigs is None or sigs.empty:
             return attach_visuals(
                 _status_row(
@@ -645,6 +674,7 @@ def build_board_row(
                 ),
                 ohlcv,
                 cfg,
+                now=clock,
             )
         last = sigs.iloc[-1]
 
@@ -662,6 +692,7 @@ def build_board_row(
         apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None),
         ohlcv,
         cfg,
+        now=clock,
     )
     return apply_mtf_flash(row, cfg)
 
@@ -690,8 +721,23 @@ def build_board_rows(
     return rows
 
 
+BOARD_TABLE_COLS = [
+    "Pair",
+    "Timeframe",
+    "Validity",
+    "Last",
+    "Spread",
+    "Session",
+    "Buy/Sell",
+    "MTF",
+    "Target",
+    "Last bar",
+    "Signal details",
+]
+
+
 def board_table(rows: list[BoardRow]) -> pd.DataFrame:
-    cols = ["Pair", "Timeframe", "Validity", "Buy/Sell", "MTF", "Target", "Last bar", "Signal details"]
+    cols = list(BOARD_TABLE_COLS)
     if not rows:
         return pd.DataFrame(columns=cols)
     return pd.DataFrame([r.as_table_dict() for r in rows])
@@ -745,6 +791,23 @@ def style_board(df: pd.DataFrame):
                     return ""
 
                 styler = mapper(_mtf, subset=["MTF"])
+            if "Session" in df.columns:
+
+                def _sess(val: object) -> str:
+                    v = str(val).upper()
+                    if v in {"CLOSED", "OFF", "N/A"}:
+                        return "background-color: #e2e8f0; color: #334155; font-weight: 700"
+                    if "+" in v:
+                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
+                    if v == "ASIA":
+                        return "background-color: #e0e7ff; color: #3730a3; font-weight: 700"
+                    if v == "LONDON":
+                        return "background-color: #dbeafe; color: #1e40af; font-weight: 700"
+                    if v == "NY":
+                        return "background-color: #ccfbf1; color: #115e59; font-weight: 700"
+                    return "background-color: #e2e8f0; color: #334155; font-weight: 700"
+
+                styler = mapper(_sess, subset=["Session"])
         return styler
     except Exception:
         return df

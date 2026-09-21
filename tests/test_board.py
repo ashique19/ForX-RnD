@@ -6,10 +6,12 @@ import types
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from forex_lab.config_loader import load_config
 from forex_lab.data import generate_synthetic_ohlcv, try_yfinance_refresh
 from forex_lab.ui.board import (
+    BOARD_TABLE_COLS,
     NEED_FETCH_TRAIN,
     board_table,
     build_board_row,
@@ -19,6 +21,7 @@ from forex_lab.ui.board import (
     row_from_signal,
     sparkline_closes,
 )
+from forex_lab.ui.quote import quote_from_ohlcv
 from forex_lab.ui.watchlist import WatchItem, Watchlist
 
 
@@ -89,17 +92,27 @@ def test_row_from_signal_fills_table_fields():
     assert "conf=0.5100" in row.signal_details
     assert "xgboost" in row.signal_details
     table = board_table([row])
-    assert list(table.columns) == [
-        "Pair",
-        "Timeframe",
-        "Validity",
-        "Buy/Sell",
-        "MTF",
-        "Target",
-        "Last bar",
-        "Signal details",
-    ]
+    assert list(table.columns) == BOARD_TABLE_COLS
     assert table.iloc[0]["Buy/Sell"] == "SELL"
+    assert "last/mid-ish" in table.iloc[0]["Last"]
+    assert "pip (config)" in table.iloc[0]["Spread"]
+    assert table.iloc[0]["Session"] in {
+        "ASIA",
+        "LONDON",
+        "NY",
+        "LONDON+NY",
+        "ASIA+LONDON",
+        "ASIA+NY",
+        "ASIA+LONDON+NY",
+        "CLOSED",
+        "OFF",
+    }
+    assert row.quote is not None and row.quote.available
+    assert row.quote.bid is None and row.quote.ask is None
+    assert row.quote.mid == row.quote.last
+    assert "yfinance" in row.quote.note.lower()
+    assert "not broker" in row.quote.note.lower()
+    assert row.session is not None
     assert row.risk is not None and row.risk.available
     assert row.risk.sl is not None and row.risk.tp is not None
     assert row.risk.rr == 1.0
@@ -138,6 +151,42 @@ def test_sparkline_from_cache_empty_when_no_bars():
     assert 2 <= len(pts) <= 24
     assert sparkline_closes(None) == []
     assert sparkline_closes(pd.DataFrame()) == []
+
+
+def test_quote_last_mid_ish_and_config_spread_not_bid_ask():
+    df = generate_synthetic_ohlcv(bars=40, seed=3)
+    cfg = {"spread_pips": 1.5, "pip_size": 0.0001, "board": {"quote": {"bar_range_proxy": True}}}
+    q = quote_from_ohlcv(df, "EURUSD", cfg)
+    assert q.available
+    assert q.last == float(df["Close"].iloc[-1])
+    assert q.mid == q.last
+    assert q.bid is None and q.ask is None
+    assert q.kind == "last/mid-ish"
+    assert q.spread_pips == 1.5
+    assert q.spread_price == pytest.approx(1.5 * 0.0001)
+    assert q.range_pips is not None and q.range_pips > 0
+    assert "not a bid/ask" in q.range_note.lower()
+    assert "not broker bid/ask" in q.note.lower()
+
+
+def test_quote_jpy_digits_and_pip_and_optional_mid_from_bid_ask():
+    df = generate_synthetic_ohlcv(pair="USDJPY", bars=30, seed=2)
+    q = quote_from_ohlcv(df, "USDJPY", {"spread_pips": 1.0})
+    assert q.digits == 3
+    assert q.pip_size == 0.01
+    assert q.spread_price == pytest.approx(0.01)
+    labeled = df.copy()
+    last = float(labeled["Close"].iloc[-1])
+    labeled["Bid"] = last - 0.01
+    labeled["Ask"] = last + 0.01
+    mid = quote_from_ohlcv(labeled, "USDJPY", {"spread_pips": 1.0})
+    assert mid.kind == "mid"
+    assert mid.bid is not None and mid.ask is not None
+    assert mid.mid == pytest.approx((mid.bid + mid.ask) / 2.0)
+    empty = quote_from_ohlcv(None, "EURUSD", {"spread_pips": 2.0})
+    assert empty.available is False
+    assert empty.spread_pips == 2.0
+    assert empty.as_table_last() == "n/a"
 
 
 def test_missing_cache_row_has_empty_sparkline_and_na_risk(tmp_path):
@@ -229,6 +278,32 @@ def test_board_row_eurusd_uses_existing_signals_csv():
         assert "stale" in row.signal_details.lower()
     assert row.last_bar_at
     assert row.target != ""
+    assert row.quote is not None
+    assert row.session is not None
+    if row.quote.available:
+        assert "last/mid-ish" in row.quote.kind or row.quote.kind == "mid"
+        assert row.quote.bid is None
+
+
+def test_board_row_session_follows_clock_not_last_bar():
+    from datetime import datetime
+
+    overlap = build_board_row(
+        "EURUSD",
+        refresh_data=False,
+        regenerate=False,
+        now=datetime(2026, 9, 21, 14, 30, 0),
+    )
+    assert overlap.session is not None
+    assert overlap.session.badge() == "LONDON+NY"
+    weekend = build_board_row(
+        "EURUSD",
+        refresh_data=False,
+        regenerate=False,
+        now=datetime(2026, 9, 19, 12, 0, 0),
+    )
+    assert weekend.session is not None
+    assert weekend.session.badge() == "CLOSED"
 
 
 def test_build_board_rows_mixed_status(tmp_path):
@@ -239,3 +314,5 @@ def test_build_board_rows_mixed_status(tmp_path):
     assert all(r.status == "need_fetch" for r in rows)
     table = board_table(rows)
     assert list(table["Pair"]) == ["GBPUSD", "AUDUSD"]
+    assert list(table.columns) == BOARD_TABLE_COLS
+    assert "Last" in table.columns and "Spread" in table.columns and "Session" in table.columns

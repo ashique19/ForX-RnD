@@ -7,7 +7,8 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 ## Disclaimer
 
 - Not financial advice. For education / research only.
-- `yfinance` FX data (`EURUSD=X`, etc.) is **not** the same as your broker’s executable quotes (spreads, liquidity, session gaps differ).
+- `yfinance` FX data (`EURUSD=X`, etc.) is **not** the same as your broker’s executable quotes (spreads, liquidity, session gaps differ). The watchlist **Last** is last/mid-ish from that cache; **Spread** is the config pip estimate; **Session** is a UTC clock badge — none of these are live broker truth.
+- Paper uPnL is a local mark vs last/mid-ish — **not** live broker PnL. `BrokerPort` is unchanged.
 - Past backtest metrics **do not** predict future results.
 - Always paper-trade and validate independently before risking capital.
 - Beating SMA / always-long in this lab is a **research signal**, not a deployable edge (slippage, weekend gaps, and broker quotes are not modeled).
@@ -64,17 +65,23 @@ If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. 
 
 A **trader-facing signal screen** on **localhost:8501**. Math analysis + news context flash **BUY / SELL / HOLD** with details so **you** decide. It calls the same `forex_lab` functions as the CLI. **No live broker APIs, no auto-trading.** Paper Buy/Sell/Close talks only to a `BrokerPort` (default `PaperBroker`).
 
-The top of the page is the **signal screen** (primary): one flash card per watchlist pair — **Pair | Timeframe | Validity | Buy/Sell (color badge) | Target | Sparkline | Risk | Signal details | News context**. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
+The top of the page is the **signal screen** (primary): one flash card per watchlist pair — **Pair | Timeframe | Last (mid-ish) | Spread | Session | Validity | Buy/Sell (color badge) | Target | Sparkline | Risk | Signal details | News context**. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
 
 **Realtime** (default **60s**, minimum 60s): rebuilds signals from the **local** cache each tick. yfinance is called only when a bar is due or the cache is approaching stale, **one pair per tick**, with exponential backoff after errors or 429-like responses. Yahoo’s download endpoint is unofficial and has no SLA — 60–120s is the practical band; do not set this like a broker stream. A **rate limited — backing off until …** banner appears if throttled. Realtime off: **Manual update** only.
 
 **Data validity:** each card shows `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last candle older than ~2× the timeframe is **STALE** and the flash is **—** plus “data stale — refresh required” (the last model class is kept as a note, not as a live call). Weekends / Friday after ~21:00 UTC show **CLOSED** with last bar time — not a false STALE alarm. Last bar, last fetch, and last signal times are on the card; the board shows **board last refreshed at …**.
 
+**Last / mid:** each card and the table **Last** column show the cached yfinance **close** as **last/mid-ish**. Yahoo FX is not a bid/ask book and is **not** your broker’s executable quote. Mid from Bid/Ask is used only if those columns exist (they do not on the default yfinance path). Do not read this as live broker last.
+
+**Spread estimate:** `spread_pips` from `config/default.yaml` (same pip assumption as backtest) as **cost context** — not a live broker spread. Optional last-bar High−Low is shown as a **bar range (not a bid/ask spread)** when `board.quote.bar_range_proxy` is true.
+
+**Session:** a clock badge **ASIA / LONDON / NY** (overlap **LONDON+NY**) from UTC windows in `board.sessions` (defaults: Asia 21:00–07:00 wrapping so Sunday open is not OFF, London 07:00–16:00, NY 13:00–21:00). Weekend / Friday after ~21:00 UTC → **CLOSED**. This is a desk scan, not a venue calendar. Feature-flag hours in the model (`sess_asia` 00–07, etc.) are unchanged.
+
 **Sparkline / Risk:** each card plots the last ~48 cached closes (empty when STALE/MISSING — no invented prices) and a **Risk** panel with ATR SL/TP (same `barrier` config as labels/backtest), R:R, and config spread. Entry is last close as a **proxy** for next-open. Copy states research suggestion only — no lot size, no auto-submit, no live broker order. HOLD or STALE/MISSING → risk n/a.
 
 **Awareness (v0):** a one-line **Feeds:** strip plus expander **Awareness / data health** lists each watchlist OHLCV feed and the news lane: what is observed, refresh cadence (realtime interval vs manual), last successful update, and OK/STALE/FAIL. The expander opens itself when anything is STALE/FAIL/MISSING. Not a full registry — no daily digest or weekly retrain.
 
-**Paper portfolio:** **Paper BUY / SELL / CLOSE** on each card record a dummy fill at the last cached close into `data/paper_broker.json` (gitignored). The UI talks only to `forex_lab.broker.BrokerPort`. Default implementation is `PaperBroker` (`broker.backend: paper` — the only supported value). Open positions mark-to-market from later bars and auto-close when the same ATR TP/SL (or horizon timeout) would hit; outcomes are PENDING / RIGHT / WRONG / TIMEOUT / FLAT. The journal expander filters wrong trades and shows error rate by pair, session, STALE-vs-OK, and confidence bucket, plus short “how to improve” notes. This is a practice desk that pretends to be a real book — **not** linked to any broker. A future `mt5` / `oanda` class would implement the same four methods (`submit`, `close`, `list_positions`, `list_fills`); this repo does not store API keys or wire live orders.
+**Paper portfolio:** **Paper BUY / SELL / CLOSE** on each card record a dummy fill at the last cached close into `data/paper_broker.json` (gitignored). The UI talks only to `forex_lab.broker.BrokerPort`. Default implementation is `PaperBroker` (`broker.backend: paper` — the only supported value). Open positions mark-to-market from later bars and auto-close when the same ATR TP/SL (or horizon timeout) would hit; outcomes are PENDING / RIGHT / WRONG / TIMEOUT / FLAT. Unrealized is a **paper mark vs last/mid-ish cache**, not live broker PnL. The journal expander filters wrong trades and shows error rate by pair, session, STALE-vs-OK, and confidence bucket, plus short “how to improve” notes. This is a practice desk that pretends to be a real book — **not** linked to any broker. A future `mt5` / `oanda` class would implement the same four methods (`submit`, `close`, `list_positions`, `list_fills`); this repo does not store API keys or wire live orders. `BrokerPort` / `PaperBroker` methods are unchanged.
 
 **News lane (v1):** Google News RSS search per pair (no API key). Shows a few recent headlines (title, time, link) plus a short bullish/bearish/mixed/unclear note from a keyword heuristic on those titles only — it never invents articles. Labeled **news context, not a trade instruction**. Cache: `data/news_cache.json` (gitignored), default TTL **300s**, HTTP timeout **6s**. Be polite to the feed; if fetch fails, the math board still renders with an empty news state.
 
@@ -161,6 +168,8 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `signals.sessions` — optional UTC session allow-list (`london`, `ny`, `asia`). Empty = all hours. London+NY-only **hurt** EURUSD vs the unfiltered model.
 - `signals.htf_trend_filter` — optional higher-timeframe SMA-slope agreement (`4h` / `1D`). **Default off**: session/vol-style filters hurt EURUSD in prior screens.
 - `board.mtf_confirm` — UI badge (`agree` / `conflict` / `n/a`) from causal H4 (or D1) SMA slope. `conflict_flash: off|weaken|hold` (default **off**).
+- `board.sessions` — UTC windows for the watchlist **ASIA / LONDON / NY** clock badge (end exclusive; `asia: [21, 7]` wraps midnight). Independent of model `sess_*` columns.
+- `board.quote` — last/mid-ish label, source note, and whether to show last-bar High−Low as a labeled range proxy.
 - `feature_extras.pandas_ta.enabled` — extra TA columns (default **off**). Native backend; optional `pandas_ta` if the package is installed.
 - `feature_extras.fred.enabled` — FRED as-of macro columns (default **off**). `FRED_API_KEY` is optional; CSV works without it. Fail-soft if offline.
 - `calendar` / `advice` — event calendar source URL, impact filter, cache TTL, before/during/after minutes, flatten keywords, and whether open positions get hold / close / tighten-SL cards. Advice never auto-submits.
@@ -207,7 +216,7 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 ## Config
 
-Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, and `board.mtf_confirm`.
+Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, and `board.quote`.
 
 ## Connecting a live broker later
 
@@ -228,7 +237,7 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, the pandas-ta subset (causal / default-off), and FRED as-of lag plus fail-soft when the cache is missing (no network).
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, the pandas-ta subset (causal / default-off), and FRED as-of lag plus fail-soft when the cache is missing (no network).
 
 ## Project layout
 
@@ -247,6 +256,7 @@ forex_lab/
   calendar.py    # unofficial FF weekly JSON + cache (UI; fail-soft)
   advise.py      # no-new-open / hold / close / tighten-SL cards (not orders)
   mtf.py         # causal HTF SMA-slope badge + optional conflict flash
+  session.py     # Asia/London/NY clock badge (configurable UTC windows)
   broker.py      # BrokerPort + PaperBroker (practice fills; no live venue)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report

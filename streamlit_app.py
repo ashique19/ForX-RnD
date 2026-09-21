@@ -18,12 +18,15 @@ from forex_lab.paths import project_root
 from forex_lab.advise import Suggestion, suggest_actions
 from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MtfStatus
 from forex_lab.ui.board import (
+    BOARD_TABLE_COLS,
     board_table,
     build_board_row,
     research_risk,
     research_target,
     style_board,
 )
+from forex_lab.session import SessionState, classify_session
+from forex_lab.ui.quote import QuoteView
 from forex_lab.fred import fred_feed_status
 from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
 from forex_lab.ui.pipeline import (
@@ -86,6 +89,10 @@ DISCLAIMER = (
     "not an official Fed/BLS/ECB schedule, not a trade instruction. "
     "Advisory cards (no new opens / hold / close / tighten SL) never auto-submit via BrokerPort. "
     "MTF badges use causal higher-TF SMA slope on the same CSV — not a live trend service. "
+    "Last on the board is yfinance **last/mid-ish**, not executable bid/ask. "
+    "Spread is the **config pip estimate** (cost context), not your broker’s live spread. "
+    "Session is a UTC clock badge (Asia/London/NY windows in config) — not a venue calendar. "
+    "Paper uPnL is a local mark vs that last/mid-ish cache — **not** live broker PnL. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
     "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket."
@@ -101,6 +108,18 @@ A per-pair override can be set when adding.
 During a liquid FX session, a last bar older than ~2× the timeframe is **STALE**.
 Weekends / Friday after ~21:00 UTC show **CLOSED** (last bar + “market likely closed”),
 not a false STALE panic. STALE/MISSING flash **—** with a reason — not a live BUY/SELL.
+
+**Last** — cached yfinance close shown as **last/mid-ish**. Yahoo FX is not a bid/ask
+book; this is not your broker’s executable quote. Mid is labeled only when Bid/Ask
+columns exist (they do not on the default yfinance path).
+
+**Spread** — `spread_pips` from `config/default.yaml` as **cost context** (same pip
+assumption as backtest). Optional last-bar High−Low is a **range proxy**, labeled
+as such — not a live spread.
+
+**Session** — Asia / London / NY from the **clock** (UTC windows under `board.sessions`,
+overlap shown as LONDON+NY). Weekend / Friday after ~21:00 UTC → CLOSED. Not a
+broker session calendar.
 
 **Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`.
 Color badge is a research label, **not** an order. Only flashed when validity is OK or CLOSED.
@@ -263,6 +282,65 @@ def _signal_badge(sig: str, *, weak: bool = False) -> None:
         f'box-shadow:0 0 0 1px rgba(0,0,0,0.08);opacity:{0.72 if weak else 1}">{label}</div>',
         unsafe_allow_html=True,
     )
+
+
+def _session_badge(session: SessionState | None, *, show_note: bool = False) -> None:
+    if session is None:
+        name = "n/a"
+        note = "session n/a"
+    else:
+        name = session.badge()
+        note = session.note
+    colors = {
+        "ASIA": "#3730a3",
+        "LONDON": "#1d4ed8",
+        "NY": "#0f766e",
+        "ASIA+LONDON": "#1e3a8a",
+        "LONDON+NY": "#b45309",
+        "ASIA+NY": "#6d28d9",
+        "ASIA+LONDON+NY": "#b45309",
+        "CLOSED": "#475569",
+        "OFF": "#57534e",
+        "N/A": "#57534e",
+    }
+    bg = colors.get(name, "#334155")
+    st.markdown(
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.75rem;'
+        f"letter-spacing:0.08em;text-align:center;padding:4px 8px;border-radius:6px;"
+        f'display:inline-block">{name}</div>',
+        unsafe_allow_html=True,
+    )
+    if show_note and note:
+        st.caption(note)
+
+
+def _render_quote_strip(row) -> None:
+    """Last / spread / session — scan in seconds. Not a broker ticker."""
+    q: QuoteView | None = getattr(row, "quote", None)
+    last_txt = q.last_label() if q is not None else "n/a"
+    kind = (q.kind if q is not None else "last/mid-ish") or "last/mid-ish"
+    spr = q.spread_label() if q is not None else "n/a"
+    st.markdown(
+        f'<div style="font-variant-numeric:tabular-nums;line-height:1.15">'
+        f'<div style="font-size:1.35rem;font-weight:800;letter-spacing:0.02em">{last_txt}</div>'
+        f'<div style="font-size:0.72rem;color:#64748b;font-weight:600">{kind}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    s1, s2 = st.columns(2)
+    with s1:
+        st.markdown(
+            f'<div style="background:#0f172a;color:#e2e8f0;font-weight:700;font-size:0.72rem;'
+            f"letter-spacing:0.04em;text-align:center;padding:4px 6px;border-radius:6px\">"
+            f"SPR {spr} cfg</div>",
+            unsafe_allow_html=True,
+        )
+    with s2:
+        _session_badge(getattr(row, "session", None), show_note=False)
+    if q is not None:
+        st.caption(q.note)
+        if q.range_pips is not None:
+            st.caption(f"bar range {q.range_pips:.1f}p · {q.range_note}")
 
 
 def _mtf_badge(mtf: MtfStatus | None) -> None:
@@ -517,6 +595,7 @@ def _render_paper_actions(
             f"{_fmt_num(open_pos['entry_price'], 5)}  ·  "
             f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  {open_pos.get('outcome') or 'PENDING'}"
         )
+        st.caption("paper mark vs last/mid-ish cache — not live broker PnL")
         if st.button("Paper CLOSE", key=f"paper_close_{row.pair}_{row.timeframe}", use_container_width=True):
             try:
                 if price is None:
@@ -601,6 +680,7 @@ def _render_paper_journal(broker: BrokerPort) -> None:
     b2.metric("Unrealized (paper)", _fmt_num(unreal, 5))
     b3.metric("Realized (paper)", _fmt_num(realized, 5))
     b4.metric("Fills", str(len(fills)))
+    st.caption("Paper marks use last/mid-ish cache — not live broker PnL.")
     if positions:
         st.markdown("**Open book**")
         st.dataframe(
@@ -866,6 +946,12 @@ def render_watch_board(cfg) -> None:
         refreshed = st.session_state.get("board_last_refreshed")
         if refreshed:
             st.caption(f"Board last refreshed at {refreshed} (local process clock, UTC).")
+        board_sess = classify_session(cfg=cfg)
+        st.caption(
+            f"Session **{board_sess.badge()}** · {board_sess.note}. "
+            "Last is yfinance last/mid-ish — not broker bid/ask. "
+            "Spread is the config pip estimate (cost context)."
+        )
 
         news_map: dict = {}
         try:
@@ -950,6 +1036,7 @@ def render_watch_board(cfg) -> None:
                     with left:
                         st.markdown(f"### {row.pair}")
                         st.caption(f"Timeframe **{row.timeframe}**")
+                        _render_quote_strip(row)
                         _validity_badge(row.validity)
                         _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)))
                         _mtf_badge(getattr(row, "mtf", None))
@@ -1010,11 +1097,24 @@ def render_watch_board(cfg) -> None:
                     with st.expander("Drivers, rules, rationale, headlines"):
                         st.markdown(
                             f"- **Buy/Sell:** {row.buy_sell}  \n"
+                            f"- **Last:** {(row.quote.as_table_last() if row.quote else 'n/a')}  \n"
+                            f"- **Spread:** {(row.quote.as_table_spread() if row.quote else 'n/a')}  \n"
+                            f"- **Session:** {(row.session.badge() if row.session else 'n/a')}  \n"
                             f"- **MTF:** {(row.mtf.as_label() if row.mtf else 'n/a')}  \n"
                             f"- **Target:** {row.target}  \n"
                             f"- **Confidence / edge:** conf={row.confidence} · dir_edge={row.dir_edge}  \n"
                             f"- **p_buy / p_sell / p_hold:** {row.p_buy} / {row.p_sell} / {row.p_hold}"
                         )
+                        if row.quote is not None:
+                            st.caption(row.quote.note)
+                            if row.quote.range_note:
+                                st.caption(
+                                    f"bar range "
+                                    f"{'n/a' if row.quote.range_pips is None else f'{row.quote.range_pips:.1f}p'}"
+                                    f" · {row.quote.range_note}"
+                                )
+                        if row.session is not None and row.session.note:
+                            st.caption(row.session.note)
                         if row.target_note:
                             st.caption(row.target_note)
                         _render_risk(row)
@@ -1049,7 +1149,8 @@ def render_watch_board(cfg) -> None:
                     _render_paper_journal(broker)
 
             table = board_table(rows)
-            with st.expander("Table view (Pair | Timeframe | Validity | Buy/Sell | MTF | Target | Last bar | Signal details)"):
+            cols_help = " | ".join(BOARD_TABLE_COLS)
+            with st.expander(f"Table view ({cols_help})"):
                 try:
                     st.dataframe(style_board(table), use_container_width=True, hide_index=True)
                 except Exception:

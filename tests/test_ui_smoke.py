@@ -163,3 +163,7 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "non-farm" in low or "nfp" in low
     assert "mtf" in low
     assert "advisory" in low or "not an order" in low or "never auto-submitted" in low
+    assert "last/mid-ish" in low or "mid-ish" in low
+    assert "spread" in low
+    assert "session" in low
+    assert "not broker bid/ask" in low or "not broker" in low

@@ -204,6 +204,14 @@ board:
   incremental_period: "5d" # short Yahoo window; merged into the existing CSV
   incremental_min_bars: 20
   sparkline_bars: 48        # cached closes on each watchlist card
+  quote:
+    last_label: last/mid-ish   # yfinance FX has no bid/ask
+    source_note: "yfinance last/mid-ish — not broker bid/ask"
+    bar_range_proxy: true      # last High−Low in pips; labeled range, not spread
+  sessions:                    # UTC hours, end exclusive; start>end wraps midnight
+    asia: [21, 7]              # Sydney/Tokyo so Sunday 21:00 open is not OFF
+    london: [7, 16]
+    ny: [13, 21]
   mtf_confirm:
     enabled: true
     timeframes: ["4h"]     # causal SMA slope from the same pair CSV (add "1D" if wanted)
