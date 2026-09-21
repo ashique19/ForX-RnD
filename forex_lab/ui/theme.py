@@ -363,6 +363,26 @@ def chrome_card_head_html(title: str, *, expanded: bool = False, note: str = "")
     )
 
 
+def nav_clock_html(
+    stamp: str,
+    *,
+    short_tag: str = "BD",
+    long_tag: str = "Asia/Dhaka",
+) -> str:
+    """Date + time + short TZ for the slim top nav (right). Asia/Dhaka clocks."""
+    short = _esc(str(short_tag or "BD"))
+    long = _esc(str(long_tag or "Asia/Dhaka"))
+    return (
+        f'<div class="fx-nav-clock" title="{long}">'
+        f'<span class="fx-clock">{_esc(str(stamp or "—"))}</span>'
+        f'<span class="fx-tz-row">'
+        f'<span class="fx-tz">{short}</span>'
+        f'<span class="fx-tz-sep">·</span>'
+        f'<span class="fx-tz-long">{long}</span>'
+        f"</span></div>"
+    )
+
+
 def section_head_html(kicker: str, title: str, *, note: str = "") -> str:
     extra = f'<span class="fx-section-note">{_esc(note)}</span>' if note else ""
     return (
@@ -1412,6 +1432,45 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {
   padding: 4px 0 14px;
   margin: 0 0 18px;
   border-bottom: 1px solid var(--fx-border-strong);
+}
+.fx-nav-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 2px 0 6px;
+  line-height: 1.15;
+  width: 100%;
+}
+.fx-nav-clock .fx-clock {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--fx-text-bright);
+  white-space: nowrap;
+}
+.fx-nav-clock .fx-tz-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 2px;
+}
+.fx-nav-clock .fx-tz {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fx-buy);
+}
+.fx-nav-clock .fx-tz-sep { color: var(--fx-border-strong); font-weight: 700; }
+.fx-nav-clock .fx-tz-long {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--fx-muted);
+  text-transform: none;
 }
 .fx-nav-gap {
   height: 1.15rem;

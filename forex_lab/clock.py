@@ -29,6 +29,20 @@ def timezone_tag(cfg: dict[str, Any] | None = None) -> str:
     return tag or DEFAULT_TZ_TAG
 
 
+def timezone_short_tag(cfg: dict[str, Any] | None = None) -> str:
+    """Compact zone label for the slim nav clock (BD for Asia/Dhaka)."""
+    ui = dict((cfg or {}).get("ui") or {})
+    explicit = str(ui.get("timezone_short") or "").strip()
+    if explicit:
+        return explicit
+    if timezone_name(cfg) == DEFAULT_TIMEZONE:
+        return "BD"
+    tag = timezone_tag(cfg)
+    if "/" in tag:
+        return tag.rsplit("/", 1)[-1]
+    return tag or DEFAULT_TZ_TAG
+
+
 def zoneinfo_for(cfg: dict[str, Any] | None = None) -> ZoneInfo:
     name = timezone_name(cfg)
     try:

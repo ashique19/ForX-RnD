@@ -179,6 +179,7 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "session" in low
     assert "not broker bid/ask" in low or "not broker" in low
     assert "asia/dhaka" in low or "dhaka" in low
+    assert "fx-nav-clock" in joined
     assert "alert sound" in low or "alerts" in low
     assert "not a live edge" in low or "paper right/wrong" in low
     assert "data●" in low or "next event" in low

@@ -17,7 +17,14 @@ from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_
 from forex_lab.score import filter_journal
 from forex_lab.calendar import CalendarBundle, countdown_label
 from forex_lab import calendar as calendar_lab
-from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag, zoneinfo_for
+from forex_lab.clock import (
+    clock_note,
+    fmt_display,
+    relabel,
+    timezone_short_tag,
+    timezone_tag,
+    zoneinfo_for,
+)
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.advise import Suggestion, suggest_actions
@@ -111,6 +118,7 @@ from forex_lab.ui.theme import (
     chrome_card_head_html,
     chrome_state_key,
     inject_terminal_css,
+    nav_clock_html,
     scan_counts,
     scan_legend_html,
     scan_strip_html,
@@ -291,14 +299,19 @@ def _kick_app_rerun() -> None:
 
 def _mark_board_reload() -> None:
     st.session_state["board_reload_tick"] = True
+    _kick_app_rerun()
 
 
-def _render_mode_nav() -> str:
-    """Prominent top-level destinations. Only the active mode renders below."""
+def _render_mode_nav(cfg) -> str:
+    """Slim destinations + Asia/Dhaka clock on the right. Only the active mode renders below."""
     active = _active_mode()
-    cols = st.columns(len(DESK_MODES))
+    n_modes = len(DESK_MODES)
+    try:
+        cols = st.columns([1] * n_modes + [1.7], vertical_alignment="center")
+    except TypeError:
+        cols = st.columns([1] * n_modes + [1.7])
     clicked = None
-    for col, name in zip(cols, DESK_MODES):
+    for col, name in zip(cols[:n_modes], DESK_MODES):
         kwargs = {
             "key": f"desk_nav_{name.lower()}",
             "use_container_width": True,
@@ -308,6 +321,28 @@ def _render_mode_nav() -> str:
             kwargs["type"] = "primary"
         if col.button(name, **kwargs):
             clicked = name
+    realtime = bool(st.session_state.get("board_realtime", False))
+    try:
+        seconds = int(st.session_state.get("board_refresh_s") or 60)
+    except (TypeError, ValueError):
+        seconds = 60
+    run_every = max(60, seconds) if realtime else None
+
+    @st.fragment(run_every=run_every)
+    def _nav_clock_fragment() -> None:
+        now = datetime.now(zoneinfo_for(cfg))
+        stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        st.markdown(
+            nav_clock_html(
+                stamp,
+                short_tag=timezone_short_tag(cfg),
+                long_tag=timezone_tag(cfg),
+            ),
+            unsafe_allow_html=True,
+        )
+
+    with cols[-1]:
+        _nav_clock_fragment()
     st.markdown('<div class="fx-nav-gap"></div>', unsafe_allow_html=True)
     if clicked and clicked != active:
         st.session_state.desk_mode = clicked
@@ -1836,10 +1871,7 @@ def _render_workspace_bar(cfg, wl) -> None:
 
 
 def _render_masthead(cfg) -> None:
-    """Compact terminal header. Clocks stay Asia/Dhaka; paper BrokerPort unchanged."""
-    now = datetime.now(zoneinfo_for(cfg))
-    clock = html.escape(fmt_display(now, cfg, seconds=True))
-    tz = html.escape(timezone_tag(cfg))
+    """Brand + legend + theme. Clock lives in the slim top nav, not this card."""
     chrome, toggle = st.columns([6.35, 1.15])
     with chrome:
         st.markdown(
@@ -1850,10 +1882,6 @@ def _render_masthead(cfg) -> None:
             f'<span class="fx-title">SIGNAL SCREEN</span>'
             f'<span class="fx-chip">PAPER</span>'
             f'<span class="fx-chip muted">RESEARCH</span>'
-            f"</div>"
-            f'<div class="fx-masthead-right">'
-            f'<span class="fx-clock">{clock}</span>'
-            f'<span class="fx-tz">{tz}</span>'
             f"</div>"
             f"</div>"
             f"{scan_legend_html()}"
@@ -2637,7 +2665,7 @@ def render() -> None:
     cfg = overlay_config(cfg, active_ws)
 
     _render_masthead(cfg)
-    mode = _render_mode_nav()
+    mode = _render_mode_nav(cfg)
     with st.expander("Disclaimer (research only — not a live edge)", expanded=False):
         st.warning(DISCLAIMER)
 

@@ -300,6 +300,7 @@ def test_chrome_cards_borders_and_section_heads():
         card_html,
         chrome_card_head_html,
         chrome_state_key,
+        nav_clock_html,
         section_head_html,
         terminal_css,
     )
@@ -317,6 +318,7 @@ def test_chrome_cards_borders_and_section_heads():
         ".fx-card-title",
         ".fx-masthead-top",
         ".fx-nav",
+        ".fx-nav-clock",
         ".fx-brief",
         ".fx-advice-line",
         ".fx-invalid",
@@ -360,6 +362,11 @@ def test_chrome_cards_borders_and_section_heads():
     assert "click a pair" in closed
     opened = chrome_card_head_html("Nav / Workspace", expanded=True)
     assert "open" in opened
+    clock = nav_clock_html("2026-09-21 22:08:01", short_tag="BD", long_tag="Asia/Dhaka")
+    assert "fx-nav-clock" in clock
+    assert "2026-09-21 22:08:01" in clock
+    assert ">BD<" in clock
+    assert "Asia/Dhaka" in clock
     source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
     assert 'section_head_html("Scan", "Board"' in source
     assert 'section_head_html("Detail"' in source
@@ -381,6 +388,11 @@ def test_chrome_cards_borders_and_section_heads():
     assert 0 < scan_at < detail_at
     assert source.count('section_head_html("Scan", "Board"') == 1
     assert "fx-masthead-top" in source
+    assert "nav_clock_html" in source
+    assert "_render_mode_nav(cfg)" in source
+    assert "_nav_clock_fragment" in source
+    # Clock is in the slim nav, not a standalone masthead-right block.
+    assert "fx-masthead-right" not in source
     # Decision default — Calendar/Paper/Lab/Awareness are exclusive destinations.
     assert "render_calendar_mode(cfg)" in source
     assert source.find("render_decision_mode") < source.find("render_calendar_mode(cfg)")
