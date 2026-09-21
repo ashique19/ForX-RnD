@@ -17,6 +17,28 @@ from forex_lab.ui.theme import (
 )
 
 
+def _rel_lum(hex_color: str) -> float:
+    h = hex_color.lstrip("#")
+    rgb = [int(h[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+
+    def _f(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (_f(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(fg: str, bg: str) -> float:
+    l1, l2 = _rel_lum(fg), _rel_lum(bg)
+    hi, lo = max(l1, l2), min(l1, l2)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
 def test_theme_config_is_dark_terminal():
     cfg = (project_root() / ".streamlit" / "config.toml").read_text(encoding="utf-8")
     assert 'base = "dark"' in cfg
@@ -24,6 +46,8 @@ def test_theme_config_is_dark_terminal():
     assert "#16c784" in cfg
     assert "toolbarMode" in cfg and "minimal" in cfg
     assert "backgroundColor" in cfg
+    assert "baseFontSize = 15" in cfg
+    assert "textColor = \"#e6edf3\"" in cfg
 
 
 def test_buy_sell_hold_are_high_contrast():
@@ -45,6 +69,58 @@ def test_buy_sell_hold_are_high_contrast():
     assert "fx-scan" in css
     assert "flex-end" in css
     assert "st-key-paper_close" in css
+    assert BUY == "#16c784" and SELL == "#ea3943"
+
+
+def test_muted_captions_and_labels_are_readable():
+    """Secondary copy must be light grey + slightly larger, not near-black 8px type."""
+    from forex_lab.ui.health import awareness_table_html
+    from forex_lab.ui.theme import (
+        BG,
+        FONT_CAPTION,
+        FONT_CELL,
+        FONT_EXPANDER,
+        FONT_LABEL,
+        MUTED,
+        NEUTRAL,
+        TEXT,
+        validity_badge_html,
+    )
+
+    assert min(_rgb(MUTED)) >= 160
+    assert _contrast(MUTED, BG) >= 7.0
+    assert _contrast(TEXT, BG) >= 10.0
+    assert _contrast(NEUTRAL, BG) >= 6.0
+    css = terminal_css()
+    assert MUTED in css
+    assert "--fx-muted" in css
+    assert FONT_CAPTION in css
+    assert FONT_LABEL in css
+    assert FONT_CELL in css
+    assert FONT_EXPANDER in css
+    assert "stSidebar" in css
+    assert "stTooltipContent" in css
+    assert "stCaptionContainer" in css
+    assert "font-size: 15px" in css
+    # Old too-small caption / widget-label sizes must not remain.
+    assert "font-size: 0.70rem !important" not in css
+    assert "font-size: 0.62rem !important" not in css
+    stale = validity_badge_html("STALE", compact=True)
+    assert "0.74rem" in stale or "0.70rem" in stale
+    table = awareness_table_html(
+        [
+            {
+                "Source": "EURUSD 1h OHLCV",
+                "Observing": "price",
+                "Cadence": "manual",
+                "Last OK": "2026-09-21 15:00:00 Asia/Dhaka",
+                "Status": "STALE · data stale — refresh required",
+            }
+        ]
+    )
+    assert MUTED in table
+    assert "0.86rem" in table or "0.84rem" in table
+    assert "data stale" in table
 
 
 def test_style_board_uses_dark_signal_colors():

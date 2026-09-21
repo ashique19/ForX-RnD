@@ -365,7 +365,7 @@ def _session_badge(session: SessionState | None, *, show_note: bool = False) -> 
         note = session.note
     bg = session_fill(name)
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.68rem;'
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.76rem;'
         f"letter-spacing:0.08em;text-align:center;padding:3px 6px;border-radius:3px;"
         f'display:inline-block">{name}</div>',
         unsafe_allow_html=True,
@@ -383,14 +383,14 @@ def _render_quote_strip(row) -> None:
     st.markdown(
         f'<div style="font-variant-numeric:tabular-nums;line-height:1.15">'
         f'<div style="font-size:1.2rem;font-weight:800;letter-spacing:0.02em;color:{TEXT_BRIGHT}">{last_txt}</div>'
-        f'<div style="font-size:0.68rem;color:{MUTED};font-weight:600">{kind}</div>'
+        f'<div style="font-size:0.76rem;color:{MUTED};font-weight:600">{kind}</div>'
         f"</div>",
         unsafe_allow_html=True,
     )
     s1, s2 = st.columns(2)
     with s1:
         st.markdown(
-            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:0.68rem;'
+            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:0.76rem;'
             f"letter-spacing:0.04em;text-align:center;padding:3px 6px;border-radius:3px;"
             f'border:1px solid #243040">'
             f"SPR {spr} cfg</div>",
@@ -416,7 +416,7 @@ def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
     bg = colors.get(status, HOLD_BG)
     color = fg.get(status, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.66rem;'
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.76rem;'
         f"letter-spacing:0.04em;text-align:center;padding:3px 5px;border-radius:3px;"
         f'display:block">{note}</div>',
         unsafe_allow_html=True,
@@ -442,7 +442,7 @@ def _news_bias_badge(bias: str) -> None:
     st.markdown(
         f'<div style="background:{colors.get(b, HOLD_BG)};color:{fg.get(b, TEXT)};font-weight:800;'
         f'padding:4px 8px;border-radius:3px;display:inline-block;letter-spacing:0.08em;'
-        f'font-size:0.72rem">{b.upper()}</div>',
+        f'font-size:0.80rem">{b.upper()}</div>',
         unsafe_allow_html=True,
     )
 
@@ -483,7 +483,7 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
                 when = format_alert_time(alert, cfg)
                 st.markdown(
                     f'<div style="display:flex;gap:10px;align-items:center;background:{bg};'
-                    f"color:#fff;font-size:0.78rem;font-weight:700;padding:5px 8px;"
+                    f"color:#fff;font-size:0.84rem;font-weight:700;padding:5px 8px;"
                     f'border-radius:6px;letter-spacing:0.02em;line-height:1.2">'
                     f"<span>{html.escape(alert.message)}</span>"
                     f'<span style="margin-left:auto;font-weight:600;opacity:.9;white-space:nowrap">'
@@ -598,7 +598,7 @@ def _render_advice_card(
     bg = colors.get(card.severity, "#334155")
     color = fg.get(card.severity, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.78rem;'
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.86rem;'
         f'padding:5px 8px;border-radius:3px;margin-bottom:3px;letter-spacing:0.04em">{card.title}</div>',
         unsafe_allow_html=True,
     )
@@ -869,7 +869,7 @@ def _render_paper_actions(
 def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False, strong: bool = False) -> None:
     color = WARN if warn else (TEXT_BRIGHT if strong else TEXT)
     weight = "800" if warn or strong else "600"
-    size = "0.86rem" if strong else "0.74rem"
+    size = "0.92rem" if strong else "0.82rem"
     variant = "font-variant-numeric:tabular-nums;" if numeric else ""
     st.markdown(
         f'<div style="font-size:{size};font-weight:{weight};color:{color};'

@@ -25,8 +25,19 @@ ELEVATED = "#171f29"
 BORDER = "#243040"
 TEXT = "#e6edf3"
 TEXT_BRIGHT = "#f4f7fa"
-MUTED = "#8b9aab"
-DIM = "#5c6b7a"
+# Secondary copy: light grey on #0a0e14 (not near-black). Captions / help / labels.
+MUTED = "#b8c5d2"
+DIM = "#9aabba"
+# Dense but readable type. rem is vs Streamlit baseFontSize (15px in config.toml).
+FONT_BODY = "0.95rem"
+FONT_CAPTION = "0.82rem"
+FONT_LABEL = "0.76rem"
+FONT_CHIP = "0.72rem"
+FONT_CELL = "0.84rem"
+FONT_EXPANDER = "0.88rem"
+FONT_VALID_COMPACT = "0.70rem"
+FONT_VALID_LOUD = "0.74rem"
+FONT_SIG_COMPACT = "0.86rem"
 
 BUY = "#16c784"
 BUY_FG = "#04140c"
@@ -37,7 +48,7 @@ SELL_BG = "#3d1216"
 HOLD = "#9aa5b1"
 HOLD_FG = "#d5dce3"
 HOLD_BG = "#2a313c"
-NEUTRAL = "#6b7785"
+NEUTRAL = "#a8b4c0"
 NEUTRAL_BG = "#1a222c"
 
 WARN = "#f5a524"
@@ -333,7 +344,7 @@ def signal_badge_html(sig: object, *, weak: bool = False, compact: bool = False)
         classes.append("fx-sig-quiet")
     if s == "—":
         classes.append("fx-sig-muted")
-    size = "0.78rem" if compact else ("1.05rem" if weak and s in {"BUY", "SELL"} else "1.28rem")
+    size = FONT_SIG_COMPACT if compact else ("1.12rem" if weak and s in {"BUY", "SELL"} else "1.32rem")
     pad = "4px 6px" if compact else "8px 10px"
     opacity = "0.72" if weak else "1"
     return (
@@ -358,7 +369,7 @@ def validity_badge_html(validity: object, *, compact: bool = False) -> str:
             bg, fg = SELL_BG, SELL
         return (
             f'<div class="fx-valid fx-valid-loud fx-valid-{v.lower()}" title="{_esc(v)}" '
-            f'style="background:{bg};color:{fg};font-weight:800;font-size:0.62rem;'
+            f'style="background:{bg};color:{fg};font-weight:800;font-size:{FONT_VALID_LOUD};'
             f'letter-spacing:0.08em;text-align:center;padding:4px 5px;border-radius:3px">'
             f"{_esc(v)}</div>"
         )
@@ -367,13 +378,13 @@ def validity_badge_html(validity: object, *, compact: bool = False) -> str:
             f'<div class="fx-valid fx-valid-quiet fx-valid-{v.lower()}" title="{_esc(v)}" '
             f'style="text-align:center;line-height:1.05">'
             f'<span style="color:{tone};font-size:0.95rem">●</span>'
-            f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.05em;color:{tone}">'
+            f'<div style="font-size:{FONT_VALID_COMPACT};font-weight:800;letter-spacing:0.05em;color:{tone}">'
             f"{_esc(v)}</div></div>"
         )
     fg = WARN_FG if v in {VALIDITY_OK, VALIDITY_STALE} else "#fff"
     return (
         f'<div class="fx-valid" style="background:{tone};color:{fg};font-weight:800;'
-        f"font-size:0.72rem;letter-spacing:0.08em;text-align:center;padding:4px 8px;"
+        f"font-size:0.80rem;letter-spacing:0.08em;text-align:center;padding:4px 8px;"
         f'border-radius:3px;display:inline-block">{_esc(v)}</div>'
     )
 
@@ -385,16 +396,29 @@ TERMINAL_CSS = """
   --fx-elev: #171f29;
   --fx-border: #243040;
   --fx-text: #e6edf3;
-  --fx-muted: #8b9aab;
+  --fx-muted: #b8c5d2;
+  --fx-dim: #9aabba;
   --fx-buy: #16c784;
   --fx-sell: #ea3943;
   --fx-hold: #9aa5b1;
   --fx-warn: #f5a524;
-  --fx-row-h: 2.08rem;
+  --fx-row-h: 2.22rem;
+  --fx-font-body: 0.95rem;
+  --fx-font-caption: 0.82rem;
+  --fx-font-label: 0.76rem;
+  --fx-font-chip: 0.72rem;
+  --fx-font-cell: 0.84rem;
+  --fx-font-expander: 0.88rem;
+}
+html {
+  font-size: 15px !important;
 }
 html, body, .stApp, [data-testid="stAppViewContainer"] {
   background: var(--fx-bg) !important;
   color: var(--fx-text);
+}
+body, .stApp, [data-testid="stAppViewContainer"] {
+  font-size: var(--fx-font-body);
 }
 .stApp {
   font-feature-settings: "tnum" 1, "ss01" 1;
@@ -418,14 +442,24 @@ footer { visibility: hidden; height: 0; }
 [data-testid="stMainBlockContainer"] {
   padding-top: 0.85rem !important;
 }
-[data-testid="stCaptionContainer"], .stCaption {
-  font-size: 0.70rem !important;
-  line-height: 1.32 !important;
+[data-testid="stMarkdownContainer"] p {
+  font-size: var(--fx-font-body);
+  color: var(--fx-text);
+}
+small, .stMarkdown small {
+  font-size: var(--fx-font-caption) !important;
+  color: var(--fx-muted) !important;
+}
+[data-testid="stCaptionContainer"], .stCaption,
+[data-testid="stCaptionContainer"] p, .stCaption p {
+  font-size: var(--fx-font-caption) !important;
+  line-height: 1.38 !important;
   color: var(--fx-muted) !important;
 }
 h1, h2, h3 {
   letter-spacing: 0.04em;
   font-weight: 800 !important;
+  color: var(--fx-text) !important;
 }
 .stMarkdown p { margin-bottom: 0.2rem; }
 hr { margin: 0.35rem 0 !important; border-color: var(--fx-border) !important; }
@@ -436,31 +470,72 @@ hr { margin: 0.35rem 0 !important; border-color: var(--fx-border) !important; }
 }
 [data-testid="stExpander"] details { gap: 0.2rem; }
 [data-testid="stExpander"] summary p {
-  font-size: 0.78rem !important;
+  font-size: var(--fx-font-expander) !important;
   font-weight: 700 !important;
   letter-spacing: 0.03em;
+  color: var(--fx-text) !important;
+}
+[data-testid="stExpander"] [data-testid="stMarkdownContainer"] p {
+  font-size: var(--fx-font-expander) !important;
+  color: var(--fx-text);
+}
+[data-testid="stExpander"] [data-testid="stCaptionContainer"],
+[data-testid="stExpander"] [data-testid="stCaptionContainer"] p,
+[data-testid="stExpander"] .stCaption,
+[data-testid="stExpander"] .stCaption p {
+  font-size: var(--fx-font-caption) !important;
+  color: var(--fx-muted) !important;
 }
 [data-testid="stMetricValue"] {
-  font-size: 1.08rem !important;
+  font-size: 1.16rem !important;
   font-variant-numeric: tabular-nums;
 }
 [data-testid="stMetricLabel"] {
-  font-size: 0.64rem !important;
+  font-size: var(--fx-font-label) !important;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fx-muted) !important;
   font-weight: 800 !important;
 }
-[data-testid="stMetricDelta"] { font-size: 0.72rem !important; }
+[data-testid="stMetricDelta"] { font-size: 0.80rem !important; }
 div[data-testid="stAlert"] {
-  padding: 0.4rem 0.6rem !important;
+  padding: 0.45rem 0.65rem !important;
+  font-size: var(--fx-font-caption) !important;
 }
-[data-testid="stWidgetLabel"] p {
-  font-size: 0.62rem !important;
-  letter-spacing: 0.07em !important;
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label {
+  font-size: var(--fx-font-label) !important;
+  letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
   color: var(--fx-muted) !important;
   font-weight: 800 !important;
+}
+[data-testid="stSidebar"] {
+  background: var(--fx-surface) !important;
+  color: var(--fx-text) !important;
+}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+  color: var(--fx-text);
+  font-size: var(--fx-font-body);
+}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p,
+[data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] .stCaption p {
+  font-size: var(--fx-font-caption) !important;
+  color: var(--fx-muted) !important;
+}
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+  font-size: var(--fx-font-label) !important;
+  color: var(--fx-muted) !important;
+}
+[data-testid="stTooltipContent"],
+[role="tooltip"],
+div[data-baseweb="tooltip"] {
+  font-size: var(--fx-font-caption) !important;
+  line-height: 1.4 !important;
+  color: var(--fx-text) !important;
+  background: var(--fx-elev) !important;
 }
 div[data-testid="stHorizontalBlock"] {
   align-items: center !important;
@@ -474,16 +549,16 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   padding-right: 0.18rem !important;
 }
 [data-testid="stButton"] button {
-  min-height: 1.85rem !important;
-  padding: 0.14rem 0.5rem !important;
-  font-size: 0.74rem !important;
+  min-height: 1.95rem !important;
+  padding: 0.16rem 0.55rem !important;
+  font-size: 0.80rem !important;
   font-weight: 800 !important;
   letter-spacing: 0.05em !important;
   border-radius: 4px !important;
   line-height: 1 !important;
 }
 [data-testid="stButton"] button p {
-  font-size: 0.74rem !important;
+  font-size: 0.80rem !important;
   font-weight: 800 !important;
 }
 [class*="st-key-board_open"] button,
@@ -528,13 +603,14 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 [class*="st-key-alert_clear"] button,
 [class*="st-key-alert_dismiss"] button,
 [class*="st-key-board_close_drawer"] button {
-  min-height: 1.7rem !important;
+  min-height: 1.8rem !important;
 }
 [data-testid="stDataFrame"], [data-testid="stTable"] {
-  font-size: 0.78rem !important;
+  font-size: var(--fx-font-cell) !important;
+  color: var(--fx-text) !important;
 }
 [data-testid="stTabs"] button {
-  font-size: 0.78rem !important;
+  font-size: 0.86rem !important;
   font-weight: 700 !important;
 }
 .fx-masthead {
@@ -556,17 +632,17 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 .fx-brand {
   font-weight: 900;
   letter-spacing: 0.14em;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--fx-buy);
 }
 .fx-title {
   font-weight: 800;
   letter-spacing: 0.12em;
-  font-size: 0.92rem;
+  font-size: 0.98rem;
   color: var(--fx-text);
 }
 .fx-chip {
-  font-size: 0.62rem;
+  font-size: var(--fx-font-chip);
   font-weight: 800;
   letter-spacing: 0.08em;
   padding: 2px 6px;
@@ -585,17 +661,17 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 .fx-clock {
   font-variant-numeric: tabular-nums;
   font-weight: 800;
-  font-size: 0.92rem;
+  font-size: 0.98rem;
   letter-spacing: 0.02em;
 }
 .fx-clock-mini {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
   color: var(--fx-text);
 }
 .fx-tz {
-  font-size: 0.68rem;
+  font-size: var(--fx-font-caption);
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--fx-muted);
@@ -609,7 +685,7 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   padding: 2px 0 8px;
 }
 .fx-legend-note {
-  font-size: 0.68rem;
+  font-size: var(--fx-font-caption);
   color: var(--fx-muted);
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -633,14 +709,14 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   flex-wrap: wrap;
 }
 .fx-scan-kicker {
-  font-size: 0.62rem;
+  font-size: var(--fx-font-chip);
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fx-muted);
 }
 .fx-scan-sess {
-  font-size: 0.74rem;
+  font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   color: var(--fx-text);
@@ -651,7 +727,7 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   flex-wrap: wrap;
 }
 .fx-count {
-  font-size: 0.62rem;
+  font-size: var(--fx-font-chip);
   font-weight: 800;
   letter-spacing: 0.06em;
   padding: 3px 7px;
@@ -672,7 +748,7 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 .fx-count.missing.on { background: #1a222c; color: var(--fx-muted); border-color: #3a4450; }
 .fx-count.missing.on b { color: var(--fx-muted); }
 .fx-board-head {
-  font-size: 0.62rem;
+  font-size: var(--fx-font-chip);
   font-weight: 800;
   letter-spacing: 0.07em;
   color: var(--fx-muted);
@@ -690,7 +766,7 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   margin: 6px 0 10px;
 }
 .fx-empty-kicker {
-  font-size: 0.6rem;
+  font-size: var(--fx-font-chip);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -698,19 +774,19 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   margin-bottom: 4px;
 }
 .fx-empty-title {
-  font-size: 0.92rem;
+  font-size: 0.96rem;
   font-weight: 800;
   letter-spacing: 0.03em;
   color: var(--fx-text);
 }
 .fx-empty-body {
-  font-size: 0.74rem;
+  font-size: var(--fx-font-caption);
   color: var(--fx-muted);
   margin-top: 4px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .fx-empty-inline {
-  font-size: 0.72rem;
+  font-size: var(--fx-font-caption);
   color: var(--fx-muted);
   padding: 4px 0 8px;
   font-weight: 600;
@@ -725,14 +801,14 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 .fx-drawer-pair {
   font-weight: 800;
   letter-spacing: 0.08em;
-  font-size: 0.95rem;
+  font-size: 1.0rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .fx-status {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
-  font-size: 0.72rem;
+  font-size: var(--fx-font-caption);
   font-weight: 650;
   color: var(--fx-muted);
   padding: 2px 0 4px;
@@ -743,13 +819,17 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 .fx-status .warn { color: var(--fx-warn); }
 .fx-status .bad { color: var(--fx-sell); }
 .fx-awareness-kicker {
-  font-size: 0.62rem;
+  font-size: var(--fx-font-chip);
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fx-muted);
 }
 .fx-awareness-status { padding: 4px 0 2px; }
+.fx-awareness-table {
+  font-size: var(--fx-font-cell);
+  color: var(--fx-text);
+}
 """
 
 
