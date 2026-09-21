@@ -40,7 +40,7 @@ from forex_lab.ui.board import (
 )
 from forex_lab.session import SessionState, classify_session
 from forex_lab.ui.quote import QuoteView
-from forex_lab.fred import fred_feed_status
+from forex_lab.fred import FredStatus, fred_feed_status
 from forex_lab.ui.alerts import (
     alerts_cfg,
     beep_wav,
@@ -52,7 +52,15 @@ from forex_lab.ui.alerts import (
     save_state as save_alert_state,
     visible_alerts,
 )
-from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
+from forex_lab.ui.health import (
+    awareness_status_html,
+    build_health_rows,
+    health_strip,
+    health_unhealthy,
+    model_status_map,
+    status_token,
+    style_awareness,
+)
 from forex_lab.ui.pipeline import (
     artifact_status,
     equity_from_trades,
@@ -194,7 +202,7 @@ This is the **trader screen**: one dense scan board. Click a pair for the detail
 
 **Alerts** — compact top strip on BUY/SELL/HOLD flips or STALE/MISSING. Optional event-within-60m. Sound off by default. Times **Asia/Dhaka**. Never places orders.
 
-**Awareness** — **Feeds:** line plus expander. Opens itself when a feed is STALE/FAIL/MISSING.
+**Awareness** — every source this desk fetches or observes (watchlist OHLCV, news RSS, model files, calendar, optional FRED). Columns: **Source | Observing | Cadence | Last OK | Status**. STALE/FAIL/MISSING never look OK. Opens itself when anything is unhealthy. Times **Asia/Dhaka**.
 
 **Workspace** — scalp / swing (or a saved custom) switch **pairs, TF, refresh, min conf**. Apply / Save current / Reset. Does **not** rewrite `config/default.yaml`, the paper journal, or BrokerPort. Clocks stay **Asia/Dhaka**.
 
@@ -1626,7 +1634,13 @@ def render_watch_board(cfg) -> None:
         try:
             fred_status = fred_feed_status(cfg)
         except Exception:  # noqa: BLE001 — health must never break the board
-            fred_status = None
+            fred_status = FredStatus(enabled=False, error="status check failed")
+        if fred_status is None:
+            fred_status = FredStatus(enabled=False)
+        try:
+            models = model_status_map((r.pair for r in rows), cfg)
+        except Exception:  # noqa: BLE001
+            models = None
         health = build_health_rows(
             rows,
             news_map=news_map,
@@ -1638,28 +1652,38 @@ def render_watch_board(cfg) -> None:
             refresh_s=seconds,
             news_ttl_s=news_ttl,
             yf_min_interval_s=int(bcfg.get("yf_min_interval_s") or YF_MIN_INTERVAL_S),
+            models=models,
         )
         unhealthy = health_unhealthy(health)
-        st.caption(health_strip(health))
+        st.markdown(awareness_status_html(health), unsafe_allow_html=True)
         if unhealthy:
             st.warning(
                 "Obsolete or failing inputs: "
-                + " · ".join(f"{r.get('Feed')} {r.get('Status')}" for r in unhealthy)
+                + " · ".join(
+                    f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy
+                )
             )
-        exp_label = "Awareness / data health"
+        exp_label = "Awareness"
         if unhealthy:
             exp_label += " — " + ", ".join(
-                f"{r.get('Feed')} {r.get('Status')}" for r in unhealthy[:4]
+                f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
+                for r in unhealthy[:4]
             )
         with st.expander(exp_label, expanded=bool(unhealthy)):
             st.caption(
-                "v0 — active feeds this board can see (OHLCV per pair + news + event calendar"
-                " + FRED when enabled). Full registry / daily digest / weekly retrain stay later."
+                "Every source this desk fetches or observes. "
+                "STALE / FAIL / MISSING never display as OK. "
+                f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
             )
+            st.caption(health_strip(health))
             if health:
-                st.dataframe(pd.DataFrame(health), use_container_width=True, hide_index=True)
+                st.dataframe(
+                    style_awareness(pd.DataFrame(health)),
+                    use_container_width=True,
+                    hide_index=True,
+                )
             else:
-                st.info("Watchlist is empty — no feeds to report.")
+                st.info("Watchlist is empty — no sources to report.")
 
         if not rows:
             st.info("Watchlist is empty. Add a pair below.")

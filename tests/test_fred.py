@@ -145,11 +145,15 @@ def test_fred_feed_status_missing_without_cache(tmp_path):
         data_source="cached",
     )
     rows = build_health_rows([row], fred=status)
-    feed = next(r for r in rows if r["Feed"] == "FRED macro")
-    assert feed["Status"] in {"MISSING", "FAIL"}
+    feed = next(r for r in rows if r["Source"] == "FRED")
+    assert feed["Status"] != "OK"
+    assert feed["Observing"] == "macro"
+    from forex_lab.ui.health import status_token
+
+    assert status_token(feed) in {"MISSING", "FAIL"}
 
 
-def test_fred_disabled_is_omitted_from_health():
+def test_fred_disabled_is_off_in_awareness():
     assert fred_cfg({"fred": {"enabled": False}})["enabled"] is False
     status = FredStatus(enabled=False)
     row = SimpleNamespace(
@@ -162,7 +166,9 @@ def test_fred_disabled_is_omitted_from_health():
         data_source="cached",
     )
     rows = build_health_rows([row], fred=status)
-    assert "FRED macro" not in [r["Feed"] for r in rows]
+    feed = next(r for r in rows if r["Source"] == "FRED")
+    assert feed["Status"] == "OFF"
+    assert feed["Observing"] == "macro"
 
 
 def test_default_config_keeps_fred_off():

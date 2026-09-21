@@ -114,8 +114,16 @@ def signal_cell_style(val: object) -> str:
     return ""
 
 
+def _status_token(val: object) -> str:
+    raw = str(val or "").strip()
+    if not raw:
+        return ""
+    token = raw.split("·", 1)[0].strip().split()[0].upper()
+    return "FAIL" if token == "ERROR" else token
+
+
 def validity_cell_style(val: object) -> str:
-    v = str(val).upper()
+    v = _status_token(val) or str(val).upper()
     if v == VALIDITY_OK:
         return _cell(BUY_BG, BUY)
     if v == VALIDITY_CLOSED:
@@ -124,9 +132,16 @@ def validity_cell_style(val: object) -> str:
         return _cell(WARN_BG, WARN)
     if v == VALIDITY_MISSING:
         return _cell(NEUTRAL_BG, NEUTRAL)
-    if v == VALIDITY_ERROR:
+    if v in {VALIDITY_ERROR, "FAIL"}:
         return _cell(SELL_BG, SELL)
+    if v == "OFF":
+        return _cell(NEUTRAL_BG, MUTED)
     return ""
+
+
+def awareness_status_style(val: object) -> str:
+    """Status cell for the Awareness table (OK / STALE / FAIL · error)."""
+    return validity_cell_style(val)
 
 
 def mtf_cell_style(val: object) -> str:
@@ -359,6 +374,14 @@ div[data-testid="stAlert"] {
 .fx-status .ok { color: var(--fx-buy); }
 .fx-status .warn { color: var(--fx-warn); }
 .fx-status .bad { color: var(--fx-sell); }
+.fx-awareness-kicker {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fx-muted);
+}
+.fx-awareness-status { padding: 4px 0 2px; }
 """
 
 
