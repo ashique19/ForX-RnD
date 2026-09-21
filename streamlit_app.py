@@ -156,6 +156,8 @@ def _sync_watch_rows(wl, cfg, *, refresh: bool) -> list:
 
 def render_watch_board(cfg) -> None:
     """Top-of-page multi-pair research board + persisted watchlist controls."""
+    if st.session_state.pop("watch_clear_typed", False):
+        st.session_state["watch_typed_pair"] = ""
     wl = load_watchlist(cfg=cfg, create=True)
     lab_iv = wl.lab_interval(cfg)
     available = ui_pairs(cfg)
@@ -228,26 +230,19 @@ def render_watch_board(cfg) -> None:
         for row in rows:
             title = f"{row.pair} · {row.timeframe} · {row.buy_sell}"
             with st.expander(title):
-                st.write(
-                    {
-                        "status": row.status,
-                        "buy_sell": row.buy_sell,
-                        "target": row.target,
-                        "target_note": row.target_note,
-                        "confidence": row.confidence,
-                        "dir_edge": row.dir_edge,
-                        "p_buy": row.p_buy,
-                        "p_sell": row.p_sell,
-                        "p_hold": row.p_hold,
-                        "model": row.model,
-                        "datetime": row.datetime,
-                        "close": row.close,
-                        "raw_signal": row.raw_signal,
-                        "data_source": row.data_source,
-                        "n_bars": row.n_bars,
-                        "error": row.error,
-                    }
+                st.markdown(
+                    f"- **Status:** `{row.status}`  \n"
+                    f"- **Buy/Sell:** {row.buy_sell}  \n"
+                    f"- **Target:** {row.target}  \n"
+                    f"- **Confidence / edge:** conf={row.confidence} · dir_edge={row.dir_edge}  \n"
+                    f"- **p_buy / p_sell / p_hold:** {row.p_buy} / {row.p_sell} / {row.p_hold}  \n"
+                    f"- **Model / time:** {row.model or 'n/a'} · {row.datetime or 'n/a'}  \n"
+                    f"- **Close / bars / data:** {row.close} · {row.n_bars} · {row.data_source or 'n/a'}"
                 )
+                if row.target_note:
+                    st.caption(row.target_note)
+                if row.error:
+                    st.caption(f"Status detail: {row.error}")
                 if row.status != "ready":
                     st.warning(
                         f"{row.pair}: {row.signal_details}. "
@@ -258,42 +253,63 @@ def render_watch_board(cfg) -> None:
     _board_fragment()
 
     st.markdown("**Watchlist**")
-    add_c, del_c = st.columns(2)
     watched = wl.pair_symbols()
-    with add_c:
-        addable = [p for p in available if p not in watched]
+    addable = [p for p in available if p not in watched]
+    a1, a2, a3, a4 = st.columns([1.3, 1.2, 1.4, 1.1])
+    with a1:
         pick = st.selectbox(
             "Add pair",
             options=addable or ["(all config pairs are listed)"],
             disabled=not addable,
+            key="watch_add_pick",
         )
-        typed = st.text_input("Or type a pair", value="", placeholder="EURUSD")
+    with a2:
+        typed = st.text_input("Or type a pair", placeholder="EURUSD", key="watch_typed_pair")
+    with a3:
         tf_choice = st.selectbox(
             "Pair timeframe",
             options=["lab default (" + lab_iv + ")"] + list(KNOWN_INTERVALS),
+            key="watch_add_tf",
         )
-        if st.button("Add to watchlist"):
-            symbol = (typed or "").strip() or (pick if addable else "")
-            try:
-                iv = None if tf_choice.startswith("lab default") else tf_choice
-                add_pair(wl, symbol, interval=iv)
-                save_watchlist(wl)
-                st.session_state.pop("watch_rows", None)
-                st.rerun()
-            except WatchlistError as exc:
-                st.error(str(exc))
-    with del_c:
+    with a4:
+        st.markdown("&nbsp;")
+        add_clicked = st.button("Add to watchlist", use_container_width=True)
+    if add_clicked:
+        symbol = (typed or "").strip() or (pick if addable else "")
+        try:
+            iv = None if str(tf_choice).startswith("lab default") else str(tf_choice)
+            add_pair(wl, symbol, interval=iv)
+            save_watchlist(wl)
+            st.session_state["watch_clear_typed"] = True
+            st.session_state.pop("watch_rows", None)
+            st.rerun()
+        except WatchlistError as exc:
+            st.error(str(exc))
+
+    d1, d2, d3 = st.columns([1.6, 1.2, 2.2])
+    with d1:
+        rm_index = max(len(watched) - 1, 0) if watched else 0
         rm = st.selectbox(
             "Remove pair",
             options=watched or ["(watchlist empty)"],
+            index=rm_index,
             disabled=not watched,
+            key="watch_remove_" + "-".join(watched) if watched else "watch_remove_empty",
         )
+    with d2:
+        st.markdown("&nbsp;")
+        remove_clicked = st.button(
+            "Remove from watchlist",
+            disabled=not watched,
+            use_container_width=True,
+        )
+    with d3:
         st.caption("Persisted to disk so the list survives reruns.")
-        if st.button("Remove from watchlist", disabled=not watched) and watched:
-            remove_pair(wl, str(rm))
-            save_watchlist(wl)
-            st.session_state.pop("watch_rows", None)
-            st.rerun()
+    if remove_clicked and watched:
+        remove_pair(wl, str(rm))
+        save_watchlist(wl)
+        st.session_state.pop("watch_rows", None)
+        st.rerun()
 
     st.divider()
 
