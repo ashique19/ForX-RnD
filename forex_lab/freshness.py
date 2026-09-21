@@ -184,10 +184,10 @@ def assess_ohlcv(
             session_open=open_now,
         )
     if age < 0:
-        # Clock skew / future-dated synthetic bars: treat as OK but note it.
+        # Future-dated bars (bad synthetic/cache or severe clock skew) must not look OK.
         return Freshness(
-            VALIDITY_OK,
-            f"last bar {fmt_ts(last)} (ahead of clock — check timezone)",
+            VALIDITY_ERROR,
+            f"last bar {fmt_ts(last)} is in the future — discard/refetch cache",
             last_bar=last,
             age_s=age,
             stale_after_s=stale_after,
