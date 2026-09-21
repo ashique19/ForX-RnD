@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 
-from forex_lab.cli import cmd_backtest, cmd_fetch, cmd_signals, cmd_train
+from forex_lab.cli import cmd_backtest, cmd_digest, cmd_fetch, cmd_retrain, cmd_signals, cmd_train
 from forex_lab.config_loader import load_config
 from forex_lab.data import data_path
 from forex_lab.model import model_paths
@@ -257,6 +257,30 @@ def run_signals(pair: str, *, cfg: dict[str, Any] | None = None) -> tuple[int, s
     cfg = _prepared_cfg(cfg)
     args = Namespace(pair=str(pair).upper(), config=None)
     return _run_cmd(cmd_signals, args, cfg)
+
+
+def run_digest(
+    *,
+    which: str = "both",
+    as_json: bool = False,
+    persist: bool = True,
+    cfg: dict[str, Any] | None = None,
+) -> tuple[int, str]:
+    cfg = _prepared_cfg(cfg)
+    args = Namespace(when=which, json=as_json, no_save=not persist, config=None)
+    return _run_cmd(cmd_digest, args, cfg)
+
+
+def run_retrain(
+    pair: str,
+    *,
+    dry_run: bool = False,
+    as_json: bool = False,
+    cfg: dict[str, Any] | None = None,
+) -> tuple[int, str]:
+    cfg = _prepared_cfg(cfg)
+    args = Namespace(pair=str(pair).upper(), dry_run=bool(dry_run), json=as_json, config=None)
+    return _run_cmd(cmd_retrain, args, cfg)
 
 
 def metrics_table(metrics: dict[str, Any] | None) -> pd.DataFrame:
