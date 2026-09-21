@@ -105,6 +105,76 @@ def test_make_dataset_drops_warmup_and_has_no_nan():
     assert list(ohlcv.columns) == ["Open", "High", "Low", "Close", "Volume"]
 
 
+def test_triple_barrier_asymmetric_rr_is_per_side():
+    """2:1 R:R: BUY needs +2 ATR before -1 ATR; -1 ATR alone is not a SELL."""
+    n = 20
+    close = np.full(n, 1.0)
+    open_ = np.full(n, 1.0)
+    high = np.full(n, 1.0)
+    low = np.full(n, 1.0)
+    atr = np.full(n, 0.01)
+    high[3] = 1.025  # +2.5 ATR: long TP at +2 ATR, short SL at +1 ATR
+    labels = triple_barrier_labels(
+        open_, high, low, close, atr, horizon=8, tp_atr=2.0, sl_atr=1.0, entry_timing="next_open"
+    )
+    assert labels[2] == LABEL_MAP["BUY"]
+
+    high = np.full(n, 1.0)
+    low = np.full(n, 1.0)
+    low[3] = 0.989  # -1.1 ATR: long SL, short TP is -2 ATR so not yet SELL
+    labels = triple_barrier_labels(
+        open_, high, low, close, atr, horizon=8, tp_atr=2.0, sl_atr=1.0, entry_timing="next_open"
+    )
+    assert labels[2] == LABEL_MAP["HOLD"]
+
+    low[4] = 0.979  # continues to -2.1 ATR: short TP
+    labels = triple_barrier_labels(
+        open_, high, low, close, atr, horizon=8, tp_atr=2.0, sl_atr=1.0, entry_timing="next_open"
+    )
+    assert labels[2] == LABEL_MAP["SELL"]
+
+
+def test_session_filter_blocks_asia_only():
+    idx = pd.date_range("2024-01-01 00:00", periods=4, freq="h")
+    frame = pd.DataFrame(
+        {
+            "pred_raw": [2, 2, 2, 2],
+            "confidence": [0.7, 0.7, 0.7, 0.7],
+            "dir_edge": [0.2, 0.2, 0.2, 0.2],
+            "sess_london": [0.0, 1.0, 0.0, 1.0],
+            "sess_ny": [0.0, 0.0, 1.0, 1.0],
+        },
+        index=idx,
+    )
+    cfg = _cfg()
+    cfg["signals"] = {**(cfg.get("signals") or {}), "min_confidence": 0.4, "min_dir_edge": 0.0, "sessions": ["london", "ny"]}
+    out = apply_signal_filters(frame, cfg)
+    assert list(out) == [LABEL_MAP["HOLD"], LABEL_MAP["BUY"], LABEL_MAP["BUY"], LABEL_MAP["BUY"]]
+
+
+def test_cost_aware_labels_require_tp_to_cover_spread():
+    n = 20
+    close = np.full(n, 1.0)
+    open_ = np.full(n, 1.0)
+    high = np.full(n, 1.0)
+    low = np.full(n, 1.0)
+    atr = np.full(n, 0.01)
+    high[3] = 1.03
+    labels = triple_barrier_labels(
+        open_,
+        high,
+        low,
+        close,
+        atr,
+        horizon=8,
+        tp_atr=2.0,
+        sl_atr=2.0,
+        entry_timing="next_open",
+        min_tp_abs=0.05,  # 5x larger than 2*ATR
+    )
+    assert labels[2] == LABEL_MAP["HOLD"]
+
+
 def test_signal_filters_force_hold():
     frame = pd.DataFrame(
         {

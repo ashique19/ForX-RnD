@@ -163,11 +163,17 @@ def build_features(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
 
 def _barrier_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     b = cfg.get("barrier") or {}
+    min_tp_abs = float(b.get("min_tp_abs", 0.0) or 0.0)
+    if bool(b.get("cost_aware", False)) and min_tp_abs <= 0:
+        pips = float(cfg.get("spread_pips", 1.0)) + float(cfg.get("commission_pips", 0.0))
+        pip = float(cfg.get("pip_size", 0.0001))
+        min_tp_abs = pips * pip
     return {
         "tp_atr": float(b.get("tp_atr", 2.0)),
         "sl_atr": float(b.get("sl_atr", 2.0)),
         "timeout_label": str(b.get("timeout_label", "hold")).lower(),
         "path": str(b.get("path", "high_low")).lower(),
+        "min_tp_abs": min_tp_abs,
     }
 
 
@@ -184,11 +190,27 @@ def triple_barrier_labels(
     path: str = "high_low",
     timeout_label: str = "hold",
     entry_timing: str = "next_open",
+    min_tp_abs: float = 0.0,
 ) -> np.ndarray:
     """Vector of {0,1,2,nan} labels. Future OHLC is used only as the target.
 
     ``entry_timing='next_open'``: fill at Open[t+1], scan bars t+1..t+horizon.
     ``entry_timing='same_close'``: fill at Close[t], scan bars t+1..t+horizon.
+
+    Barriers are **per-side** so an asymmetric R:R does not bake in a long/short
+    label bias:
+
+        long  TP = +tp_atr * ATR,  SL = -sl_atr * ATR
+        short TP = -tp_atr * ATR,  SL = +sl_atr * ATR
+
+    BUY  if the long trade hits TP before SL.
+    SELL if the short trade hits TP before SL.
+    HOLD if neither side wins (timeout, conflict, or both fail).
+    When ``tp_atr == sl_atr`` this matches first-touch of a single upper/lower
+    pair.
+
+    ``min_tp_abs``: if TP distance is below this price amount (e.g. spread),
+    a barrier win is treated as HOLD (cost-aware labels).
     """
     n = len(close)
     labels = np.full(n, np.nan, dtype=float)
@@ -211,34 +233,53 @@ def triple_barrier_labels(
         if end > n or not np.isfinite(entry) or entry <= 0:
             continue
 
-        up = entry + tp_atr * a
-        dn = entry - sl_atr * a
-        lab = float(LABEL_MAP["HOLD"])
-        hit = False
+        long_tp = entry + tp_atr * a
+        long_sl = entry - sl_atr * a
+        short_tp = entry - tp_atr * a
+        short_sl = entry + sl_atr * a
+        long_res = None  # "win" | "lose"
+        short_res = None
+        last_close = entry
         for i in range(start, end):
             px_up = high[i] if use_hl else close[i]
             px_dn = low[i] if use_hl else close[i]
-            hit_up = px_up >= up
-            hit_dn = px_dn <= dn
-            if hit_up and hit_dn:
-                lab = float(LABEL_MAP["HOLD"])
-                hit = True
+            last_close = close[i]
+            if long_res is None:
+                hit_ltp = px_up >= long_tp
+                hit_lsl = px_dn <= long_sl
+                if hit_ltp and hit_lsl:
+                    long_res = "lose"
+                elif hit_lsl:
+                    long_res = "lose"
+                elif hit_ltp:
+                    long_res = "win"
+            if short_res is None:
+                hit_stp = px_dn <= short_tp
+                hit_ssl = px_up >= short_sl
+                if hit_stp and hit_ssl:
+                    short_res = "lose"
+                elif hit_ssl:
+                    short_res = "lose"
+                elif hit_stp:
+                    short_res = "win"
+            if long_res is not None and short_res is not None:
                 break
-            if hit_up:
-                lab = float(LABEL_MAP["BUY"])
-                hit = True
-                break
-            if hit_dn:
-                lab = float(LABEL_MAP["SELL"])
-                hit = True
-                break
-        if not hit and timeout_sign:
-            exit_px = close[end - 1]
-            fwd = exit_px / entry - 1.0
-            if fwd > 0:
-                lab = float(LABEL_MAP["BUY"])
-            elif fwd < 0:
-                lab = float(LABEL_MAP["SELL"])
+        if timeout_sign:
+            if long_res is None:
+                long_res = "win" if last_close > entry else "lose"
+            if short_res is None:
+                short_res = "win" if last_close < entry else "lose"
+
+        tp_ok = True
+        if min_tp_abs > 0:
+            tp_ok = (tp_atr * a) >= min_tp_abs
+
+        if long_res == "win" and short_res != "win" and tp_ok:
+            lab = float(LABEL_MAP["BUY"])
+        elif short_res == "win" and long_res != "win" and tp_ok:
+            lab = float(LABEL_MAP["SELL"])
+        else:
+            lab = float(LABEL_MAP["HOLD"])
         labels[t] = lab
     return labels
 
@@ -278,6 +319,7 @@ def build_labels(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.Series:
         path=b["path"],
         timeout_label=b["timeout_label"],
         entry_timing=entry_timing,
+        min_tp_abs=b["min_tp_abs"],
     )
     labels = pd.Series(raw, index=df.index, name="label")
     return labels

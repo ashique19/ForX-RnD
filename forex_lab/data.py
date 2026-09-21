@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from forex_lab.config_loader import pair_to_ticker
+from forex_lab.console import safe_print
 from forex_lab.paths import resolve_under_root
 
 
@@ -123,10 +124,12 @@ def fetch_ohlcv(
         df = _normalize_ohlcv(raw)
         if len(df) < 100:
             raise RuntimeError(f"too few bars: {len(df)}")
+        # Save before any caller prints — a console encoding error must not
+        # look like a fetch failure or trigger a synthetic overwrite.
         df.to_csv(out_path)
         return df, "yfinance"
     except Exception as exc:  # noqa: BLE001 — intentional fallback
-        print(f"[fetch] yfinance failed ({exc}); using synthetic OHLCV")
+        safe_print(f"[fetch] yfinance failed ({exc}); using synthetic OHLCV")
         df = generate_synthetic_ohlcv(pair=pair, interval=interval)
         df.to_csv(out_path)
         return df, "synthetic"
