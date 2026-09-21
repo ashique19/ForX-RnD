@@ -1124,7 +1124,7 @@ def _render_daily_digest(
     issues = int((payload.get("awareness") or {}).get("n_unhealthy") or 0)
     paper = payload.get("paper") or {}
     n_flips = len(payload.get("flips") or [])
-    expand = bool(issues or paper.get("wrong") or n_flips)
+    expand = bool(paper.get("wrong") or n_flips)
     label = "Daily digest"
     bits = []
     if issues:
@@ -1805,39 +1805,6 @@ def render_watch_board(cfg) -> None:
                     f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy
                 )
             )
-        exp_label = "Awareness"
-        if unhealthy:
-            exp_label += " — " + ", ".join(
-                f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
-                for r in unhealthy[:4]
-            )
-        with st.expander(exp_label, expanded=True):
-            st.caption(
-                "Every source this desk fetches or observes. "
-                "STALE / FAIL / MISSING never display as OK. "
-                f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
-            )
-            st.caption(health_strip(health))
-            if health:
-                st.markdown(awareness_table_html(health), unsafe_allow_html=True)
-            else:
-                _empty_state(
-                    "Watchlist is empty — no sources to report",
-                    "Add a pair below. Awareness lists every feed this desk observes.",
-                    kicker="AWARENESS",
-                )
-
-        try:
-            _render_daily_digest(
-                cfg,
-                health=health,
-                calendar=calendar,
-                broker=broker,
-                alert_state=alert_state,
-                board_rows=rows,
-            )
-        except Exception:  # noqa: BLE001
-            pass
 
         if not rows:
             _empty_state(
@@ -1859,8 +1826,6 @@ def render_watch_board(cfg) -> None:
                 + " "
                 + PAPER_GATE_CAPTION
             )
-            with st.expander("Event calendar", expanded=False):
-                _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
             _render_dense_header()
             selected = st.session_state.get("board_detail_pair")
             if selected and selected not in {r.pair for r in rows}:
@@ -1887,6 +1852,9 @@ def render_watch_board(cfg) -> None:
                         calendar,
                     )
 
+            with st.expander("Event calendar", expanded=False):
+                _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
+
             if broker is not None:
                 closed_n = list(getattr(broker, "list_closed", lambda: [])())
                 has_book = bool(broker.list_positions() or closed_n)
@@ -1900,6 +1868,40 @@ def render_watch_board(cfg) -> None:
                     st.dataframe(style_board(table), use_container_width=True, hide_index=True)
                 except Exception:
                     st.dataframe(table, use_container_width=True, hide_index=True)
+
+        exp_label = "Awareness"
+        if unhealthy:
+            exp_label += " — " + ", ".join(
+                f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
+                for r in unhealthy[:4]
+            )
+        with st.expander(exp_label, expanded=False):
+            st.caption(
+                "Every source this desk fetches or observes. "
+                "STALE / FAIL / MISSING never display as OK. "
+                f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
+            )
+            st.caption(health_strip(health))
+            if health:
+                st.markdown(awareness_table_html(health), unsafe_allow_html=True)
+            else:
+                _empty_state(
+                    "Watchlist is empty — no sources to report",
+                    "Add a pair below. Awareness lists every feed this desk observes.",
+                    kicker="AWARENESS",
+                )
+
+        try:
+            _render_daily_digest(
+                cfg,
+                health=health,
+                calendar=calendar,
+                broker=broker,
+                alert_state=alert_state,
+                board_rows=rows,
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
         ok_n = sum(1 for r in rows if r.validity == VALIDITY_OK)
         closed_n = sum(1 for r in rows if r.validity == VALIDITY_CLOSED)
