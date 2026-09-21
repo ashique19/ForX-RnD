@@ -5,6 +5,7 @@ Run from the project root:  streamlit run streamlit_app.py
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -13,7 +14,7 @@ import streamlit as st
 from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_pair
 from forex_lab.calendar import CalendarBundle, countdown_label
 from forex_lab import calendar as calendar_lab
-from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag
+from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag, zoneinfo_for
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.advise import Suggestion, suggest_actions
@@ -407,9 +408,11 @@ def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=
         st.caption("No high-impact events in the look-ahead window.")
         return
     wanted = {str(p).upper() for p in pairs}
+    dhaka_now = datetime.now(zoneinfo_for(cfg))
+    st.caption(f"Now {fmt_display(dhaka_now, cfg, seconds=True)} — countdowns vs this clock.")
     for e in bundle.events:
         when = e.when_dt()
-        cd = countdown_label(when)
+        cd = countdown_label(when, now=dhaka_now)
         hit = [p for p in wanted if e.currency in {p[:3], p[3:6]} and len(p) >= 6]
         pairs_txt = ", ".join(hit) if hit else "(no watchlist pair)"
         mark = " · highlight" if e.highlight else ""
@@ -696,6 +699,7 @@ def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
                         "side": p.get("side"),
                         "size": p.get("size"),
                         "entry": p.get("entry_price"),
+                        "when": relabel(p.get("entry_time"), cfg, seconds=True),
                         "sl": p.get("sl"),
                         "tp": p.get("tp"),
                         "uPnL": p.get("unrealized"),

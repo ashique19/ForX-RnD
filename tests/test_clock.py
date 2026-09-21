@@ -8,6 +8,7 @@ from forex_lab.clock import (
     fmt_display,
     parse_ts,
     relabel,
+    relabel_in_text,
     timezone_name,
     to_display,
 )
@@ -52,7 +53,17 @@ def test_relabel_is_idempotent_for_dhaka_labels():
     assert relabel(None) == "n/a"
     assert relabel("n/a") == "n/a"
     assert relabel("2026-09-21 10:00 UTC (100 bars)") == "2026-09-21 16:00 Asia/Dhaka (100 bars)"
-    assert "no headlines" == relabel("no headlines")
-    once = relabel("2026-09-21 10:00 UTC")
-    assert once == "2026-09-21 16:00 Asia/Dhaka"
-    assert relabel(once) == once
+    assert relabel("no headlines") == "no headlines"
+
+
+def test_relabel_in_text_converts_embedded_utc_and_skips_dhaka():
+    raw = "last bar 2026-09-21 07:00 UTC is older than 2× 1h during a liquid session"
+    out = relabel_in_text(raw)
+    assert "2026-09-21 13:00 Asia/Dhaka" in out
+    assert "UTC" not in out
+    assert "older than 2× 1h" in out
+    already = "last bar 2026-09-21 13:00 Asia/Dhaka is older than 2× 1h"
+    assert relabel_in_text(already) == already
+    iso = relabel_in_text("event 2026-09-21T10:00:00Z nearby")
+    assert "2026-09-21 16:00" in iso
+    assert "Asia/Dhaka" in iso

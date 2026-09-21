@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from forex_lab.clock import fmt_display, relabel
+from forex_lab.clock import fmt_display, relabel, relabel_in_text
 from forex_lab.freshness import FetchGate
 from forex_lab.news import NewsBundle
 
@@ -128,7 +128,7 @@ def build_health_rows(
                 "Observed": observed,
                 "Cadence": cadence,
                 "Last update": last_fetch,
-                "Detail": str(getattr(row, "validity_reason", None) or src),
+                "Detail": relabel_in_text(getattr(row, "validity_reason", None) or src),
             }
         )
         bundle = news_map.get(pair)
@@ -174,7 +174,7 @@ def build_health_rows(
                 "Observed": str(gate.last_error),
                 "Cadence": cadence,
                 "Last update": relabel(gate.backoff_until_label() or "n/a"),
-                "Detail": f"backing off until {gate.backoff_until_label()}",
+                "Detail": f"backing off until {relabel(gate.backoff_until_label() or 'n/a')}",
             },
         )
     cal_row = _calendar_health(calendar, calendar_ttl_s)

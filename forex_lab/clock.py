@@ -7,6 +7,7 @@ windows (Asia/London/NY) remain UTC definitions — only the readout converts.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -114,6 +115,27 @@ def relabel(value: object, cfg: dict[str, Any] | None = None, *, seconds: bool =
     if parsed is None:
         return raw
     return fmt_display(parsed, cfg, seconds=seconds) + suffix
+
+
+_UTC_STAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z| UTC)?(?! Asia/Dhaka)(?! BDST)"
+)
+
+
+def relabel_in_text(text: object, cfg: dict[str, Any] | None = None) -> str:
+    """Replace UTC (or parseable) stamps inside a sentence; leave other words intact."""
+    if text is None:
+        return ""
+    raw = str(text)
+    if not raw:
+        return raw
+
+    def _sub(match: re.Match[str]) -> str:
+        piece = match.group(0)
+        converted = relabel(piece, cfg, seconds=(":" in piece[13:] and piece.count(":") >= 2))
+        return converted if converted != "n/a" else piece
+
+    return _UTC_STAMP.sub(_sub, raw)
 
 
 def clock_note(cfg: dict[str, Any] | None = None) -> str:

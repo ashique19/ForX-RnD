@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from forex_lab.clock import fmt_display
+from forex_lab.clock import fmt_display, relabel_in_text
 from forex_lab.config_loader import load_config
 from forex_lab.data import csv_mtime_utc, load_cached_ohlcv, try_yfinance_refresh
 from forex_lab.explain import SignalExplanation, explain_latest_signal
@@ -482,7 +482,7 @@ def apply_freshness(
 ) -> BoardRow:
     """Attach validity. STALE/MISSING/ERROR never flash a live BUY/SELL."""
     row.validity = fresh.validity
-    row.validity_reason = fresh.reason
+    row.validity_reason = relabel_in_text(fresh.reason, cfg) if fresh.reason else fresh.reason
     row.last_bar_at = fmt_display(fresh.last_bar, cfg) if fresh.last_bar else fresh.last_bar_label
     if last_fetch_at:
         row.last_fetch_at = last_fetch_at
@@ -496,7 +496,7 @@ def apply_freshness(
         row.buy_sell = "—"
         last_model = row.raw_signal or "n/a"
         row.signal_details = (
-            f"data stale — refresh required (last model {last_model}; {fresh.reason})"
+            f"data stale — refresh required (last model {last_model}; {row.validity_reason})"
         )
         if row.status == STATUS_READY:
             row.status = STATUS_STALE
