@@ -52,9 +52,30 @@ Re-run `train` then `backtest` after a fetch so models and `reports/latest_repor
 
 ### Windows console encoding
 
-`fetch` writes `data\<PAIR>_<interval>.csv` **before** any console print. CLI stdout is ASCII (`->`, not `→`). `INSTALL.bat` and `RUN_DEMO.bat` set `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`, and code page 65001.
+`fetch` writes `data\<PAIR>_<interval>.csv` **before** any console print. CLI stdout is ASCII (`->`, not `→`). `INSTALL.bat`, `RUN_DEMO.bat`, and `RUN_UI.bat` set `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8`, and code page 65001.
 
 If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. `RUN_DEMO.bat` will not overwrite an existing `data\EURUSD_1h.csv` with synthetic data on a later error. Do not mix synthetic numbers with yfinance numbers in the same report.
+
+## Local dashboard (Streamlit)
+
+A browser UI on **localhost:8501** to run fetch / train / backtest / generate signals and view `signals/latest_signals.csv` plus walk-forward metrics from `reports/latest_metrics.json`. It calls the same `forex_lab` functions as the CLI. **No broker APIs, no order buttons, no auto-trading.**
+
+Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing):
+
+```bat
+cd C:\AI\forex-lab
+RUN_UI.bat
+```
+
+Or:
+
+```bat
+cd C:\AI\forex-lab
+.venv\Scripts\activate
+streamlit run streamlit_app.py
+```
+
+Then open http://localhost:8501 (default port). Stop with Ctrl+C in that terminal.
 
 ## Outputs
 
@@ -150,11 +171,13 @@ Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR bar
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, and confidence filters.
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, and a Streamlit UI smoke render against sample reports/signals.
 
 ## Project layout
 
 ```
+streamlit_app.py # local dashboard (streamlit run streamlit_app.py)
+RUN_UI.bat       # Windows helper: venv + streamlit on localhost:8501
 forex_lab/
   console.py     # ASCII-safe CLI prints + UTF-8 stdio
   data.py        # yfinance fetch + synthetic fallback
@@ -163,6 +186,7 @@ forex_lab/
   backtest.py    # walk-forward + metrics + report
   signals.py     # latest_signals.csv
   cli.py         # CLI entry
+  ui/            # Streamlit helpers (imports CLI functions; no live trading)
 config/default.yaml
 tests/
 scripts/screen_variants.py  # optional research screen (not a user command)
