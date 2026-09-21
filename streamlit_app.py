@@ -1812,42 +1812,8 @@ def render_watch_board(cfg) -> None:
                     f"{r.get('Source') or r.get('Feed')} {r.get('Status')}" for r in unhealthy
                 )
             )
-        exp_label = "Awareness"
-        if unhealthy:
-            exp_label += " — " + ", ".join(
-                f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
-                for r in unhealthy[:4]
-            )
-        with st.expander(exp_label, expanded=True):
-            st.caption(
-                "Every source this desk fetches or observes. "
-                "STALE / FAIL / MISSING never display as OK. "
-                f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
-            )
-            st.caption(health_strip(health))
-            if health:
-                st.markdown(awareness_table_html(health), unsafe_allow_html=True)
-            else:
-                st.markdown(
-                    empty_state_html(
-                        "No sources",
-                        "Watchlist is empty — nothing to observe. Paper BrokerPort unchanged.",
-                    ),
-                    unsafe_allow_html=True,
-                )
 
-        try:
-            _render_daily_digest(
-                cfg,
-                health=health,
-                calendar=calendar,
-                broker=broker,
-                alert_state=alert_state,
-                board_rows=rows,
-            )
-        except Exception:  # noqa: BLE001
-            pass
-
+        # Scan board first — Awareness / digest stay one scroll away, not in the way.
         if not rows:
             st.markdown(
                 empty_state_html(
@@ -1898,6 +1864,43 @@ def render_watch_board(cfg) -> None:
                         calendar,
                     )
 
+        exp_label = "Awareness"
+        if unhealthy:
+            exp_label += " — " + ", ".join(
+                f"{r.get('Source') or r.get('Feed')} {status_token(r)}"
+                for r in unhealthy[:4]
+            )
+        with st.expander(exp_label, expanded=bool(unhealthy)):
+            st.caption(
+                "Every source this desk fetches or observes. "
+                "STALE / FAIL / MISSING never display as OK. "
+                f"Last OK is {timezone_tag(cfg)}. Paper BrokerPort unchanged."
+            )
+            st.caption(health_strip(health))
+            if health:
+                st.markdown(awareness_table_html(health), unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    empty_state_html(
+                        "No sources",
+                        "Watchlist is empty — nothing to observe. Paper BrokerPort unchanged.",
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+        try:
+            _render_daily_digest(
+                cfg,
+                health=health,
+                calendar=calendar,
+                broker=broker,
+                alert_state=alert_state,
+                board_rows=rows,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        if rows:
             if broker is not None:
                 closed_n = list(getattr(broker, "list_closed", lambda: [])())
                 has_book = bool(broker.list_positions() or closed_n)

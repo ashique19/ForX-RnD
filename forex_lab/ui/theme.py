@@ -371,7 +371,7 @@ div[data-testid="stAlert"] { padding: 0.4rem 0.6rem !important; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 2px 0 10px;
+  padding: 2px 0 10px 1.75rem;
   border-bottom: 1px solid var(--fx-border);
   margin-bottom: 6px;
   min-height: 1.7rem;
