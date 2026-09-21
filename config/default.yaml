@@ -114,6 +114,49 @@ news:
   cache_ttl_s: 300         # be polite to Google News; reuse for 5 minutes
   cache_file: data/news_cache.json
 
+# High-impact FX event calendar (UI). Free unofficial Forex Factory weekly JSON.
+# Source: https://nfs.faireconomy.media/ff_calendar_thisweek.json (no API key).
+# Not an official FF/Fed/BLS feed. Cached locally; fail-soft if offline.
+calendar:
+  enabled: true
+  source: faireconomy_ff_json
+  url: "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+  timeout_s: 8
+  cache_ttl_s: 1800        # 30 min — be polite; the week dump is not a tick
+  cache_file: data/calendar_cache.json
+  min_impact: High         # High | Medium | Low (Holiday is always dropped below High)
+  max_events: 12
+  lookback_hours: 6
+  lookahead_hours: 168
+  before_minutes: 60
+  during_minutes: 15
+  after_minutes: 30
+  highlight:               # extra-sensitive names for flatten / no-new-open advice
+    - NFP
+    - Non-Farm
+    - FOMC
+    - CPI
+    - Core PCE
+    - Interest Rate
+    - Policy Rate
+    - Unemployment
+    - Employment Change
+    - GDP
+
+# Advisory cards next to Paper Buy/Sell. Never auto-submit via BrokerPort.
+advice:
+  enabled: true
+  before_minutes: 60
+  during_minutes: 15
+  after_minutes: 30
+  before_action_open: tighten_sl   # hold | close | tighten_sl
+  during_action_open: hold
+  after_action_open: hold
+  flatten_action: close            # NFP/FOMC/CPI-style names in the before/during window
+  tighten_sl_atr: 1.0              # vs barrier.sl_atr (default 2.0) — research SL only
+
+# Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
+
 # Paper practice desk (UI Buy/Sell/Close). Not a live venue.
 # Future mt5 / oanda would implement forex_lab.broker.BrokerPort the same way;
 # this repo does not store API keys or place live orders.
@@ -122,7 +165,6 @@ broker:
   store: data/paper_broker.json
   default_size: 1.0         # paper units — not a lot-size ticket
 
-# Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
 board:
   realtime_seconds: 60     # st.fragment period when Realtime is checked
   yf_min_interval_s: 60    # min seconds between yfinance hits per pair
@@ -130,6 +172,11 @@ board:
   incremental_period: "5d" # short Yahoo window; merged into the existing CSV
   incremental_min_bars: 20
   sparkline_bars: 48        # cached closes on each watchlist card
+  mtf_confirm:
+    enabled: true
+    timeframes: ["4h"]     # causal SMA slope from the same pair CSV (add "1D" if wanted)
+    conflict_flash: off    # off | weaken | hold — default off (badge only; HTF gate hurt EURUSD)
+    flat_eps: 1.0e-8
 
 # Paths (relative to project root)
 paths:

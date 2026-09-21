@@ -178,3 +178,17 @@ def test_persists_to_disk(tmp_path):
     b2 = PaperBroker(path, cfg={"spread_pips": 0.0})
     assert len(b2.list_positions()) == 1
     assert b2.list_positions()[0]["pair"] == "USDJPY"
+
+
+def test_modify_sl_is_paper_extra_not_on_port(tmp_path):
+    b = PaperBroker(tmp_path / "sl.json", cfg={"spread_pips": 0.0})
+    b.submit("BUY", "EURUSD", sl=1.0900, tp=1.1200, price=1.1000)
+    pos = b.list_positions()[0]
+    out = b.modify_sl(pos["id"], 1.0950, price=1.1000, note="user click")
+    assert out["sl"] == pytest.approx(1.0950)
+    assert out["sl_prev"] == pytest.approx(1.0900)
+    with pytest.raises(BrokerError, match="widen"):
+        b.modify_sl(pos["id"], 1.0800, price=1.1000)
+    with pytest.raises(BrokerError, match="below"):
+        b.modify_sl(pos["id"], 1.1000, price=1.1000)
+    assert not hasattr(BrokerPort, "modify_sl") or "modify_sl" not in BrokerPort.__abstractmethods__

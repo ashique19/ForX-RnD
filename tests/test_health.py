@@ -45,3 +45,40 @@ def test_health_rows_ohlcv_and_news():
     closed_only = [{"Feed": "OHLCV EURUSD 1h", "Status": "CLOSED"}]
     assert health_unhealthy(closed_only) == []
     assert health_strip([]) == "No feeds — watchlist empty."
+
+
+def test_health_includes_calendar_ok_and_fail():
+    from forex_lab.calendar import CalendarBundle, CalendarEvent
+
+    row = SimpleNamespace(
+        pair="EURUSD",
+        timeframe="1h",
+        validity="OK",
+        validity_reason="ok",
+        last_bar_at="2026-09-21 10:00 UTC",
+        last_fetch_at="2026-09-21 09:00 UTC",
+        n_bars=100,
+        data_source="cached",
+    )
+    cal = CalendarBundle(
+        events=[
+            CalendarEvent(
+                title="Non-Farm Employment Change",
+                currency="USD",
+                when="2026-09-21T16:30:00Z",
+                impact="High",
+                highlight=True,
+            )
+        ],
+        fetched_at="2026-09-21 09:00 UTC",
+        source="faireconomy_ff_json",
+    )
+    rows = build_health_rows([row], calendar=cal, calendar_ttl_s=1800)
+    feeds = [r["Feed"] for r in rows]
+    assert "Event calendar" in feeds
+    cal_row = next(r for r in rows if r["Feed"] == "Event calendar")
+    assert cal_row["Status"] == "OK"
+    assert "Non-Farm" in cal_row["Observed"]
+    fail = CalendarBundle(error="timeout", fetched_at=None)
+    rows2 = build_health_rows([row], calendar=fail)
+    assert next(r for r in rows2 if r["Feed"] == "Event calendar")["Status"] == "FAIL"

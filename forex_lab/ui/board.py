@@ -24,6 +24,14 @@ from forex_lab.freshness import (
     fmt_ts,
     now_utc,
 )
+from forex_lab.mtf import (
+    FLASH_HOLD,
+    FLASH_WEAKEN,
+    MTF_CONFLICT,
+    MtfStatus,
+    assess_mtf,
+    conflict_flash_mode,
+)
 from forex_lab.signals import generate_signals
 from forex_lab.ui.pipeline import artifact_status, load_signals
 from forex_lab.ui.watchlist import Watchlist
@@ -89,14 +97,18 @@ class BoardRow:
     sparkline: list[float] = field(default_factory=list)
     sparkline_note: str = ""
     risk: RiskBox | None = None
+    mtf: MtfStatus | None = None
+    flash_weak: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
+        mtf_label = self.mtf.status if self.mtf is not None else "n/a"
         return {
             "Pair": self.pair,
             "Timeframe": self.timeframe,
             "Validity": self.validity,
             "Buy/Sell": self.buy_sell,
+            "MTF": mtf_label,
             "Target": self.target,
             "Last bar": self.last_bar_at or "n/a",
             "Signal details": self.signal_details,
@@ -280,6 +292,41 @@ def attach_visuals(
             else "no sparkline — close series empty"
         )
     row.risk = research_risk(ohlcv, cfg, row.buy_sell, validity=row.validity)
+    return attach_mtf(row, ohlcv, cfg)
+
+
+def attach_mtf(
+    row: BoardRow,
+    ohlcv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+) -> BoardRow:
+    """Causal HTF SMA-slope badge. Does not change the flash unless configured."""
+    sig = row.raw_signal or row.buy_sell
+    row.mtf = assess_mtf(ohlcv, cfg, sig, validity=row.validity)
+    return row
+
+
+def apply_mtf_flash(row: BoardRow, cfg: dict[str, Any]) -> BoardRow:
+    """Optional: flash HOLD or weaker when MTF conflicts. Default off."""
+    mode = conflict_flash_mode(cfg)
+    mtf = row.mtf
+    if mtf is None or mtf.status != MTF_CONFLICT:
+        return row
+    live = str(row.buy_sell or "").upper()
+    if live not in {"BUY", "SELL"}:
+        return row
+    if mode == FLASH_HOLD:
+        row.raw_signal = row.raw_signal or row.buy_sell
+        row.buy_sell = "HOLD"
+        row.flash_weak = False
+        row.signal_details = (
+            f"MTF conflict — flashed HOLD (last model {row.raw_signal}; {mtf.note})"
+        )
+        # Keep the ATR box for the raw directional class so SL advice still has a level.
+        return row
+    if mode == FLASH_WEAKEN:
+        row.flash_weak = True
+        row.signal_details = (row.signal_details or "") + f"  |  weak — {mtf.note}"
     return row
 
 
@@ -369,7 +416,7 @@ def row_from_signal(
         last_signal_at=_fmt_when(get("datetime")),
         validity=VALIDITY_OK,
     )
-    return attach_visuals(row, ohlcv, cfg)
+    return apply_mtf_flash(attach_visuals(row, ohlcv, cfg), cfg)
 
 
 def _status_row(
@@ -611,11 +658,12 @@ def build_board_row(
         n_bars=len(ohlcv),
     )
     fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
-    return attach_visuals(
+    row = attach_visuals(
         apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None),
         ohlcv,
         cfg,
     )
+    return apply_mtf_flash(row, cfg)
 
 
 def build_board_rows(
@@ -643,7 +691,7 @@ def build_board_rows(
 
 
 def board_table(rows: list[BoardRow]) -> pd.DataFrame:
-    cols = ["Pair", "Timeframe", "Validity", "Buy/Sell", "Target", "Last bar", "Signal details"]
+    cols = ["Pair", "Timeframe", "Validity", "Buy/Sell", "MTF", "Target", "Last bar", "Signal details"]
     if not rows:
         return pd.DataFrame(columns=cols)
     return pd.DataFrame([r.as_table_dict() for r in rows])
@@ -686,6 +734,17 @@ def style_board(df: pd.DataFrame):
                 styler = mapper(_sig, subset=["Buy/Sell"])
             if "Validity" in df.columns:
                 styler = mapper(_val, subset=["Validity"])
+            if "MTF" in df.columns:
+
+                def _mtf(val: object) -> str:
+                    v = str(val).lower()
+                    if v == "agree":
+                        return "background-color: #dcfce7; color: #166534; font-weight: 700"
+                    if v == "conflict":
+                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
+                    return ""
+
+                styler = mapper(_mtf, subset=["MTF"])
         return styler
     except Exception:
         return df

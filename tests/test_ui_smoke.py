@@ -103,6 +103,7 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
 
+    from forex_lab.calendar import CalendarBundle, CalendarEvent
     from forex_lab.news import Headline, NewsBundle
 
     def _stub_news(pair, cfg=None, **_kwargs):
@@ -114,7 +115,24 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
             fetched_at="2026-09-21 00:00 UTC",
         )
 
+    def _stub_cal(cfg=None, **_kwargs):
+        return CalendarBundle(
+            events=[
+                CalendarEvent(
+                    title="Non-Farm Employment Change",
+                    currency="USD",
+                    when="2026-09-21T16:30:00Z",
+                    impact="High",
+                    highlight=True,
+                )
+            ],
+            source="faireconomy_ff_json",
+            fetched_at="2026-09-21 00:00 UTC",
+            notes=["fixture"],
+        )
+
     monkeypatch.setattr("forex_lab.news.fetch_pair_news", _stub_news)
+    monkeypatch.setattr("forex_lab.calendar.fetch_calendar", _stub_cal)
 
     app = project_root() / "streamlit_app.py"
     assert app.exists()
@@ -141,3 +159,7 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "paper" in low
     assert "practice desk" in low or "brokerport" in low or "broker.port" in low
     assert "data health" in low or "awareness" in low
+    assert "event calendar" in low
+    assert "non-farm" in low or "nfp" in low
+    assert "mtf" in low
+    assert "advisory" in low or "not an order" in low or "never auto-submitted" in low
