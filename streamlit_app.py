@@ -107,7 +107,7 @@ from forex_lab.ui.theme import (
     signal_badge_html,
     validity_badge_html,
 )
-from forex_lab.ui.chart import candlestick_figure
+from forex_lab.ui.chart import candle_bar_count, candlestick_figure, chart_blocked_reason
 from forex_lab.ui.workspace import (
     Workspace,
     WorkspaceError,
@@ -449,7 +449,7 @@ def _news_bias_badge(bias: str) -> None:
 
 
 def _render_sparkline(row, *, height: int = 90) -> None:
-    st.caption("Close sparkline (cached) — fallback when OHLC candles are unavailable")
+    st.caption("Sparkline (cached close)")
     if not getattr(row, "sparkline", None):
         st.caption(getattr(row, "sparkline_note", None) or "n/a")
         return
@@ -459,28 +459,46 @@ def _render_sparkline(row, *, height: int = 90) -> None:
 
 
 def _render_price_chart(row, cfg) -> None:
-    """Detail Chart tab: dark candlestick from cached OHLCV. Not a live ticker."""
+    """Detail Chart tab: interactive Plotly candlestick from cached OHLCV.
+
+    Scan-board sparkline stays a mini close spark. STALE/MISSING/ERROR never
+    invent candles. Not a broker chart.
+    """
+    blocked = chart_blocked_reason(getattr(row, "validity", None))
+    if blocked:
+        _empty_state(
+            "No candlestick — data is not OK",
+            blocked + " The board sparkline stays empty too. Research only — not a broker chart.",
+            kicker="CHART",
+        )
+        return
     _price, _ts, ohlcv = _cached_quote(row, cfg)
     title = f"{row.pair}  {row.timeframe}"
-    fig, note = candlestick_figure(ohlcv, title=title, timeframe=row.timeframe)
-    if fig is not None:
-        try:
-            st.pyplot(fig, use_container_width=True, clear_figure=True)
-        except TypeError:
-            st.pyplot(fig, clear_figure=True)
-        st.caption(note)
-        if str(getattr(row, "validity", "")).upper().split()[0] in {
-            VALIDITY_STALE,
-            VALIDITY_MISSING,
-            VALIDITY_ERROR,
-        }:
-            st.caption(
-                f"Validity: {row.validity} — "
-                f"{row.validity_reason or 'cached bars, not live'}"
-            )
+    fig, note = candlestick_figure(
+        ohlcv,
+        n=candle_bar_count(cfg),
+        title=title,
+        timeframe=row.timeframe,
+        cfg=cfg,
+        validity=row.validity,
+    )
+    if fig is None:
+        _empty_state(
+            "No candlestick for this pair",
+            f"{note}. Fetch OHLCV first. Research only — not a broker chart.",
+            kicker="CHART",
+        )
         return
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displaylogo": False,
+            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        },
+    )
     st.caption(note)
-    _render_sparkline(row, height=220)
 
 
 def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
