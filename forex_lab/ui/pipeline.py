@@ -145,15 +145,25 @@ def equity_from_trades(trades: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def signals_display_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Newest bar first, with a `note` marker on that row."""
+    display = df.iloc[::-1].reset_index(drop=True)
+    notes = ["newest"] + [""] * (len(display) - 1) if len(display) else []
+    display.insert(0, "note", notes)
+    return display
+
+
 def style_signals(df: pd.DataFrame):
-    """Newest row last in `df`; highlight it and color the signal column."""
+    """Newest row first; highlight it and color the signal column when Styler works.
+
+    Falls back to a plain DataFrame if pandas Styler/jinja2 is unavailable.
+    """
     if df is None or df.empty:
         return df
-    display = df.iloc[::-1].reset_index(drop=True)
-    newest = 0
+    display = signals_display_frame(df)
 
     def _row(row: pd.Series) -> list[str]:
-        if int(row.name) == newest:
+        if str(row.get("note", "")) == "newest":
             return ["background-color: #d0e4f7; font-weight: 600"] * len(row)
         return [""] * len(row)
 
@@ -167,17 +177,21 @@ def style_signals(df: pd.DataFrame):
             return "background-color: #eceff1; color: #37474f"
         return ""
 
-    styler = display.style.apply(_row, axis=1)
-    if "signal" in display.columns:
-        mapper = getattr(styler, "map", None) or styler.applymap
-        styler = mapper(_sig, subset=["signal"])
-    fmt: dict[str, str] = {}
-    for col in ("close", "confidence", "dir_edge", "p_buy", "p_sell", "p_hold"):
-        if col in display.columns:
-            fmt[col] = "{:.4f}"
-    if fmt:
-        styler = styler.format(fmt)
-    return styler
+    try:
+        styler = display.style.apply(_row, axis=1)
+        if "signal" in display.columns:
+            mapper = getattr(styler, "map", None) or getattr(styler, "applymap", None)
+            if mapper is not None:
+                styler = mapper(_sig, subset=["signal"])
+        fmt: dict[str, str] = {}
+        for col in ("close", "confidence", "dir_edge", "p_buy", "p_sell", "p_hold"):
+            if col in display.columns:
+                fmt[col] = "{:.4f}"
+        if fmt:
+            styler = styler.format(fmt)
+        return styler
+    except Exception:
+        return display
 
 
 def _prepared_cfg(

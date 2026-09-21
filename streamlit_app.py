@@ -199,7 +199,10 @@ def render() -> None:
         if signals is None or signals.empty:
             st.write("No signals file yet. Run **Generate signals** after fetch + train.")
         else:
-            st.dataframe(style_signals(signals), use_container_width=True, hide_index=True)
+            try:
+                st.dataframe(style_signals(signals), use_container_width=True, hide_index=True)
+            except Exception:
+                st.dataframe(signals.iloc[::-1], use_container_width=True, hide_index=True)
 
     with tabs[1]:
         st.subheader("Walk-forward success metrics")

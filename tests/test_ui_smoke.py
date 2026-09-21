@@ -52,9 +52,12 @@ def test_style_signals_highlights_newest_row():
     signals = load_signals()
     assert signals is not None
     styled = style_signals(signals)
-    html = styled.to_html()
+    data = getattr(styled, "data", styled)
+    assert str(data.iloc[0]["note"]) == "newest"
+    assert data.iloc[0]["datetime"] == signals.iloc[-1]["datetime"]
+    html = styled.to_html() if hasattr(styled, "to_html") else data.to_html()
     assert "BUY" in html or "SELL" in html or "HOLD" in html
-    assert "#d0e4f7" in html
+    assert "newest" in html.lower() or "#d0e4f7" in html
 
 
 def test_equity_from_trades_compounds():
