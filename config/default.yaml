@@ -203,6 +203,8 @@ advice:
   tighten_sl_atr: 1.0              # vs barrier.sl_atr (default 2.0) — research SL only
 
 # Display clock for the Streamlit desk. Data/session windows stay UTC.
+# Dark dense terminal chrome lives in `.streamlit/config.toml` + forex_lab/ui/theme.py.
+# Presentation only — does not change BrokerPort or this timezone.
 ui:
   timezone: Asia/Dhaka     # zoneinfo name; default Dhaka (UTC+6, no DST)
   timezone_tag: Asia/Dhaka # suffix on timestamps so the zone is obvious

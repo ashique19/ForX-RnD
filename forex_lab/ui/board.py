@@ -936,29 +936,14 @@ def style_board(df: pd.DataFrame):
     if df is None or df.empty:
         return df
 
-    def _sig(val: object) -> str:
-        v = str(val).upper()
-        if v == "BUY":
-            return "background-color: #c8e6c9; color: #1b5e20; font-weight: 700"
-        if v == "SELL":
-            return "background-color: #ffcdd2; color: #b71c1c; font-weight: 700"
-        if v == "HOLD":
-            return "background-color: #eceff1; color: #37474f"
-        return ""
-
-    def _val(val: object) -> str:
-        v = str(val).upper()
-        if v == VALIDITY_OK:
-            return "background-color: #dcfce7; color: #166534; font-weight: 700"
-        if v == VALIDITY_CLOSED:
-            return "background-color: #e2e8f0; color: #334155; font-weight: 700"
-        if v == VALIDITY_STALE:
-            return "background-color: #fef3c7; color: #92400e; font-weight: 700"
-        if v == VALIDITY_MISSING:
-            return "background-color: #f1f5f9; color: #475569; font-weight: 700"
-        if v == VALIDITY_ERROR:
-            return "background-color: #fee2e2; color: #991b1b; font-weight: 700"
-        return ""
+    from forex_lab.ui.theme import (
+        action_cell_style,
+        event_cell_style,
+        mtf_cell_style,
+        session_cell_style,
+        signal_cell_style,
+        validity_cell_style,
+    )
 
     try:
         styler = df.style
@@ -966,58 +951,18 @@ def style_board(df: pd.DataFrame):
         if mapper is not None:
             sig_col = "Signal" if "Signal" in df.columns else ("Buy/Sell" if "Buy/Sell" in df.columns else None)
             if sig_col:
-                styler = mapper(_sig, subset=[sig_col])
+                styler = mapper(signal_cell_style, subset=[sig_col])
             data_col = "Data●" if "Data●" in df.columns else ("Validity" if "Validity" in df.columns else None)
             if data_col:
-                styler = mapper(_val, subset=[data_col])
+                styler = mapper(validity_cell_style, subset=[data_col])
             if "MTF" in df.columns:
-
-                def _mtf(val: object) -> str:
-                    v = str(val).lower()
-                    if v == "agree":
-                        return "background-color: #dcfce7; color: #166534; font-weight: 700"
-                    if v == "conflict":
-                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
-                    return ""
-
-                styler = mapper(_mtf, subset=["MTF"])
+                styler = mapper(mtf_cell_style, subset=["MTF"])
             if "Session" in df.columns:
-
-                def _sess(val: object) -> str:
-                    v = str(val).upper()
-                    if v in {"CLOSED", "OFF", "N/A"}:
-                        return "background-color: #e2e8f0; color: #334155; font-weight: 700"
-                    if "+" in v:
-                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
-                    if v == "ASIA":
-                        return "background-color: #e0e7ff; color: #3730a3; font-weight: 700"
-                    if v == "LONDON":
-                        return "background-color: #dbeafe; color: #1e40af; font-weight: 700"
-                    if v == "NY":
-                        return "background-color: #ccfbf1; color: #115e59; font-weight: 700"
-                    return "background-color: #e2e8f0; color: #334155; font-weight: 700"
-
-                styler = mapper(_sess, subset=["Session"])
+                styler = mapper(session_cell_style, subset=["Session"])
             if "Next event" in df.columns:
-
-                def _ev(val: object) -> str:
-                    v = str(val)
-                    if v.startswith("⚠"):
-                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
-                    return ""
-
-                styler = mapper(_ev, subset=["Next event"])
+                styler = mapper(event_cell_style, subset=["Next event"])
             if "Actions" in df.columns:
-
-                def _act(val: object) -> str:
-                    v = str(val).lower()
-                    if v.startswith("disabled"):
-                        return "background-color: #f1f5f9; color: #64748b"
-                    if v == "buy/sell":
-                        return "font-weight: 700"
-                    return ""
-
-                styler = mapper(_act, subset=["Actions"])
+                styler = mapper(action_cell_style, subset=["Actions"])
         return styler
     except Exception:
         return df

@@ -166,20 +166,15 @@ def style_signals(df: pd.DataFrame):
         return df
     display = signals_display_frame(df)
 
+    from forex_lab.ui.theme import newest_row_style, signal_cell_style
+
     def _row(row: pd.Series) -> list[str]:
         if str(row.get("note", "")) == "newest":
-            return ["background-color: #d0e4f7; font-weight: 600"] * len(row)
+            return newest_row_style(len(row))
         return [""] * len(row)
 
     def _sig(val: object) -> str:
-        v = str(val).upper()
-        if v == "BUY":
-            return "background-color: #c8e6c9; color: #1b5e20; font-weight: 700"
-        if v == "SELL":
-            return "background-color: #ffcdd2; color: #b71c1c; font-weight: 700"
-        if v == "HOLD":
-            return "background-color: #eceff1; color: #37474f"
-        return ""
+        return signal_cell_style(val)
 
     try:
         styler = display.style.apply(_row, axis=1)
