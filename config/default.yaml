@@ -59,6 +59,7 @@ model:
   type: xgboost            # xgboost | logistic
   random_state: 42
   class_weight_balanced: true
+  compare_logistic: true   # extra walk-forward column; not used for signals
   xgboost:
     n_estimators: 160
     max_depth: 3
@@ -73,8 +74,8 @@ model:
 
 # Signal generation (also applied in backtest so research matches the CSV)
 signals:
-  min_confidence: 0.45     # min P(predicted class) to emit BUY/SELL (else HOLD)
-  min_dir_edge: 0.08       # min |P(BUY)-P(SELL)| to emit a directional signal
+  min_confidence: 0.40     # min P(predicted class) to emit BUY/SELL (else HOLD)
+  min_dir_edge: 0.0        # min |P(BUY)-P(SELL)|; 0 keeps the model's own HOLD class
   lookback_bars: 64        # rows written to latest_signals.csv
 
 # Paths (relative to project root)

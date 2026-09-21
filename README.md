@@ -95,8 +95,8 @@ Barriers are **symmetric** in ATR units so the label does not bake in a long/sho
 
 Optional filters applied to **both** `backtest` and `signals` (so the CSV is the same policy as the report):
 
-- `signals.min_confidence` — min P(predicted class) to emit BUY/SELL
-- `signals.min_dir_edge` — min |P(BUY) − P(SELL)|
+- `signals.min_confidence` — min P(predicted class) to emit BUY/SELL (default `0.40`; random 3-class is ~0.33). Harsh cutoffs can hurt: on EURUSD 1h, the highest XGBoost confidence bucket was **not** the best.
+- `signals.min_dir_edge` — min |P(BUY) − P(SELL)| (default `0.0`; leave the model's HOLD class to do the sitting-out).
 
 Legacy close-to-close labels are still available:
 

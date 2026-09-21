@@ -113,7 +113,9 @@ def test_signal_filters_force_hold():
             "dir_edge": [0.20, 0.20, 0.02, 0.00],
         }
     )
-    out = apply_signal_filters(frame, _cfg())
+    cfg = _cfg()
+    cfg["signals"] = {**(cfg.get("signals") or {}), "min_confidence": 0.45, "min_dir_edge": 0.08}
+    out = apply_signal_filters(frame, cfg)
     assert list(out) == [LABEL_MAP["BUY"], LABEL_MAP["HOLD"], LABEL_MAP["HOLD"], LABEL_MAP["HOLD"]]
 
 

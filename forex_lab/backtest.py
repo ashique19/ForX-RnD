@@ -269,6 +269,7 @@ def walk_forward_backtest(
         step_bars = test_bars
 
     all_preds = []
+    all_log_preds: list[pd.DataFrame] = []
     fold_rows: list[dict[str, Any]] = []
     start = train_bars
     if start >= n:
@@ -285,31 +286,40 @@ def walk_forward_backtest(
         X_tr, y_tr = X.iloc[tr_start:tr_end], y.iloc[tr_start:tr_end]
         X_te = X.iloc[start:te_end]
         y_te = y.iloc[start:te_end]
-        model, mname = build_model(cfg, model_type)
-        fit_model(model, X_tr, y_tr, balanced=balanced)
-        pred = model.predict(X_te)
-        proba = predict_proba_aligned(model, X_te)
-        fold_df = pd.DataFrame({"pred_raw": pred}, index=X_te.index)
-        if proba is not None:
-            fold_df["p_sell"] = proba[:, LABEL_MAP["SELL"]]
-            fold_df["p_hold"] = proba[:, LABEL_MAP["HOLD"]]
-            fold_df["p_buy"] = proba[:, LABEL_MAP["BUY"]]
-            fold_df["confidence"] = proba.max(axis=1)
-            fold_df["dir_edge"] = np.abs(
-                proba[:, LABEL_MAP["BUY"]] - proba[:, LABEL_MAP["SELL"]]
-            )
-        fold_df["pred"] = apply_signal_filters(fold_df, cfg)
+
+        def _predict_frame(mtype: str | None) -> pd.DataFrame:
+            model, _name = build_model(cfg, mtype)
+            fit_model(model, X_tr, y_tr, balanced=balanced)
+            pred = model.predict(X_te)
+            proba = predict_proba_aligned(model, X_te)
+            frame = pd.DataFrame({"pred_raw": pred}, index=X_te.index)
+            if proba is not None:
+                frame["p_sell"] = proba[:, LABEL_MAP["SELL"]]
+                frame["p_hold"] = proba[:, LABEL_MAP["HOLD"]]
+                frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
+                frame["confidence"] = proba.max(axis=1)
+                frame["dir_edge"] = np.abs(
+                    proba[:, LABEL_MAP["BUY"]] - proba[:, LABEL_MAP["SELL"]]
+                )
+            frame["pred"] = apply_signal_filters(frame, cfg)
+            return frame
+
+        fold_df = _predict_frame(model_type)
         all_preds.append(fold_df)
 
-        fold_trades = _simulate_trades(
-            df, fold_df["pred"], cfg, pair, atr=atr_full
-        )
+        fold_trades = _simulate_trades(df, fold_df["pred"], cfg, pair, atr=atr_full)
         fm = _metrics_from_trades(fold_trades)
         fm["fold"] = fold
         fm["n_test_bars"] = int(len(X_te))
         if len(y_te):
             fm["label_accuracy"] = float((fold_df["pred"] == y_te).mean())
         fold_rows.append(fm)
+
+        primary = (model_type or (cfg.get("model") or {}).get("type") or "xgboost").lower()
+        if bool((cfg.get("model") or {}).get("compare_logistic", True)) and primary != "logistic":
+            log_frame = _predict_frame("logistic")
+            all_log_preds.append(log_frame)
+
         fold += 1
         start += step_bars
 
@@ -331,6 +341,13 @@ def walk_forward_backtest(
     always_long = pd.Series(LABEL_MAP["BUY"], index=preds.index, dtype=int)
     long_trades = _simulate_trades(df, always_long, cfg, pair, atr=atr_full)
     long_metrics = _metrics_from_trades(long_trades)
+
+    logistic_metrics = None
+    if all_log_preds:
+        log_preds = pd.concat(all_log_preds)
+        log_preds = log_preds[~log_preds.index.duplicated(keep="last")]
+        log_trades = _simulate_trades(df, log_preds["pred"], cfg, pair, atr=atr_full)
+        logistic_metrics = _metrics_from_trades(log_trades)
 
     y_te = y.reindex(preds.index).dropna()
     overlap = y_te.index.intersection(preds.index)
@@ -355,6 +372,7 @@ def walk_forward_backtest(
         "model": model_metrics,
         "baseline_sma_crossover": sma_metrics,
         "baseline_always_long": long_metrics,
+        "compare_logistic": logistic_metrics,
         "fold_stability": _fold_stability(fold_rows),
         "costs": {
             "spread_pips": cfg.get("spread_pips"),
@@ -371,6 +389,35 @@ def walk_forward_backtest(
         },
     }
     return result, model_trades, preds
+
+
+def _research_takeaway(m, sma, lng, logm) -> list[str]:
+    """Honest one-paragraph summary. Never claims a deployable edge."""
+    pf = m.get("profit_factor")
+    wr = m.get("win_rate")
+    lo = m.get("win_rate_lo")
+    hi = m.get("win_rate_hi")
+    bits = []
+    if pf is not None and pf < 1:
+        bits.append("After spread costs the primary model still has **profit factor < 1** (negative expectancy).")
+    elif pf is not None:
+        bits.append("Primary model profit factor is ≥ 1 on this sample — still not a live-trading claim.")
+    if wr is not None and lo is not None and hi is not None and lo <= 0.5 <= hi:
+        bits.append("The win-rate 95% CI includes 50%, so the directional hit rate is not distinguishable from a coin flip at this sample size.")
+    beat_long = (
+        (m.get("profit_factor") or 0) > (lng.get("profit_factor") or 0)
+        and (m.get("total_return") or -1) > (lng.get("total_return") or -1)
+    )
+    beat_sma = (
+        (m.get("profit_factor") or 0) > (sma.get("profit_factor") or 0)
+        and (m.get("total_return") or -1) > (sma.get("total_return") or -1)
+    )
+    if beat_long and beat_sma:
+        bits.append("It **beats SMA and always-long** on total return and profit factor under this protocol — a small research gap, not a trading system.")
+    elif not beat_long and not beat_sma:
+        bits.append("It does **not** beat both baselines on total return and profit factor.")
+    bits.append("Do not trade this. yfinance ≠ broker quotes; walk-forward on one pair is not validation.")
+    return [" ".join(bits)]
 
 
 def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFrame | None = None) -> str:
@@ -400,6 +447,7 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
     m = result["model"]
     sma = result["baseline_sma_crossover"]
     lng = result["baseline_always_long"]
+    logm = result.get("compare_logistic")
     costs = result.get("costs") or {}
     dist = result.get("label_distribution") or {}
     stab = result.get("fold_stability") or {}
@@ -483,9 +531,20 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
         "",
         "| Strategy | Trades | Win rate | Total return | Max DD | Profit factor |",
         "|---|---:|---:|---:|---:|---:|",
-        f"| Model | {m['n_trades']} | {fmt_pct(m['win_rate'])} | {fmt_pct(m['total_return'])} | {fmt_pct(m['max_drawdown'])} | {fmt_num(m['profit_factor'])} |",
+        f"| Model (`{result['model_type']}`) | {m['n_trades']} | {fmt_pct(m['win_rate'])} | {fmt_pct(m['total_return'])} | {fmt_pct(m['max_drawdown'])} | {fmt_num(m['profit_factor'])} |",
+    ]
+    if logm:
+        lines.append(
+            f"| Logistic (same WF) | {logm['n_trades']} | {fmt_pct(logm['win_rate'])} | {fmt_pct(logm['total_return'])} | {fmt_pct(logm['max_drawdown'])} | {fmt_num(logm['profit_factor'])} |"
+        )
+    lines.extend(
+        [
         f"| SMA crossover | {sma['n_trades']} | {fmt_pct(sma['win_rate'])} | {fmt_pct(sma['total_return'])} | {fmt_pct(sma['max_drawdown'])} | {fmt_num(sma['profit_factor'])} |",
         f"| Always long | {lng['n_trades']} | {fmt_pct(lng['win_rate'])} | {fmt_pct(lng['total_return'])} | {fmt_pct(lng['max_drawdown'])} | {fmt_num(lng['profit_factor'])} |",
+        "",
+        "## Research takeaway",
+        "",
+        *_research_takeaway(m, sma, lng, logm),
         "",
         "## Walk-forward fold stability",
         "",
@@ -506,6 +565,7 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
         "- Compare model win rate / total return / profit factor / drawdown against SMA and always-long **on the same walk-forward windows and cost model**.",
         "- A higher win rate alone is not enough if avg return or profit factor is worse than baseline.",
         "- Fold std tells you whether a headline number is stable or driven by a few windows.",
+        "- Logistic is a linear comparison on the **same** folds/features/filters, not a second trading system.",
         "",
         "## Disclaimer",
         "",
@@ -513,7 +573,8 @@ def write_report(result: dict[str, Any], cfg: dict[str, Any], trades: pd.DataFra
         "Data from yfinance is not identical to broker executable quotes. Past backtest results do not predict future performance.",
         "Even if the model beats these baselines, that is a research signal — not evidence of a deployable edge after slippage, gaps, and session holes.",
         "",
-    ]
+        ]
+    )
     md_path.write_text("\n".join(lines), encoding="utf-8")
     json_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     if trades is not None and not trades.empty:
