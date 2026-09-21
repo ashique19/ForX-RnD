@@ -99,18 +99,30 @@ def test_artifact_status_sees_repo_sample():
     assert status["metrics_exist"]
 
 
-def test_streamlit_app_renders_sample_artifacts():
+def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     pytest.importorskip("streamlit")
     from streamlit.testing.v1 import AppTest
+
+    from forex_lab.news import Headline, NewsBundle
+
+    def _stub_news(pair, cfg=None, **_kwargs):
+        return NewsBundle(
+            pair=str(pair).upper(),
+            bias="mixed",
+            bullets=["Keyword heuristic on fixture headlines."],
+            headlines=[Headline("Euro rallies in fixture", "https://example.com/x", "now", "Test")],
+            fetched_at="2026-09-21 00:00 UTC",
+        )
+
+    monkeypatch.setattr("forex_lab.news.fetch_pair_news", _stub_news)
 
     app = project_root() / "streamlit_app.py"
     assert app.exists()
     at = AppTest.from_file(str(app), default_timeout=60)
     at.run()
     assert not at.exception, f"Streamlit render failed: {at.exception}"
-    # Disclaimer + sample metrics should be on the page.
     blobs = []
-    for attr in ("markdown", "warning", "caption", "text", "title"):
+    for attr in ("markdown", "warning", "caption", "text", "title", "subheader", "header"):
         block = getattr(at, attr, None)
         if block is None:
             continue
@@ -119,5 +131,13 @@ def test_streamlit_app_renders_sample_artifacts():
             if val:
                 blobs.append(str(val))
     joined = "\n".join(blobs)
-    assert "Research only" in joined or "research only" in joined.lower()
-    assert "yfinance" in joined.lower() or "broker" in joined.lower()
+    low = joined.lower()
+    assert "decision-support" in low or "research only" in low or "research label" in low
+    assert "yfinance" in low or "broker" in low
+    assert "signal screen" in low
+    assert "news context, not a trade instruction" in low or "news context" in low
+    assert "last bar" in low or "board last refreshed" in low or "validity" in low
+    assert "sparkline" in low or "risk" in low
+    assert "paper" in low
+    assert "practice desk" in low or "brokerport" in low or "broker.port" in low
+    assert "data health" in low or "awareness" in low

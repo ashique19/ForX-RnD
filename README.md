@@ -2,7 +2,7 @@
 
 Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-rate metrics.
 
-**You trigger trades manually.** This project has **no broker APIs** and places **no live orders**.
+**You trigger trades manually.** This project has **no live broker APIs** and places **no live orders**. Paper Buy/Sell on the screen records a **local practice fill** only (`broker.backend: paper`).
 
 ## Disclaimer
 
@@ -11,6 +11,7 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 - Past backtest metrics **do not** predict future results.
 - Always paper-trade and validate independently before risking capital.
 - Beating SMA / always-long in this lab is a **research signal**, not a deployable edge (slippage, weekend gaps, and broker quotes are not modeled).
+- News headlines (Google News RSS) can be **late, incomplete, or wrong**. The bias note is a keyword heuristic on fetched titles only — not a trade instruction.
 
 ## Install (Windows)
 
@@ -58,7 +59,25 @@ If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. 
 
 ## Local dashboard (Streamlit)
 
-A browser UI on **localhost:8501** to run fetch / train / backtest / generate signals and view `signals/latest_signals.csv` plus walk-forward metrics from `reports/latest_metrics.json`. It calls the same `forex_lab` functions as the CLI. **No broker APIs, no order buttons, no auto-trading.**
+A **trader-facing signal screen** on **localhost:8501**. Math analysis + news context flash **BUY / SELL / HOLD** with details so **you** decide. It calls the same `forex_lab` functions as the CLI. **No live broker APIs, no auto-trading.** Paper Buy/Sell/Close talks only to a `BrokerPort` (default `PaperBroker`).
+
+The top of the page is the **signal screen** (primary): one flash card per watchlist pair — **Pair | Timeframe | Validity | Buy/Sell (color badge) | Target | Sparkline | Risk | Signal details | News context**. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
+
+**Realtime** (default **60s**, minimum 60s): rebuilds signals from the **local** cache each tick. yfinance is called only when a bar is due or the cache is approaching stale, **one pair per tick**, with exponential backoff after errors or 429-like responses. Yahoo’s download endpoint is unofficial and has no SLA — 60–120s is the practical band; do not set this like a broker stream. A **rate limited — backing off until …** banner appears if throttled. Realtime off: **Manual update** only.
+
+**Data validity:** each card shows `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last candle older than ~2× the timeframe is **STALE** and the flash is **—** plus “data stale — refresh required” (the last model class is kept as a note, not as a live call). Weekends / Friday after ~21:00 UTC show **CLOSED** with last bar time — not a false STALE alarm. Last bar, last fetch, and last signal times are on the card; the board shows **board last refreshed at …**.
+
+**Sparkline / Risk:** each card plots the last ~48 cached closes (empty when STALE/MISSING — no invented prices) and a **Risk** panel with ATR SL/TP (same `barrier` config as labels/backtest), R:R, and config spread. Entry is last close as a **proxy** for next-open. Copy states research suggestion only — no lot size, no auto-submit, no live broker order. HOLD or STALE/MISSING → risk n/a.
+
+**Awareness (v0):** a one-line **Feeds:** strip plus expander **Awareness / data health** lists each watchlist OHLCV feed and the news lane: what is observed, refresh cadence (realtime interval vs manual), last successful update, and OK/STALE/FAIL. The expander opens itself when anything is STALE/FAIL/MISSING. Not a full registry — no daily digest or weekly retrain.
+
+**Paper portfolio:** **Paper BUY / SELL / CLOSE** on each card record a dummy fill at the last cached close into `data/paper_broker.json` (gitignored). The UI talks only to `forex_lab.broker.BrokerPort`. Default implementation is `PaperBroker` (`broker.backend: paper` — the only supported value). Open positions mark-to-market from later bars and auto-close when the same ATR TP/SL (or horizon timeout) would hit; outcomes are PENDING / RIGHT / WRONG / TIMEOUT / FLAT. The journal expander filters wrong trades and shows error rate by pair, session, STALE-vs-OK, and confidence bucket, plus short “how to improve” notes. This is a practice desk that pretends to be a real book — **not** linked to any broker. A future `mt5` / `oanda` class would implement the same four methods (`submit`, `close`, `list_positions`, `list_fills`); this repo does not store API keys or wire live orders.
+
+**News lane (v1):** Google News RSS search per pair (no API key). Shows a few recent headlines (title, time, link) plus a short bullish/bearish/mixed/unclear note from a keyword heuristic on those titles only — it never invents articles. Labeled **news context, not a trade instruction**. Cache: `data/news_cache.json` (gitignored), default TTL **300s**, HTTP timeout **6s**. Be polite to the feed; if fetch fails, the math board still renders with an empty news state.
+
+**Explainability:** expand a card for local feature drivers (XGBoost `pred_contribs`, optional SHAP, logistic coef fallback), which config rules passed/failed, and a grounded rationale. This describes the fitted model on one bar — not evidence of an edge.
+
+Fetch / Train / Backtest / Generate signals live in the collapsed sidebar **Lab** expander. Walk-forward CSV/metrics/equity/logs are in a collapsed **Research lab** expander under the board. Open those when you need data or a model, not to read the screen.
 
 Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing):
 
@@ -85,6 +104,8 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `models/EURUSD_xgboost.joblib` | Primary model |
 | `models/EURUSD_logistic.joblib` | Logistic baseline model |
 | `signals/latest_signals.csv` | Latest BUY/SELL/HOLD rows (confidence-filtered) |
+| `config/watchlist.yaml` | Streamlit watch-board pairs (local; survives reruns) |
+| `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
 | `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
 | `reports/latest_metrics.json` | Same metrics as JSON |
@@ -126,6 +147,7 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `signals.min_confidence` — min P(predicted class) to emit BUY/SELL (default `0.40`; random 3-class is ~0.33). Harsh cutoffs can hurt: on EURUSD 1h, the highest XGBoost confidence bucket was **not** the best.
 - `signals.min_dir_edge` — min |P(BUY) − P(SELL)| (default `0.0`; leave the model's HOLD class to do the sitting-out).
 - `signals.sessions` — optional UTC session allow-list (`london`, `ny`, `asia`). Empty = all hours. London+NY-only **hurt** EURUSD vs the unfiltered model.
+- `signals.htf_trend_filter` — optional higher-timeframe SMA-slope agreement (`4h` / `1D`). **Default off**: session/vol-style filters hurt EURUSD in prior screens.
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
 - `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
 
@@ -146,7 +168,7 @@ That legacy rule was: `BUY` if `Close[t+N]/Close[t]-1 > threshold`, `SELL` if be
 
 ## Features (causal)
 
-Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. No column is built from future bars. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
+Returns at 1/3/6/12/24 bars, SMA/EMA ratios, MACD-style EMA spread, RSI, ATR%, short/long vol regime, ATR-normalized returns, candle range z-score, location in 20/50-bar range, SMA slope, session flags (Asia/London/NY in UTC), and hour/dow Fourier terms. Optional extras (`feature_extras`): 4h resample of the **same** pair (backward-filled completed bars), London∩NY overlap flag, short-vol percentile, optional cross-pair returns (skipped if that CSV is missing). The committed EURUSD joblib only uses columns it was trained with until you retrain. No column is built from future bars. Volume z-score is included only when volume actually varies (yfinance FX volume is often all zeros).
 
 ## How to read success rate
 
@@ -165,29 +187,47 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, and signal filters.
 
+## Connecting a live broker later
+
+The Streamlit Buy/Sell/Close buttons never import a vendor SDK. They call `make_broker(cfg)`, which returns a `BrokerPort` (`OrderGateway` alias) with four methods: `submit`, `close`, `list_positions`, `list_fills`.
+
+Today `broker.backend: paper` constructs `PaperBroker` (local JSON, cached last-close fills, paper SL/TP). To plug in a real venue later:
+
+1. Subclass `BrokerPort` (e.g. `forex_lab/broker_mt5.py`) with those four methods.
+2. Set `broker.backend: mt5` (or `oanda`) in `config/default.yaml`.
+3. Teach `make_broker` to construct that class.
+4. Keep credentials **out of this repo** (environment variables or a gitignored local secret). Do not commit API keys.
+
+This project does **not** ship that class, those SDKs, or live wiring. Paper remains the only supported backend.
+
 ## Tests
 
 ```bat
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, and a Streamlit UI smoke render against sample reports/signals.
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, data-health rows, and PaperBroker fills/SL-TP scoring.
 
 ## Project layout
 
 ```
-streamlit_app.py # local dashboard (streamlit run streamlit_app.py)
+streamlit_app.py # trader signal screen (streamlit run streamlit_app.py)
 RUN_UI.bat       # Windows helper: venv + streamlit on localhost:8501
 forex_lab/
   console.py     # ASCII-safe CLI prints + UTF-8 stdio
   data.py        # yfinance fetch + synthetic fallback
   features.py    # causal features + labels
+  explain.py     # local drivers / rule overlay / grounded rationale
+  freshness.py   # OK/STALE/CLOSED vs last bar (UI; not a broker clock)
+  news.py        # Google News RSS + keyword bias (UI context only)
+  broker.py      # BrokerPort + PaperBroker (practice fills; no live venue)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report
   signals.py     # latest_signals.csv
   cli.py         # CLI entry
-  ui/            # Streamlit helpers (imports CLI functions; no live trading)
+  ui/            # Streamlit helpers (watch board, health strip; no live trading)
 config/default.yaml
+config/watchlist.yaml  # persisted research watchlist for the Streamlit board
 tests/
 scripts/screen_variants.py  # optional research screen (not a user command)
 ```

@@ -14,9 +14,11 @@ from forex_lab.paths import resolve_under_root
 
 def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.DataFrame:
     model, feature_cols, mtype = load_model(pair, cfg)
-    feats = build_features(df, cfg)
-    valid = feats.dropna()
-    X = valid[feature_cols]
+    feats = build_features(df, cfg, pair=pair)
+    missing = [c for c in feature_cols if c not in feats.columns]
+    if missing:
+        raise KeyError(f"Model features missing from current feature set: {missing[:8]}")
+    X = feats[feature_cols].dropna()
     pred = model.predict(X)
     proba = predict_proba_aligned(model, X)
 
@@ -27,7 +29,7 @@ def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.Dat
         pred_frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
         pred_frame["confidence"] = proba.max(axis=1)
         pred_frame["dir_edge"] = (pred_frame["p_buy"] - pred_frame["p_sell"]).abs()
-    pred_frame = _attach_policy_columns(pred_frame, valid, df, cfg, pair)
+    pred_frame = _attach_policy_columns(pred_frame, feats, df, cfg, pair)
     pred_frame["pred"] = apply_signal_filters(pred_frame, cfg)
 
     lookback = int((cfg.get("signals") or {}).get("lookback_bars", 64))

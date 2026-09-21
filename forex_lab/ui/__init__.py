@@ -1,1 +1,1 @@
-"""Local research UI helpers. No broker APIs or live orders."""
+"""Local research UI helpers. Watch board + pipeline. PaperBroker via BrokerPort; no live orders."""

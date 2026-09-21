@@ -203,3 +203,63 @@ def test_one_position_does_not_overlap():
     assert entry.is_monotonic_increasing
     # With one_position, number of trades << number of bars
     assert len(trades) < len(df) / 2
+
+
+def test_higher_tf_features_are_causal_and_optional():
+    df = generate_synthetic_ohlcv(bars=400, seed=7)
+    cfg = _cfg()
+    cfg["feature_extras"] = {
+        "higher_tf": ["4h"],
+        "htf_sma_window": 20,
+        "htf_slope_span": 3,
+        "session_overlap": True,
+        "vol_percentile_window": 50,
+        "cross_pair": None,
+    }
+    feats = build_features(df, cfg)
+    assert "tf_4h_sma_slope" in feats.columns
+    assert "sess_ldn_ny" in feats.columns
+    t = 200
+    poisoned = df.copy()
+    for col in ("Open", "High", "Low", "Close"):
+        poisoned.iloc[t + 1 :, poisoned.columns.get_loc(col)] *= 1.2
+    f2 = build_features(poisoned, cfg)
+    cols = [c for c in feats.columns if c in f2.columns]
+    pd.testing.assert_frame_equal(
+        feats.iloc[: t + 1][cols], f2.iloc[: t + 1][cols], check_exact=False, rtol=1e-10, atol=1e-10
+    )
+    off = _cfg()
+    off["feature_extras"] = {"higher_tf": [], "session_overlap": False, "vol_percentile_window": 0}
+    plain = build_features(df, off)
+    assert "tf_4h_sma_slope" not in plain.columns
+
+
+def test_cross_pair_skipped_when_csv_missing(tmp_path):
+    df = generate_synthetic_ohlcv(bars=80, seed=2)
+    cfg = _cfg()
+    cfg["feature_extras"] = {
+        "higher_tf": [],
+        "session_overlap": False,
+        "vol_percentile_window": 0,
+        "cross_pair": "GBPUSD",
+    }
+    cfg["paths"] = {**(cfg.get("paths") or {}), "data_dir": str(tmp_path)}
+    feats = build_features(df, cfg, pair="EURUSD")
+    assert "xpair_ret_1" not in feats.columns
+
+
+def test_htf_trend_filter_blocks_countertrend_buy():
+    idx = pd.date_range("2024-01-02 12:00", periods=3, freq="h")
+    frame = pd.DataFrame(
+        {
+            "pred_raw": [2, 2, 0],
+            "confidence": [0.7, 0.7, 0.7],
+            "dir_edge": [0.2, 0.2, 0.2],
+            "tf_4h_sma_slope": [-0.01, 0.02, 0.02],
+        },
+        index=idx,
+    )
+    cfg = _cfg()
+    cfg["signals"] = {**(cfg.get("signals") or {}), "min_confidence": 0.4, "htf_trend_filter": "4h"}
+    out = apply_signal_filters(frame, cfg)
+    assert list(out) == [LABEL_MAP["HOLD"], LABEL_MAP["BUY"], LABEL_MAP["HOLD"]]

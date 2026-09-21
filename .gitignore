@@ -11,3 +11,6 @@ data/GBPUSD_*.csv
 data/USDJPY_*.csv
 data/AUDUSD_*.csv
 data/USDCAD_*.csv
+data/news_cache.json
+data/paper_broker.json
+data/paper_broker.json.tmp

@@ -129,6 +129,22 @@ def apply_signal_filters(pred_frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.Se
     min_tp = float(sig_cfg.get("min_tp_pips", 0.0) or 0.0)
     if min_tp > 0 and "tp_pips" in pred_frame.columns:
         keep = keep & (pred_frame["tp_pips"].astype(float) >= min_tp)
+    htf_filter = str(sig_cfg.get("htf_trend_filter") or "").strip()
+    if htf_filter and htf_filter.lower() not in ("none", "off", "false", "0"):
+        parsed = None
+        try:
+            from forex_lab.features import _tf_rule
+
+            parsed = _tf_rule(htf_filter)
+        except Exception:
+            parsed = None
+        tag = parsed[0] if parsed else htf_filter
+        col = f"tf_{tag}_sma_slope"
+        if col in pred_frame.columns:
+            slope = pd.to_numeric(pred_frame[col], errors="coerce")
+            buy_ok = (raw != LABEL_MAP["BUY"]) | (slope > 0)
+            sell_ok = (raw != LABEL_MAP["SELL"]) | (slope < 0)
+            keep = keep & buy_ok.fillna(False) & sell_ok.fillna(False)
     return raw.where(keep, LABEL_MAP["HOLD"]).astype(int)
 
 
@@ -255,7 +271,7 @@ def train_models(
     pair: str,
 ) -> dict[str, Any]:
     """Train XGBoost (primary) and logistic (baseline comparison) on time-ordered split."""
-    X, y, _ = make_dataset(df, cfg)
+    X, y, _ = make_dataset(df, cfg, pair=pair)
     if len(X) < 200:
         raise RuntimeError(f"Not enough rows to train ({len(X)})")
 

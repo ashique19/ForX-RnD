@@ -137,6 +137,91 @@ def fetch_ohlcv(
         return df, "synthetic"
 
 
+def csv_mtime_utc(pair: str, cfg: dict[str, Any], interval: str | None = None):
+    """Filesystem mtime of the pair CSV (last successful write), or None."""
+    path = data_path(pair, cfg, interval)
+    if not path.exists() or path.stat().st_size <= 0:
+        return None
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).replace(tzinfo=None)
+
+
+def try_yfinance_refresh(
+    pair: str,
+    cfg: dict[str, Any],
+    period: str | None = None,
+    interval: str | None = None,
+    *,
+    incremental: bool = False,
+) -> tuple[pd.DataFrame | None, str]:
+    """Refresh OHLCV from yfinance only. Never writes synthetic prices.
+
+    On success, overwrites the pair CSV and returns ``(df, "yfinance")``.
+    On failure, leaves any existing CSV untouched and returns ``(None, reason)``.
+
+    ``incremental=True`` downloads a short window (board default ``5d``) and
+    merges onto the existing cache so realtime ticks do not re-pull 2y.
+    """
+    interval = interval or cfg.get("interval", "1h")
+    out_path = data_path(pair, cfg, interval)
+    board = dict(cfg.get("board") or {})
+    if incremental:
+        period = period or str(board.get("incremental_period") or "5d")
+        min_bars = int(board.get("incremental_min_bars") or 20)
+    else:
+        period = period or cfg.get("period", "2y")
+        min_bars = 100
+    try:
+        ticker = pair_to_ticker(pair, cfg)
+    except KeyError as exc:
+        return None, str(exc)
+    existing = None
+    if incremental and out_path.exists():
+        try:
+            existing = load_cached_ohlcv(pair, cfg, interval)
+        except Exception:
+            existing = None
+    try:
+        import yfinance as yf
+
+        raw = yf.download(
+            ticker,
+            period=period,
+            interval=interval,
+            auto_adjust=True,
+            progress=False,
+            threads=False,
+        )
+        if raw is None or raw.empty:
+            return None, "yfinance empty"
+        df = _normalize_ohlcv(raw)
+        if existing is not None and not existing.empty:
+            df = pd.concat([existing, df])
+            df = df[~df.index.duplicated(keep="last")].sort_index()
+        if len(df) < min_bars:
+            return None, f"too few bars: {len(df)}"
+        df.to_csv(out_path)
+        return df, "yfinance"
+    except Exception as exc:  # noqa: BLE001 — board must not invent prices
+        text = str(exc)
+        low = text.lower()
+        if "429" in text or "too many" in low or "rate limit" in low:
+            return None, f"yfinance rate limited ({exc})"
+        return None, f"yfinance failed ({exc})"
+
+
+def load_cached_ohlcv(
+    pair: str, cfg: dict[str, Any], interval: str | None = None
+) -> pd.DataFrame | None:
+    """Load on-disk OHLCV. Does not fetch and never generates synthetic bars."""
+    path = data_path(pair, cfg, interval)
+    if not path.exists() or path.stat().st_size <= 0:
+        return None
+    df = pd.read_csv(path, index_col=0, parse_dates=True)
+    return _normalize_ohlcv(df)
+
+
 def load_ohlcv(pair: str, cfg: dict[str, Any], interval: str | None = None) -> pd.DataFrame:
     path = data_path(pair, cfg, interval)
     if not path.exists():
