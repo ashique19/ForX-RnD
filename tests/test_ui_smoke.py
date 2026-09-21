@@ -57,7 +57,7 @@ def test_style_signals_highlights_newest_row():
     assert data.iloc[0]["datetime"] == signals.iloc[-1]["datetime"]
     html = styled.to_html() if hasattr(styled, "to_html") else data.to_html()
     assert "BUY" in html or "SELL" in html or "HOLD" in html
-    assert "newest" in html.lower() or "#d0e4f7" in html
+    assert "newest" in html.lower() or "#d0e4f7" in html or "#171f29" in html
 
 
 def test_equity_from_trades_compounds():
@@ -176,6 +176,7 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "workspace" in low
     assert "scalp" in low or "swing" in low
     assert "paper journal" in low or "brokerport" in low
+    assert "fx-masthead" in joined or "data-fx-theme" in joined or "--fx-buy" in joined
     buy_btns = [b for b in at.button if "BUY" in str(getattr(b, "label", "")).upper()]
     sell_btns = [b for b in at.button if "SELL" in str(getattr(b, "label", "")).upper()]
     assert buy_btns and sell_btns

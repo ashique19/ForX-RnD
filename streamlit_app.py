@@ -77,6 +77,21 @@ from forex_lab.ui.watchlist import (
     save_watchlist,
     watchlist_path,
 )
+from forex_lab.ui.theme import (
+    BUY,
+    BUY_BG,
+    HOLD_BG,
+    MUTED,
+    SELL,
+    SURFACE,
+    TEXT,
+    TEXT_BRIGHT,
+    WARN,
+    inject_terminal_css,
+    session_fill,
+    signal_fill,
+    validity_tone,
+)
 from forex_lab.ui.workspace import (
     Workspace,
     WorkspaceError,
@@ -112,6 +127,11 @@ st.set_page_config(
     page_icon="FX",
     layout="wide",
     initial_sidebar_state="collapsed",
+    menu_items={
+        "Get Help": None,
+        "Report a bug": None,
+        "About": "FX signal screen — research only. Paper BrokerPort. No live orders.",
+    },
 )
 
 DISCLAIMER = (
@@ -179,6 +199,8 @@ This is the **trader screen**: one dense scan board. Click a pair for the detail
 **Workspace** — scalp / swing (or a saved custom) switch **pairs, TF, refresh, min conf**. Apply / Save current / Reset. Does **not** rewrite `config/default.yaml`, the paper journal, or BrokerPort. Clocks stay **Asia/Dhaka**.
 
 **Realtime** (default 60s) rebuilds from **local** cache. yfinance at most one pair/tick. Not broker quotes.
+
+**Theme** — dark dense terminal (`.streamlit/config.toml` + CSS). BUY green / SELL red / HOLD grey. Clocks **Asia/Dhaka**. BrokerPort unchanged.
 
 **Last bar / last fetch / last signal** — in the detail drawer. The board shows **board last refreshed**. Desk clocks are **Asia/Dhaka**.
 
@@ -294,48 +316,40 @@ def _render_explanation(expl: SignalExplanation | None, *, heading: str = "Why t
 
 def _validity_badge(validity: str, *, compact: bool = False) -> None:
     v = str(validity or "MISSING").upper()
-    colors = {
-        VALIDITY_OK: "#15803d",
-        VALIDITY_CLOSED: "#475569",
-        VALIDITY_STALE: "#b45309",
-        VALIDITY_MISSING: "#64748b",
-        VALIDITY_ERROR: "#b91c1c",
-    }
-    bg = colors.get(v, "#64748b")
+    tone = validity_tone(v)
     if compact:
         st.markdown(
             f'<div title="{v}" style="text-align:center;line-height:1.05">'
-            f'<span style="color:{bg};font-size:1.05rem">●</span>'
-            f'<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.04em;color:{bg}">{v}</div>'
+            f'<span style="color:{tone};font-size:0.95rem">●</span>'
+            f'<div style="font-size:0.58rem;font-weight:800;letter-spacing:0.05em;color:{tone}">{v}</div>'
             f"</div>",
             unsafe_allow_html=True,
         )
         return
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;'
-        f"font-size:0.8rem;letter-spacing:0.08em;text-align:center;padding:5px 8px;"
-        f'border-radius:6px;display:inline-block">{v}</div>',
+        f'<div style="background:{tone};color:#04140c;font-weight:800;'
+        f"font-size:0.72rem;letter-spacing:0.08em;text-align:center;padding:4px 8px;"
+        f'border-radius:3px;display:inline-block">{v}</div>',
         unsafe_allow_html=True,
     )
 
 
 def _signal_badge(sig: str, *, weak: bool = False, compact: bool = False) -> None:
     s = str(sig).upper() if sig and str(sig).strip() not in {"—", "-", "n/a"} else "—"
-    colors = {"BUY": "#15803d", "SELL": "#b91c1c", "HOLD": "#57534e", "—": "#64748b"}
-    bg = colors.get(s, "#64748b")
+    bg, fg = signal_fill(s)
     label = s if not weak or s in {"—", "HOLD"} else f"{s} (weak)"
     if compact:
-        size = "0.78rem"
-        pad = "5px 4px"
-        radius = "6px"
+        size = "0.76rem"
+        pad = "3px 4px"
+        radius = "3px"
     else:
-        size = "1.15rem" if weak and s in {"BUY", "SELL"} else "1.55rem"
-        pad = "14px 10px"
-        radius = "10px"
+        size = "1.05rem" if weak and s in {"BUY", "SELL"} else "1.28rem"
+        pad = "8px 10px"
+        radius = "4px"
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:800;font-size:{size};'
-        f"text-align:center;padding:{pad};border-radius:{radius};letter-spacing:0.08em;"
-        f'box-shadow:0 0 0 1px rgba(0,0,0,0.08);opacity:{0.72 if weak else 1}">{label}</div>',
+        f'<div style="background:{bg};color:{fg};font-weight:800;font-size:{size};'
+        f"text-align:center;padding:{pad};border-radius:{radius};letter-spacing:0.1em;"
+        f'box-shadow:0 0 0 1px rgba(0,0,0,0.35);opacity:{0.7 if weak else 1}">{label}</div>',
         unsafe_allow_html=True,
     )
 
@@ -347,22 +361,10 @@ def _session_badge(session: SessionState | None, *, show_note: bool = False) -> 
     else:
         name = session.badge()
         note = session.note
-    colors = {
-        "ASIA": "#3730a3",
-        "LONDON": "#1d4ed8",
-        "NY": "#0f766e",
-        "ASIA+LONDON": "#1e3a8a",
-        "LONDON+NY": "#b45309",
-        "ASIA+NY": "#6d28d9",
-        "ASIA+LONDON+NY": "#b45309",
-        "CLOSED": "#475569",
-        "OFF": "#57534e",
-        "N/A": "#57534e",
-    }
-    bg = colors.get(name, "#334155")
+    bg = session_fill(name)
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.75rem;'
-        f"letter-spacing:0.08em;text-align:center;padding:4px 8px;border-radius:6px;"
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.68rem;'
+        f"letter-spacing:0.08em;text-align:center;padding:3px 6px;border-radius:3px;"
         f'display:inline-block">{name}</div>',
         unsafe_allow_html=True,
     )
@@ -378,16 +380,17 @@ def _render_quote_strip(row) -> None:
     spr = q.spread_label() if q is not None else "n/a"
     st.markdown(
         f'<div style="font-variant-numeric:tabular-nums;line-height:1.15">'
-        f'<div style="font-size:1.35rem;font-weight:800;letter-spacing:0.02em">{last_txt}</div>'
-        f'<div style="font-size:0.72rem;color:#64748b;font-weight:600">{kind}</div>'
+        f'<div style="font-size:1.2rem;font-weight:800;letter-spacing:0.02em;color:{TEXT_BRIGHT}">{last_txt}</div>'
+        f'<div style="font-size:0.68rem;color:{MUTED};font-weight:600">{kind}</div>'
         f"</div>",
         unsafe_allow_html=True,
     )
     s1, s2 = st.columns(2)
     with s1:
         st.markdown(
-            f'<div style="background:#0f172a;color:#e2e8f0;font-weight:700;font-size:0.72rem;'
-            f"letter-spacing:0.04em;text-align:center;padding:4px 6px;border-radius:6px\">"
+            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:0.68rem;'
+            f"letter-spacing:0.04em;text-align:center;padding:3px 6px;border-radius:3px;"
+            f'border:1px solid #243040">'
             f"SPR {spr} cfg</div>",
             unsafe_allow_html=True,
         )
@@ -406,11 +409,13 @@ def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
     else:
         status = str(mtf.status or "n/a")
         note = status if compact else mtf.as_label()
-    colors = {MTF_AGREE: "#166534", MTF_CONFLICT: "#9a3412", "n/a": "#57534e"}
-    bg = colors.get(status, "#57534e")
+    colors = {MTF_AGREE: BUY, MTF_CONFLICT: WARN, "n/a": HOLD_BG}
+    fg = {MTF_AGREE: BUY_BG, MTF_CONFLICT: "#1a1204", "n/a": TEXT}
+    bg = colors.get(status, HOLD_BG)
+    color = fg.get(status, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.72rem;'
-        f"letter-spacing:0.04em;text-align:center;padding:4px 6px;border-radius:6px;"
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.66rem;'
+        f"letter-spacing:0.04em;text-align:center;padding:3px 5px;border-radius:3px;"
         f'display:block">{note}</div>',
         unsafe_allow_html=True,
     )
@@ -421,14 +426,21 @@ def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
 def _news_bias_badge(bias: str) -> None:
     b = str(bias or "unclear").lower()
     colors = {
-        "bullish": "#166534",
-        "bearish": "#991b1b",
-        "mixed": "#a16207",
-        "unclear": "#57534e",
+        "bullish": BUY,
+        "bearish": SELL,
+        "mixed": WARN,
+        "unclear": HOLD_BG,
+    }
+    fg = {
+        "bullish": BUY_BG,
+        "bearish": "#fff",
+        "mixed": "#1a1204",
+        "unclear": TEXT,
     }
     st.markdown(
-        f'<div style="background:{colors.get(b, "#57534e")};color:#fff;font-weight:700;'
-        f'padding:6px 10px;border-radius:8px;display:inline-block">{b.upper()}</div>',
+        f'<div style="background:{colors.get(b, HOLD_BG)};color:{fg.get(b, TEXT)};font-weight:800;'
+        f'padding:4px 8px;border-radius:3px;display:inline-block;letter-spacing:0.08em;'
+        f'font-size:0.72rem">{b.upper()}</div>',
         unsafe_allow_html=True,
     )
 
@@ -572,11 +584,13 @@ def _render_advice_card(
     price: float | None,
     index: int,
 ) -> None:
-    colors = {"warn": "#9f1239", "caution": "#b45309", "info": "#334155"}
+    colors = {"warn": SELL, "caution": WARN, "info": "#334155"}
+    fg = {"warn": "#fff", "caution": "#1a1204", "info": TEXT}
     bg = colors.get(card.severity, "#334155")
+    color = fg.get(card.severity, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.85rem;'
-        f'padding:6px 10px;border-radius:8px;margin-bottom:4px">{card.title}</div>',
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.78rem;'
+        f'padding:5px 8px;border-radius:3px;margin-bottom:3px;letter-spacing:0.04em">{card.title}</div>',
         unsafe_allow_html=True,
     )
     st.caption(card.detail)
@@ -841,13 +855,14 @@ def _render_paper_actions(
     _submit_paper_fill(row, cfg, broker, side, news, calendar)
 
 
-def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False) -> None:
-    color = "#9a3412" if warn else "#0f172a"
-    weight = "800" if warn else "600"
+def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False, strong: bool = False) -> None:
+    color = WARN if warn else (TEXT_BRIGHT if strong else TEXT)
+    weight = "800" if warn or strong else "600"
+    size = "0.86rem" if strong else "0.74rem"
     variant = "font-variant-numeric:tabular-nums;" if numeric else ""
     st.markdown(
-        f'<div style="font-size:0.78rem;font-weight:{weight};color:{color};'
-        f'line-height:1.2;{variant}">{html.escape(str(text))}</div>',
+        f'<div style="font-size:{size};font-weight:{weight};color:{color};'
+        f'line-height:1.15;{variant}">{html.escape(str(text))}</div>',
         unsafe_allow_html=True,
     )
 
@@ -856,8 +871,8 @@ def _render_dense_header() -> None:
     cols = st.columns(DENSE_WEIGHTS)
     for col, lab in zip(cols, DENSE_HEADERS):
         col.markdown(
-            f'<div style="font-size:0.68rem;font-weight:800;letter-spacing:0.04em;'
-            f'color:#64748b;text-transform:uppercase">{html.escape(lab)}</div>',
+            f'<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.06em;'
+            f'color:{MUTED};text-transform:uppercase">{html.escape(lab)}</div>',
             unsafe_allow_html=True,
         )
 
@@ -890,7 +905,7 @@ def _render_dense_row(
         with c[2]:
             _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)), compact=True)
         with c[3]:
-            _dense_cell(conf_label(row.confidence), numeric=True)
+            _dense_cell(conf_label(row.confidence), numeric=True, strong=True)
         with c[4]:
             _validity_badge(row.validity, compact=True)
         with c[5]:
@@ -899,7 +914,7 @@ def _render_dense_row(
             _session_badge(getattr(row, "session", None), show_note=False)
         last = row.quote.last_label() if row.quote is not None else "n/a"
         with c[7]:
-            _dense_cell(last, numeric=True)
+            _dense_cell(last, numeric=True, strong=True)
         spread = row.quote.spread_label() if row.quote is not None else "n/a"
         with c[8]:
             _dense_cell(spread, numeric=True)
@@ -908,8 +923,8 @@ def _render_dense_row(
         with c[10]:
             spark = spark_ascii(row.sparkline)
             st.markdown(
-                f'<div style="font-size:0.85rem;letter-spacing:-0.08em;line-height:1.2;'
-                f'font-variant-numeric:tabular-nums">{html.escape(spark)}</div>',
+                f'<div style="font-size:0.82rem;letter-spacing:-0.08em;line-height:1.15;'
+                f'color:{MUTED};font-variant-numeric:tabular-nums">{html.escape(spark)}</div>',
                 unsafe_allow_html=True,
             )
         with c[11]:
@@ -1449,6 +1464,27 @@ def _render_workspace_bar(cfg, wl) -> None:
             st.error(str(exc))
 
 
+def _render_masthead(cfg) -> None:
+    """Compact terminal header. Clocks stay Asia/Dhaka; paper BrokerPort unchanged."""
+    now = datetime.now(zoneinfo_for(cfg))
+    clock = html.escape(fmt_display(now, cfg, seconds=True))
+    tz = html.escape(timezone_tag(cfg))
+    st.markdown(
+        f'<div class="fx-masthead">'
+        f'<div class="fx-masthead-left">'
+        f'<span class="fx-brand">FX</span>'
+        f'<span class="fx-title">SIGNAL SCREEN</span>'
+        f'<span class="fx-chip">PAPER</span>'
+        f'<span class="fx-chip muted">RESEARCH</span>'
+        f"</div>"
+        f'<div class="fx-masthead-right">'
+        f'<span class="fx-clock">{clock}</span>'
+        f'<span class="fx-tz">{tz}</span>'
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_watch_board(cfg) -> None:
     """Top-of-page multi-pair research board + persisted watchlist controls."""
     if st.session_state.pop("watch_clear_typed", False):
@@ -1457,7 +1493,6 @@ def render_watch_board(cfg) -> None:
     lab_iv = wl.lab_interval(cfg)
     available = ui_pairs(cfg)
 
-    st.subheader("Signal screen")
     st.caption(
         f"Dense board — seconds to decide. Lab timeframe **{lab_iv}**. "
         f"Click a pair for the detail drawer. Watchlist: `{watchlist_path()}`."
@@ -1641,6 +1676,14 @@ def render_watch_board(cfg) -> None:
             )
             with st.expander("Event calendar", expanded=False):
                 _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
+            st.markdown(
+                '<div class="fx-status">'
+                "<span><b>SCAN</b> pair · signal · last/mid · conf</span>"
+                "<span>BUY green · SELL red · HOLD grey</span>"
+                f"<span>clocks <b>{html.escape(timezone_tag(cfg))}</b></span>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
             _render_dense_header()
             selected = st.session_state.get("board_detail_pair")
             if selected and selected not in {r.pair for r in rows}:
@@ -1761,6 +1804,7 @@ def render_watch_board(cfg) -> None:
 
 def render() -> None:
     _init_state()
+    inject_terminal_css()
     cfg = load_config()
     active_ws = resolve_active_workspace()
     if "ws_min_conf" in st.session_state:
@@ -1776,9 +1820,14 @@ def render() -> None:
     default_period = str(cfg.get("period") or "2y")
     default_interval = str(cfg.get("interval") or "1h")
 
-    st.title("FX signal screen")
-    st.caption("Math analysis + news context so you can decide. Manual only — no auto-trading.")
-    st.warning(DISCLAIMER)
+    _render_masthead(cfg)
+    st.caption(
+        "Math analysis + news context so you can decide. Manual only — no auto-trading. "
+        "Decision-support only — not financial advice. Paper fills are local. "
+        f"{clock_note(cfg)}"
+    )
+    with st.expander("Disclaimer (research only — not a live edge)", expanded=False):
+        st.warning(DISCLAIMER)
 
     render_watch_board(cfg)
 

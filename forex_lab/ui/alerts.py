@@ -524,12 +524,9 @@ def format_alert_time(alert: Alert, cfg: dict[str, Any] | None = None) -> str:
 
 
 def kind_tone(kind: str) -> str:
-    return {
-        KIND_FLIP: "#1d4ed8",
-        KIND_STALE: "#b45309",
-        KIND_MISSING: "#64748b",
-        KIND_EVENT: "#6d28d9",
-    }.get(kind, "#334155")
+    from forex_lab.ui.theme import alert_tone
+
+    return alert_tone(kind)
 
 
 def beep_wav(*, freq: float = 880.0, ms: int = 140, volume: float = 0.22, rate: int = 22050) -> bytes:
