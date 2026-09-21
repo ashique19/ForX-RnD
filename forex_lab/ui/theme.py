@@ -20,9 +20,11 @@ from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT
 
 # High-contrast terminal palette (also mirrored as CSS variables).
 BG = "#0a0e14"
-SURFACE = "#121820"
-ELEVATED = "#171f29"
-BORDER = "#243040"
+SURFACE = "#151e28"
+ELEVATED = "#1c2734"
+CARD = "#1a2430"
+BORDER = "#4a5d73"
+BORDER_STRONG = "#6b8299"
 TEXT = "#f2f5f8"
 TEXT_BRIGHT = "#f8fafc"
 # Secondary copy: light grey on #0a0e14 (never dark-grey-on-dark).
@@ -279,6 +281,33 @@ def empty_inline_html(text: str) -> str:
     return f'<div class="fx-empty-inline">{_esc(text)}</div>'
 
 
+def section_head_html(kicker: str, title: str, *, note: str = "") -> str:
+    extra = f'<span class="fx-section-note">{_esc(note)}</span>' if note else ""
+    return (
+        f'<div class="fx-section-head">'
+        f'<span class="fx-section-kicker">{_esc(kicker)}</span>'
+        f'<span class="fx-section-title">{_esc(title)}</span>'
+        f"{extra}</div>"
+    )
+
+
+def card_html(
+    title: str,
+    body: str = "",
+    *,
+    kicker: str = "",
+    tone: str = "info",
+) -> str:
+    kick = f'<div class="fx-card-kicker">{_esc(kicker)}</div>' if kicker else ""
+    body_bit = f'<div class="fx-card-body">{_esc(body)}</div>' if body else ""
+    return (
+        f'<div class="fx-card fx-card-{_esc(tone)}">'
+        f"{kick}"
+        f'<div class="fx-card-title">{_esc(title)}</div>'
+        f"{body_bit}</div>"
+    )
+
+
 def scan_legend_html() -> str:
     return (
         '<div class="fx-legend">'
@@ -395,9 +424,11 @@ def validity_badge_html(validity: object, *, compact: bool = False) -> str:
 TERMINAL_CSS = """
 :root {
   --fx-bg: #0a0e14;
-  --fx-surface: #121820;
-  --fx-elev: #171f29;
-  --fx-border: #243040;
+  --fx-surface: #151e28;
+  --fx-elev: #1c2734;
+  --fx-card: #1a2430;
+  --fx-border: #4a5d73;
+  --fx-border-strong: #6b8299;
   --fx-text: #f2f5f8;
   --fx-text-bright: #f8fafc;
   --fx-muted: #c8d0db;
@@ -415,6 +446,7 @@ TERMINAL_CSS = """
   --fx-font-expander: 16px;
   --fx-font-clock: 22px;
   --fx-font-title: 22px;
+  --fx-radius: 8px;
 }
 html {
   font-size: 16px !important;
@@ -495,14 +527,14 @@ h3, [data-testid="stHeading"] h3, h4, h5, h6 {
 .stMarkdown p { margin-bottom: 0.35rem; }
 hr { margin: 0.5rem 0 !important; border-color: var(--fx-border) !important; }
 [data-testid="stExpander"] {
-  border: 1px solid var(--fx-border) !important;
-  border-radius: 4px !important;
-  background: var(--fx-surface) !important;
-  margin-bottom: 0.45rem !important;
+  border: 1px solid var(--fx-border-strong) !important;
+  border-radius: var(--fx-radius) !important;
+  background: var(--fx-card) !important;
+  margin-bottom: 0.55rem !important;
 }
 [data-testid="stExpander"] details { gap: 0.35rem; }
 [data-testid="stExpander"] summary {
-  padding: 0.45rem 0.55rem !important;
+  padding: 0.6rem 0.75rem !important;
 }
 [data-testid="stExpander"] summary p {
   font-size: 16px !important;
@@ -552,6 +584,7 @@ div[data-testid="stAlert"] {
 [data-testid="stSidebar"] {
   background: var(--fx-surface) !important;
   color: var(--fx-text) !important;
+  border-right: 1px solid var(--fx-border-strong) !important;
 }
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
   color: var(--fx-text) !important;
@@ -600,6 +633,16 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 [data-testid="stButton"] button p {
   font-size: 15px !important;
   font-weight: 800 !important;
+}
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-baseweb="select"] > div,
+[data-testid="stTextArea"] textarea {
+  border: 1px solid var(--fx-border-strong) !important;
+  background: var(--fx-surface) !important;
+  color: var(--fx-text) !important;
+  font-size: 16px !important;
 }
 [class*="st-key-board_open"] button,
 [class*="st-key-paper_buy"] button,
@@ -654,19 +697,80 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
 [data-testid="stTable"] th {
   font-size: 15px !important;
 }
-[data-testid="stTabs"] button {
-  font-size: 15px !important;
-  font-weight: 700 !important;
+[data-testid="stTabs"] {
+  margin-top: 0.35rem;
+  background: var(--fx-elev);
+  border: 1px solid var(--fx-border-strong);
+  border-radius: var(--fx-radius);
+  padding: 0.4rem 0.5rem 0.65rem;
+}
+[data-testid="stTabs"] [data-baseweb="tab-list"],
+[data-testid="stTabs"] [role="tablist"] {
+  gap: 6px !important;
+  border-bottom: 1px solid var(--fx-border) !important;
+  margin-bottom: 0.45rem !important;
+}
+[data-testid="stTabs"] button,
+[data-testid="stTabs"] [data-baseweb="tab"],
+[data-testid="stTab"] {
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em !important;
+  padding: 0.6rem 1.15rem !important;
+  min-height: 2.65rem !important;
+  cursor: pointer !important;
+  color: var(--fx-muted) !important;
+  background: var(--fx-surface) !important;
+  border: 1px solid var(--fx-border) !important;
+  border-bottom: 2px solid var(--fx-border) !important;
+  border-radius: 6px 6px 0 0 !important;
+}
+[data-testid="stTabs"] button:hover,
+[data-testid="stTabs"] [data-baseweb="tab"]:hover {
+  color: var(--fx-text) !important;
+  background: var(--fx-elev) !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"],
+[data-testid="stTabs"] [aria-selected="true"],
+[data-testid="stTab"][aria-selected="true"] {
+  color: var(--fx-text-bright) !important;
+  background: var(--fx-elev) !important;
+  border-color: var(--fx-border-strong) !important;
+  border-bottom: 3px solid var(--fx-buy) !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"],
+[data-testid="stExpander"] details {
+  border-color: var(--fx-border-strong) !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] > div {
+  background: var(--fx-card);
+  border: 1px solid var(--fx-border-strong) !important;
+  border-radius: var(--fx-radius) !important;
+  padding: 0.7rem 0.9rem !important;
+}
+[data-testid="stMetric"] {
+  background: var(--fx-elev);
+  border: 1px solid var(--fx-border) !important;
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
 }
 .fx-masthead {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 14px 18px 12px;
+  background: var(--fx-elev);
+  border: 1px solid var(--fx-border-strong);
+  border-radius: var(--fx-radius);
+  margin-bottom: 12px;
+}
+.fx-masthead-top {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 14px;
-  padding: 6px 0 12px;
-  border-bottom: 1px solid var(--fx-border);
-  margin-bottom: 10px;
-  min-height: 2.2rem;
 }
 .fx-masthead-left, .fx-masthead-right {
   display: flex;
@@ -728,7 +832,10 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 10px;
-  padding: 4px 0 10px;
+  padding: 10px 0 0;
+  margin-top: 10px;
+  width: 100%;
+  border-top: 1px solid var(--fx-border);
 }
 .fx-legend-note {
   font-size: 14px;
@@ -742,11 +849,11 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   justify-content: space-between;
   gap: 12px 16px;
   flex-wrap: wrap;
-  padding: 10px 12px;
-  margin: 4px 0 12px;
+  padding: 12px 14px;
+  margin: 6px 0 14px;
   background: var(--fx-elev);
-  border: 1px solid var(--fx-border);
-  border-radius: 4px;
+  border: 1px solid var(--fx-border-strong);
+  border-radius: var(--fx-radius);
 }
 .fx-scan-meta {
   display: flex;
@@ -799,15 +906,16 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   letter-spacing: 0.07em;
   color: var(--fx-muted);
   text-transform: uppercase;
-  padding: 4px 0 8px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--fx-border);
 }
 .fx-sig { line-height: 1.15; }
 .fx-sig-quiet, .fx-sig-muted { font-weight: 700 !important; }
 .fx-valid-loud { line-height: 1.2; }
 .fx-empty {
-  border: 1px dashed var(--fx-border);
+  border: 1px dashed var(--fx-border-strong);
   background: var(--fx-elev);
-  border-radius: 4px;
+  border-radius: var(--fx-radius);
   padding: 16px 18px;
   margin: 8px 0 12px;
 }
@@ -842,7 +950,9 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 4px 0 8px;
+  padding: 6px 2px 12px;
+  border-bottom: 1px solid var(--fx-border);
+  margin-bottom: 8px;
 }
 .fx-drawer-pair {
   font-weight: 800;
@@ -877,6 +987,62 @@ div[data-testid="stHorizontalBlock"]:has([data-testid="stWidgetLabel"]):has([dat
   font-size: 15px;
   color: var(--fx-text);
 }
+.fx-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 2px 8px;
+  margin: 6px 0 4px;
+}
+.fx-section-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fx-buy);
+}
+.fx-section-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--fx-text-bright);
+}
+.fx-section-note {
+  font-size: 14px;
+  color: var(--fx-muted);
+  font-weight: 600;
+}
+.fx-card {
+  background: var(--fx-elev);
+  border: 1px solid var(--fx-border-strong);
+  border-radius: var(--fx-radius);
+  padding: 12px 14px;
+  margin: 8px 0 12px;
+}
+.fx-card-kicker {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fx-muted);
+  margin-bottom: 4px;
+}
+.fx-card-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--fx-text-bright);
+  letter-spacing: 0.02em;
+}
+.fx-card-body {
+  font-size: 14px;
+  color: var(--fx-muted);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+.fx-card-warn { border-color: var(--fx-sell); }
+.fx-card-caution { border-color: var(--fx-warn); }
+.fx-card-info { border-color: var(--fx-border-strong); }
 """
 
 

@@ -48,6 +48,9 @@ def test_theme_config_is_dark_terminal():
     assert "backgroundColor" in cfg
     assert "baseFontSize = 16" in cfg
     assert "textColor = \"#f2f5f8\"" in cfg
+    assert "showWidgetBorder = true" in cfg
+    assert "borderColor = \"#4a5d73\"" in cfg
+    assert "secondaryBackgroundColor = \"#1c2734\"" in cfg
 
 
 def test_buy_sell_hold_are_high_contrast():
@@ -274,3 +277,62 @@ def test_stale_outranks_buy_sell_hold():
     assert "fx-empty" in empty
     assert "Watchlist is empty. Add a pair below." in empty
     assert "<script" not in empty_state_html("<script>x</script>", "body")
+
+
+def test_chrome_cards_borders_and_section_heads():
+    """Elevated cards, visible borders, masthead/nav, clickable drawer tabs."""
+    from forex_lab.ui.theme import (
+        BG,
+        BORDER,
+        BORDER_STRONG,
+        CARD,
+        ELEVATED,
+        card_html,
+        section_head_html,
+        terminal_css,
+    )
+
+    css = terminal_css()
+    for needle in (
+        "--fx-card",
+        "--fx-border-strong",
+        "--fx-radius",
+        ".fx-section-head",
+        ".fx-section-title",
+        ".fx-card",
+        ".fx-card-title",
+        ".fx-masthead-top",
+        '[data-testid="stTabs"]',
+        '[data-testid="stVerticalBlockBorderWrapper"]',
+        '[data-testid="stExpander"]',
+        "cursor: pointer",
+        "min-height: 2.65rem",
+    ):
+        assert needle in css, f"missing chrome selector {needle}"
+    assert BORDER in css and BORDER_STRONG in css
+    assert CARD in css and ELEVATED in css
+    assert CARD.lower() != BG.lower()
+    assert BORDER_STRONG.lower() != BG.lower()
+    # Card / elevated surfaces sit above the page, not dark-on-dark.
+    assert min(_rgb(CARD)) > min(_rgb(BG))
+    assert min(_rgb(ELEVATED)) > min(_rgb(BG))
+    assert min(_rgb(BORDER_STRONG)) >= 100
+
+    card = card_html("Tighten stop", "Advisory only.", kicker="WARN", tone="warn")
+    assert "fx-card" in card and "fx-card-warn" in card
+    assert "Tighten stop" in card
+    assert "<script" not in card_html("<script>x</script>", "<img>")
+    head = section_head_html("Scan", "Board", note="pair row → detail drawer")
+    assert "fx-section-kicker" in head and "Scan" in head
+    assert "Board" in head and "pair row" in head
+    source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
+    assert 'section_head_html("Scan", "Board"' in source
+    assert 'section_head_html("Detail"' in source
+    assert 'section_head_html("Health", "Alerts, awareness, digest")' in source
+    scan_at = source.find('section_head_html("Scan", "Board"')
+    detail_at = source.find('section_head_html("Detail"')
+    health_at = source.find('section_head_html("Health", "Alerts, awareness, digest")')
+    assert 0 < scan_at < detail_at < health_at
+    # Duplicate scan board must not return after Health.
+    assert source.count('section_head_html("Scan", "Board"') == 1
+    assert "fx-masthead-top" in source
