@@ -85,7 +85,15 @@ def test_row_from_signal_fills_table_fields():
     assert "conf=0.5100" in row.signal_details
     assert "xgboost" in row.signal_details
     table = board_table([row])
-    assert list(table.columns) == ["Pair", "Timeframe", "Buy/Sell", "Target", "Signal details"]
+    assert list(table.columns) == [
+        "Pair",
+        "Timeframe",
+        "Validity",
+        "Buy/Sell",
+        "Target",
+        "Last bar",
+        "Signal details",
+    ]
     assert table.iloc[0]["Buy/Sell"] == "SELL"
 
 
@@ -116,6 +124,27 @@ def test_refresh_skips_yfinance_when_model_missing(tmp_path, monkeypatch):
     assert NEED_FETCH_TRAIN in row.signal_details
 
 
+def test_incremental_refresh_merges_and_does_not_write_synthetic(tmp_path, monkeypatch):
+    cfg = _tmp_cfg(tmp_path)
+    csv = tmp_path / "data" / "EURUSD_1h.csv"
+    old = generate_synthetic_ohlcv(pair="EURUSD", bars=120, seed=1)
+    old.to_csv(csv)
+    before = csv.read_text(encoding="utf-8")
+
+    fake = types.ModuleType("yfinance")
+
+    def _download(*_a, **_k):
+        raise RuntimeError("429 Too Many Requests")
+
+    fake.download = _download
+    monkeypatch.setitem(sys.modules, "yfinance", fake)
+
+    df, reason = try_yfinance_refresh("EURUSD", cfg, interval="1h", incremental=True)
+    assert df is None
+    assert "rate limited" in reason.lower() or "429" in reason
+    assert csv.read_text(encoding="utf-8") == before
+
+
 def test_yfinance_refresh_does_not_write_synthetic(tmp_path, monkeypatch):
     cfg = _tmp_cfg(tmp_path)
     csv = tmp_path / "data" / "EURUSD_1h.csv"
@@ -139,15 +168,21 @@ def test_yfinance_refresh_does_not_write_synthetic(tmp_path, monkeypatch):
 
 def test_board_row_eurusd_uses_existing_signals_csv():
     row = build_board_row("EURUSD", refresh_data=False, regenerate=False)
-    assert row.status == "ready"
     assert row.pair == "EURUSD"
     assert row.timeframe == "1h"
-    assert row.buy_sell in {"BUY", "SELL", "HOLD"}
+    assert row.validity in {"OK", "CLOSED", "STALE", "MISSING", "ERROR"}
+    if row.validity in {"OK", "CLOSED"}:
+        assert row.status in {"ready", "stale"}
+        assert row.buy_sell in {"BUY", "SELL", "HOLD"}
+        assert "conf=" in row.signal_details
+        assert row.model
+        assert row.rationale
+        assert row.explain_method
+    elif row.validity == "STALE":
+        assert row.buy_sell == "—"
+        assert "stale" in row.signal_details.lower()
+    assert row.last_bar_at
     assert row.target != ""
-    assert "conf=" in row.signal_details
-    assert row.model
-    assert row.rationale
-    assert row.explain_method
 
 
 def test_build_board_rows_mixed_status(tmp_path):

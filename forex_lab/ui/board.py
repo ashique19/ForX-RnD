@@ -10,9 +10,20 @@ from typing import Any
 import pandas as pd
 
 from forex_lab.config_loader import load_config
-from forex_lab.data import load_cached_ohlcv, try_yfinance_refresh
+from forex_lab.data import csv_mtime_utc, load_cached_ohlcv, try_yfinance_refresh
 from forex_lab.explain import SignalExplanation, explain_latest_signal
 from forex_lab.features import true_range_atr
+from forex_lab.freshness import (
+    VALIDITY_CLOSED,
+    VALIDITY_ERROR,
+    VALIDITY_MISSING,
+    VALIDITY_OK,
+    VALIDITY_STALE,
+    Freshness,
+    assess_ohlcv,
+    fmt_ts,
+    now_utc,
+)
 from forex_lab.signals import generate_signals
 from forex_lab.ui.pipeline import artifact_status, load_signals
 from forex_lab.ui.watchlist import Watchlist
@@ -22,6 +33,7 @@ STATUS_READY = "ready"
 STATUS_NEED_FETCH = "need_fetch"
 STATUS_NEED_TRAIN = "need_train"
 STATUS_ERROR = "error"
+STATUS_STALE = "stale"
 
 
 @dataclass
@@ -49,14 +61,21 @@ class BoardRow:
     explain_method: str | None = None
     drivers: list = field(default_factory=list)
     rules: list = field(default_factory=list)
+    validity: str = VALIDITY_MISSING
+    validity_reason: str = ""
+    last_bar_at: str | None = None
+    last_fetch_at: str | None = None
+    last_signal_at: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
         return {
             "Pair": self.pair,
             "Timeframe": self.timeframe,
+            "Validity": self.validity,
             "Buy/Sell": self.buy_sell,
             "Target": self.target,
+            "Last bar": self.last_bar_at or "n/a",
             "Signal details": self.signal_details,
         }
 
@@ -211,6 +230,7 @@ def row_from_signal(
         explain_method=None if explanation is None else explanation.method,
         drivers=list(explanation.drivers) if explanation is not None else [],
         rules=list(explanation.rules) if explanation is not None else [],
+        last_signal_at=_fmt_when(get("datetime")),
     )
 
 
@@ -224,6 +244,10 @@ def _status_row(
     n_bars: int | None = None,
     error: str | None = None,
     target_note: str | None = None,
+    validity: str = VALIDITY_MISSING,
+    validity_reason: str = "",
+    last_bar_at: str | None = None,
+    last_fetch_at: str | None = None,
 ) -> BoardRow:
     return BoardRow(
         pair=pair.upper(),
@@ -236,7 +260,43 @@ def _status_row(
         n_bars=n_bars,
         error=error,
         target_note=target_note or "No signal until Fetch + Train have produced data and a model.",
+        validity=validity,
+        validity_reason=validity_reason or details,
+        last_bar_at=last_bar_at,
+        last_fetch_at=last_fetch_at,
     )
+
+
+def apply_freshness(
+    row: BoardRow,
+    fresh: Freshness,
+    *,
+    last_fetch_at: str | None = None,
+) -> BoardRow:
+    """Attach validity. STALE/MISSING/ERROR never flash a live BUY/SELL."""
+    row.validity = fresh.validity
+    row.validity_reason = fresh.reason
+    row.last_bar_at = fresh.last_bar_label
+    if last_fetch_at:
+        row.last_fetch_at = last_fetch_at
+    if row.status in {STATUS_NEED_FETCH, STATUS_NEED_TRAIN}:
+        return row
+    if not fresh.suppress_live_signal():
+        return row
+    if row.buy_sell and row.buy_sell not in {"—", "-", "n/a"}:
+        row.raw_signal = row.raw_signal or row.buy_sell
+    if fresh.validity == VALIDITY_STALE:
+        row.buy_sell = "—"
+        last_model = row.raw_signal or "n/a"
+        row.signal_details = (
+            f"data stale — refresh required (last model {last_model}; {fresh.reason})"
+        )
+        if row.status == STATUS_READY:
+            row.status = STATUS_STALE
+        row.target = "n/a"
+    elif fresh.validity in {VALIDITY_MISSING, VALIDITY_ERROR} and row.buy_sell not in {"—"}:
+        row.buy_sell = "—"
+    return row
 
 
 def _latest_csv_row(pair: str, cfg: dict[str, Any]) -> pd.Series | None:
@@ -256,25 +316,37 @@ def build_board_row(
     interval: str | None = None,
     refresh_data: bool = False,
     regenerate: bool | None = None,
+    now: Any = None,
+    incremental: bool = True,
 ) -> BoardRow:
     """One watch-board row. Does not write ``signals/latest_signals.csv``.
 
     ``refresh_data`` tries yfinance (never synthetic). Signals are regenerated
     when ``regenerate`` is true, or when ``refresh_data`` is true, or when no
     matching row exists in the shared signals CSV.
+
+    Stale/missing caches never flash BUY/SELL as a live call.
     """
     cfg = cfg if cfg is not None else load_config()
     pair = str(pair).upper()
     interval = str(interval or cfg.get("interval") or "1h")
+    clock = now_utc(now)
     if regenerate is None:
         regenerate = bool(refresh_data)
 
     status = artifact_status(pair, cfg, interval=interval)
     data_source: str | None = None
+    fetch_at = fmt_ts(csv_mtime_utc(pair, cfg, interval))
     # Light yfinance refresh only when a model exists — never synthetic, never a silent fetch.
     if refresh_data and status.get("model_exists"):
-        _df, reason = try_yfinance_refresh(pair, cfg, interval=interval)
-        data_source = reason if _df is not None else f"cached ({reason})"
+        _df, reason = try_yfinance_refresh(
+            pair, cfg, interval=interval, incremental=incremental
+        )
+        if _df is not None:
+            data_source = reason
+            fetch_at = fmt_ts(clock)
+        else:
+            data_source = f"cached ({reason})"
         status = artifact_status(pair, cfg, interval=interval)
 
     n_bars = status.get("n_bars")
@@ -287,9 +359,14 @@ def build_board_row(
             data_source=data_source,
             n_bars=n_bars,
             error="data CSV missing",
+            validity=VALIDITY_MISSING,
+            validity_reason="no OHLCV cache — Fetch required",
+            last_fetch_at=fetch_at if fetch_at != "n/a" else None,
         )
     if not status.get("model_exists"):
-        return _status_row(
+        ohlcv_only = load_cached_ohlcv(pair, cfg, interval)
+        fresh_m = assess_ohlcv(ohlcv_only, interval, cfg, now=clock)
+        row = _status_row(
             pair,
             interval,
             STATUS_NEED_TRAIN,
@@ -297,7 +374,12 @@ def build_board_row(
             data_source=data_source or "cached",
             n_bars=n_bars,
             error="model missing",
+            validity=fresh_m.validity,
+            validity_reason=fresh_m.reason,
+            last_bar_at=fresh_m.last_bar_label,
+            last_fetch_at=fetch_at if fetch_at != "n/a" else None,
         )
+        return apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at)
 
     ohlcv = load_cached_ohlcv(pair, cfg, interval)
     if ohlcv is None or ohlcv.empty:
@@ -308,6 +390,8 @@ def build_board_row(
             NEED_FETCH_TRAIN,
             data_source=data_source,
             error="data CSV unreadable",
+            validity=VALIDITY_MISSING,
+            validity_reason="data CSV unreadable",
         )
 
     last: pd.Series | dict[str, Any] | None = None
@@ -328,7 +412,8 @@ def build_board_row(
                 error="model missing",
             )
         except Exception as exc:  # noqa: BLE001 — surface as row status
-            return _status_row(
+            fresh_e = assess_ohlcv(ohlcv, interval, cfg, now=clock)
+            row = _status_row(
                 pair,
                 interval,
                 STATUS_ERROR,
@@ -336,7 +421,12 @@ def build_board_row(
                 data_source=data_source or "cached",
                 n_bars=len(ohlcv),
                 error=str(exc),
+                validity=VALIDITY_ERROR,
+                validity_reason=str(exc),
+                last_bar_at=fresh_e.last_bar_label,
+                last_fetch_at=fetch_at if fetch_at != "n/a" else None,
             )
+            return row
         if sigs is None or sigs.empty:
             return _status_row(
                 pair,
@@ -345,10 +435,12 @@ def build_board_row(
                 "model produced no signal rows",
                 data_source=data_source or "cached",
                 n_bars=len(ohlcv),
+                validity=VALIDITY_ERROR,
+                validity_reason="model produced no signal rows",
             )
         last = sigs.iloc[-1]
 
-    return row_from_signal(
+    row = row_from_signal(
         pair,
         interval,
         last,
@@ -356,6 +448,12 @@ def build_board_row(
         cfg,
         data_source=data_source or "cached",
         n_bars=len(ohlcv),
+    )
+    fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
+    return apply_freshness(
+        row,
+        fresh,
+        last_fetch_at=fetch_at if fetch_at != "n/a" else None,
     )
 
 
@@ -384,13 +482,14 @@ def build_board_rows(
 
 
 def board_table(rows: list[BoardRow]) -> pd.DataFrame:
+    cols = ["Pair", "Timeframe", "Validity", "Buy/Sell", "Target", "Last bar", "Signal details"]
     if not rows:
-        return pd.DataFrame(columns=["Pair", "Timeframe", "Buy/Sell", "Target", "Signal details"])
+        return pd.DataFrame(columns=cols)
     return pd.DataFrame([r.as_table_dict() for r in rows])
 
 
 def style_board(df: pd.DataFrame):
-    """Color Buy/Sell when pandas Styler is available."""
+    """Color Buy/Sell and Validity when pandas Styler is available."""
     if df is None or df.empty:
         return df
 
@@ -404,12 +503,28 @@ def style_board(df: pd.DataFrame):
             return "background-color: #eceff1; color: #37474f"
         return ""
 
+    def _val(val: object) -> str:
+        v = str(val).upper()
+        if v == VALIDITY_OK:
+            return "background-color: #dcfce7; color: #166534; font-weight: 700"
+        if v == VALIDITY_CLOSED:
+            return "background-color: #e2e8f0; color: #334155; font-weight: 700"
+        if v == VALIDITY_STALE:
+            return "background-color: #fef3c7; color: #92400e; font-weight: 700"
+        if v == VALIDITY_MISSING:
+            return "background-color: #f1f5f9; color: #475569; font-weight: 700"
+        if v == VALIDITY_ERROR:
+            return "background-color: #fee2e2; color: #991b1b; font-weight: 700"
+        return ""
+
     try:
         styler = df.style
-        if "Buy/Sell" in df.columns:
-            mapper = getattr(styler, "map", None) or getattr(styler, "applymap", None)
-            if mapper is not None:
+        mapper = getattr(styler, "map", None) or getattr(styler, "applymap", None)
+        if mapper is not None:
+            if "Buy/Sell" in df.columns:
                 styler = mapper(_sig, subset=["Buy/Sell"])
+            if "Validity" in df.columns:
+                styler = mapper(_val, subset=["Validity"])
         return styler
     except Exception:
         return df

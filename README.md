@@ -61,7 +61,11 @@ If a print still fails on cp1252, fetch **exits 0 whenever the CSV was saved**. 
 
 A **trader-facing signal screen** on **localhost:8501**. Math analysis + news context flash **BUY / SELL / HOLD** with details so **you** decide. It calls the same `forex_lab` functions as the CLI. **No broker APIs, no order buttons, no auto-trading.**
 
-The top of the page is the **signal screen** (primary): one flash card per watchlist pair — **Pair | Timeframe | Buy/Sell (color badge) | Target | Signal details | News context**. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. **Realtime** auto-refreshes the board on a configurable interval (`st.fragment`); when it is off, **Manual update** / **Update selected** refresh once. Auto-refresh is a research timer, **not** broker realtime. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
+The top of the page is the **signal screen** (primary): one flash card per watchlist pair — **Pair | Timeframe | Validity | Buy/Sell (color badge) | Target | Signal details | News context**. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
+
+**Realtime** (default **60s**, minimum 60s): rebuilds signals from the **local** cache each tick. yfinance is called only when a bar is due or the cache is approaching stale, **one pair per tick**, with exponential backoff after errors or 429-like responses. Yahoo’s download endpoint is unofficial and has no SLA — 60–120s is the practical band; do not set this like a broker stream. A **rate limited — backing off until …** banner appears if throttled. Realtime off: **Manual update** only.
+
+**Data validity:** each card shows `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last candle older than ~2× the timeframe is **STALE** and the flash is **—** plus “data stale — refresh required” (the last model class is kept as a note, not as a live call). Weekends / Friday after ~21:00 UTC show **CLOSED** with last bar time — not a false STALE alarm. Last bar, last fetch, and last signal times are on the card; the board shows **board last refreshed at …**.
 
 **News lane (v1):** Google News RSS search per pair (no API key). Shows a few recent headlines (title, time, link) plus a short bullish/bearish/mixed/unclear note from a keyword heuristic on those titles only — it never invents articles. Labeled **news context, not a trade instruction**. Cache: `data/news_cache.json` (gitignored), default TTL **300s**, HTTP timeout **6s**. Be polite to the feed; if fetch fails, the math board still renders with an empty news state.
 
@@ -183,7 +187,7 @@ Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR bar
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, and Google News RSS parse + keyword bias (no network).
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), and OHLCV freshness (OK / STALE / CLOSED / MISSING).
 
 ## Project layout
 
@@ -195,6 +199,7 @@ forex_lab/
   data.py        # yfinance fetch + synthetic fallback
   features.py    # causal features + labels
   explain.py     # local drivers / rule overlay / grounded rationale
+  freshness.py   # OK/STALE/CLOSED vs last bar (UI; not a broker clock)
   news.py        # Google News RSS + keyword bias (UI context only)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report

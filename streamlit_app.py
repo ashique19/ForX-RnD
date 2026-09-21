@@ -13,7 +13,6 @@ import streamlit as st
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.ui.board import (
-    NEED_FETCH_TRAIN,
     board_table,
     build_board_row,
     research_target,
@@ -45,6 +44,21 @@ from forex_lab.ui.watchlist import (
 )
 from forex_lab.data import load_cached_ohlcv
 from forex_lab.explain import SignalExplanation, explain_latest_signal
+from forex_lab.freshness import (
+    VALIDITY_CLOSED,
+    VALIDITY_ERROR,
+    VALIDITY_MISSING,
+    VALIDITY_OK,
+    VALIDITY_STALE,
+    FetchGate,
+    YF_MIN_INTERVAL_S,
+    assess_ohlcv,
+    board_cfg,
+    fmt_ts,
+    is_rate_limited_reason,
+    now_utc,
+    should_fetch_ohlcv,
+)
 from forex_lab.news import NewsBundle, fetch_watchlist_news
 
 st.set_page_config(
@@ -59,7 +73,8 @@ DISCLAIMER = (
     "No broker APIs and **no order buttons**. You decide. "
     "yfinance quotes are **not** executable broker prices. "
     "News can be late, incomplete, or wrong; the bias note is a keyword heuristic on fetched headlines, not a call. "
-    "Past backtests do not predict future results. Auto-refresh is **not** broker realtime."
+    "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
+    "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first."
 )
 
 BOARD_HELP = """
@@ -68,11 +83,19 @@ This is the **trader screen**: one flash card per watchlist pair.
 **Pair / Timeframe** — watchlist symbol and lab interval (`config/default.yaml`).
 A per-pair override can be set when adding.
 
-**Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`
-(`BUY` / `SELL` / `HOLD`). Color badge is a research label, **not** an order.
+**Validity** — `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`.
+During a liquid FX session, a last bar older than ~2× the timeframe is **STALE**.
+Weekends / Friday after ~21:00 UTC show **CLOSED** (last bar + “market likely closed”),
+not a false STALE panic. STALE/MISSING flash **—** with a reason — not a live BUY/SELL.
+
+**Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`.
+Color badge is a research label, **not** an order. Only flashed when validity is OK or CLOSED.
 
 **Target** — for `triple_barrier`, last close ± ATR × tp/sl. Next-open fill is unknown
 on the latest bar, so close is a **proxy**. If barriers cannot be computed: `n/a`.
+
+**Last update** — last candle time, last successful CSV write (fetch), last signal time.
+The board also shows a global **board last refreshed** timestamp.
 
 **Signal details** — confidence, probabilities, top feature drivers, rule overlay, short rationale.
 
@@ -80,7 +103,11 @@ on the latest bar, so close is a **proxy**. If barriers cannot be computed: `n/a
 (bullish / bearish / mixed / unclear). Labeled **news context, not a trade instruction**.
 Never invented articles. If the feed is down, the math board still works.
 
-Realtime / Manual update refresh math (and news if the cache TTL expired).
+**Realtime** (default 60s) rebuilds signals from **local** cache every tick. yfinance is
+only called when a bar is due / data is approaching stale, **one pair per tick**, with
+cooldown after errors or 429-like failures. That is why the interval is 60–120s — Yahoo
+is unofficial and has no SLA. Realtime off: **Manual update** only.
+
 Fetch / Train / Backtest live in the sidebar **Lab** expander.
 Rows without cached data or a trained model show **need Fetch/Train** — the board will not invent prices.
 """
@@ -176,6 +203,23 @@ def _render_explanation(expl: SignalExplanation | None, *, heading: str = "Why t
         st.dataframe(rule_df, use_container_width=True, hide_index=True)
 
 
+def _validity_badge(validity: str) -> None:
+    v = str(validity or "MISSING").upper()
+    colors = {
+        VALIDITY_OK: "#15803d",
+        VALIDITY_CLOSED: "#475569",
+        VALIDITY_STALE: "#b45309",
+        VALIDITY_MISSING: "#64748b",
+        VALIDITY_ERROR: "#b91c1c",
+    }
+    st.markdown(
+        f'<div style="background:{colors.get(v, "#64748b")};color:#fff;font-weight:700;'
+        f"font-size:0.8rem;letter-spacing:0.08em;text-align:center;padding:5px 8px;"
+        f'border-radius:6px;display:inline-block">{v}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _signal_badge(sig: str) -> None:
     s = str(sig).upper() if sig and str(sig).strip() not in {"—", "-", "n/a"} else "—"
     colors = {"BUY": "#15803d", "SELL": "#b91c1c", "HOLD": "#57534e", "—": "#64748b"}
@@ -228,27 +272,78 @@ def _watch_cache_key(pair: str, interval: str) -> str:
     return f"{pair.upper()}|{interval}"
 
 
-def _sync_watch_rows(wl, cfg, *, refresh: bool) -> list:
+def _yf_gate() -> FetchGate:
+    gate = st.session_state.get("yf_gate")
+    if not isinstance(gate, FetchGate):
+        gate = FetchGate()
+        st.session_state.yf_gate = gate
+    return gate
+
+
+def _sync_watch_rows(wl, cfg, *, manual: bool, realtime: bool) -> tuple[list, str | None]:
+    """Rebuild board rows. yfinance only when due; signals from local cache."""
+    import time
+
     lab_iv = wl.lab_interval(cfg)
     cache: dict = st.session_state.setdefault("watch_rows", {})
+    gate = _yf_gate()
+    bcfg = board_cfg(cfg)
+    min_iv = int(bcfg.get("yf_min_interval_s") or YF_MIN_INTERVAL_S)
+    now_ts = time.time()
+    clock = now_utc()
+    rate_msg = None
+    if (manual or realtime) and not gate.allowed(now_ts):
+        rate_msg = f"rate limited — backing off until {gate.backoff_until_label()}"
+
+    n = len(wl.pairs)
+    stagger_target = gate.next_stagger(n) if realtime and not manual and n else None
+
     wanted: list[str] = []
     rows = []
-    for item in wl.pairs:
+    for i, item in enumerate(wl.pairs):
         interval = item.resolved_interval(lab_iv)
         key = _watch_cache_key(item.pair, interval)
         wanted.append(key)
-        if refresh or key not in cache:
-            cache[key] = build_board_row(
-                item.pair,
-                cfg,
+        ohlcv = load_cached_ohlcv(item.pair, cfg, interval)
+        fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
+        last_ok = gate.last_yf_ok.get(str(item.pair).upper())
+        do_fetch = False
+        if (manual or realtime) and gate.allowed(now_ts):
+            due = should_fetch_ohlcv(
+                fresh,
+                force=bool(manual),
+                last_yf_ok_ts=last_ok,
+                now_ts=now_ts,
                 interval=interval,
-                refresh_data=refresh,
-                regenerate=refresh,
+                min_interval_s=min_iv,
+                realtime=bool(realtime and not manual),
             )
-        rows.append(cache[key])
+            if due and (manual or i == stagger_target):
+                do_fetch = True
+        regenerate = bool(manual or realtime or key not in cache)
+        row = build_board_row(
+            item.pair,
+            cfg,
+            interval=interval,
+            refresh_data=do_fetch,
+            regenerate=regenerate,
+            now=clock,
+            incremental=True,
+        )
+        if do_fetch:
+            src = str(row.data_source or "")
+            if src == "yfinance":
+                gate.mark_ok(item.pair, now_ts)
+            else:
+                gate.mark_fail(src, now_ts)
+                if is_rate_limited_reason(src):
+                    rate_msg = f"rate limited — backing off until {gate.backoff_until_label()}"
+        cache[key] = row
+        rows.append(row)
     for stale in [k for k in cache if k not in wanted]:
         del cache[stale]
-    return rows
+    st.session_state["board_last_refreshed"] = fmt_ts(clock, seconds=True)
+    return rows, rate_msg
 
 
 def render_watch_board(cfg) -> None:
@@ -271,23 +366,30 @@ def render_watch_board(cfg) -> None:
     realtime = c_real.checkbox(
         "Realtime",
         value=False,
-        help="Auto-rebuild the board on a timer. Not broker quotes and not streaming.",
+        help="Rebuild signals from local cache on a timer. yfinance only when a bar is due. "
+        "Not broker quotes and not streaming.",
     )
+    bcfg = board_cfg(cfg)
+    default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
     seconds = int(
         c_secs.number_input(
             "Refresh (s)",
-            min_value=15,
+            min_value=60,
             max_value=3600,
-            value=int(wl.refresh_seconds),
-            step=15,
-            help="Interval used when Realtime is checked.",
+            value=max(60, int(wl.refresh_seconds) or default_rt),
+            step=30,
+            help="Realtime poll interval. Default 60s so yfinance is not hammered "
+            "(unofficial API, no SLA; 1h bars do not need faster OHLCV).",
         )
     )
     if seconds != int(wl.refresh_seconds):
         wl.refresh_seconds = seconds
         save_watchlist(wl)
     if realtime:
-        c_note.caption(f"Auto-refresh every {seconds}s. Research timer only — not executable prices.")
+        c_note.caption(
+            f"Auto-refresh every {seconds}s: signals from cache; OHLCV at most one pair/tick, "
+            "only if due. Research timer — not executable prices."
+        )
     else:
         c_note.caption("Realtime off: the board stays put until **Manual update**.")
 
@@ -295,27 +397,33 @@ def render_watch_board(cfg) -> None:
 
     @st.fragment(run_every=run_every)
     def _board_fragment() -> None:
-        refresh = bool(realtime)
+        manual = False
         b1, b2, b3 = st.columns([1.2, 1.4, 2.4])
         if not realtime:
             if b1.button("Manual update", type="primary", help="Refresh all watchlist pairs once"):
-                refresh = True
+                manual = True
         else:
             b1.caption("Realtime on")
         if b2.button(
             "Update selected",
-            help="yfinance + regenerate signals for watchlist pairs that already have a model. "
-            "Pairs without data/model stay as need Fetch/Train.",
+            help="Force yfinance (short window, merged into cache) + regenerate signals "
+            "for pairs that already have a model. Rate-limited with backoff.",
         ):
-            refresh = True
-        with st.spinner("Updating watch board…" if refresh else "Loading watch board…"):
-            rows = _sync_watch_rows(wl, cfg, refresh=refresh)
+            manual = True
+        with st.spinner("Updating watch board…" if (manual or realtime) else "Loading watch board…"):
+            rows, rate_msg = _sync_watch_rows(wl, cfg, manual=manual, realtime=realtime)
+        if rate_msg:
+            st.warning(rate_msg)
+        refreshed = st.session_state.get("board_last_refreshed")
+        if refreshed:
+            st.caption(f"Board last refreshed at {refreshed} (local process clock, UTC).")
+
         news_map: dict = {}
         try:
             news_map = fetch_watchlist_news(
                 [r.pair for r in rows],
                 cfg,
-                force=bool(refresh and not realtime),
+                force=bool(manual),
             )
         except Exception:
             news_map = {}
@@ -330,12 +438,23 @@ def render_watch_board(cfg) -> None:
                     with left:
                         st.markdown(f"### {row.pair}")
                         st.caption(f"Timeframe **{row.timeframe}**")
+                        _validity_badge(row.validity)
                         _signal_badge(row.buy_sell)
                         st.caption(f"Target  {row.target}")
-                        if row.status != "ready":
+                        if row.validity == VALIDITY_STALE:
+                            st.warning(row.validity_reason or "data stale — refresh required")
+                        elif row.validity == VALIDITY_CLOSED:
+                            st.caption(row.validity_reason)
+                        elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {
+                            "ready",
+                            "stale",
+                        }:
                             st.warning(row.signal_details)
                     with mid:
                         st.markdown("**Math signal details**")
+                        st.caption(f"Last bar  {row.last_bar_at or 'n/a'}")
+                        st.caption(f"Last fetch  {row.last_fetch_at or 'n/a'}")
+                        st.caption(f"Last signal  {row.last_signal_at or row.datetime or 'n/a'}")
                         st.caption(
                             f"conf={_fmt_num(row.confidence, 4)} · dir_edge={_fmt_num(row.dir_edge, 4)}"
                         )
@@ -361,6 +480,8 @@ def render_watch_board(cfg) -> None:
                             st.caption("Rules blocked: " + ", ".join(failed_rules))
                         elif passed_rules:
                             st.caption("Rules passed: " + ", ".join(passed_rules))
+                        if row.raw_signal and row.buy_sell == "—" and row.validity == VALIDITY_STALE:
+                            st.caption(f"Last model class (not live): {row.raw_signal}")
                     with right:
                         _render_news_lane(news)
                     with st.expander("Drivers, rules, rationale, headlines"):
@@ -389,25 +510,34 @@ def render_watch_board(cfg) -> None:
                             _render_news_lane(news)
                         if row.error:
                             st.caption(f"Status detail: {row.error}")
-                        if row.status != "ready":
+                        if row.validity_reason:
+                            st.caption(f"Validity: {row.validity} — {row.validity_reason}")
+                        if row.status not in {"ready", "stale"}:
                             st.info(
                                 "Open **Lab** in the sidebar: Fetch then Train. "
                                 "The board does not invent prices."
                             )
 
             table = board_table(rows)
-            with st.expander("Table view (Pair | Timeframe | Buy/Sell | Target | Signal details)"):
+            with st.expander("Table view (Pair | Timeframe | Validity | Buy/Sell | Target | Last bar | Signal details)"):
                 try:
                     st.dataframe(style_board(table), use_container_width=True, hide_index=True)
                 except Exception:
                     st.dataframe(table, use_container_width=True, hide_index=True)
 
-        ready = sum(1 for r in rows if r.status == "ready")
-        blocked = len(rows) - ready
+        ok_n = sum(1 for r in rows if r.validity == VALIDITY_OK)
+        closed_n = sum(1 for r in rows if r.validity == VALIDITY_CLOSED)
+        stale_n = sum(1 for r in rows if r.validity == VALIDITY_STALE)
+        missing_n = sum(1 for r in rows if r.validity in {VALIDITY_MISSING, VALIDITY_ERROR})
         if rows:
-            b3.caption(
-                f"{ready} ready · {blocked} {NEED_FETCH_TRAIN}" if blocked else f"{ready} ready"
-            )
+            bits = [f"{ok_n} OK"]
+            if closed_n:
+                bits.append(f"{closed_n} CLOSED")
+            if stale_n:
+                bits.append(f"{stale_n} STALE")
+            if missing_n:
+                bits.append(f"{missing_n} MISSING/ERROR")
+            b3.caption(" · ".join(bits))
 
     _board_fragment()
 

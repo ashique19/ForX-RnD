@@ -114,6 +114,14 @@ news:
   cache_ttl_s: 300         # be polite to Google News; reuse for 5 minutes
   cache_file: data/news_cache.json
 
+# Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
+board:
+  realtime_seconds: 60     # st.fragment period when Realtime is checked
+  yf_min_interval_s: 60    # min seconds between yfinance hits per pair
+  stale_bars: 2            # STALE if last bar older than N × timeframe in-session
+  incremental_period: "5d" # short Yahoo window; merged into the existing CSV
+  incremental_min_bars: 20
+
 # Paths (relative to project root)
 paths:
   data_dir: data
