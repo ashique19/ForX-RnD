@@ -1,0 +1,68 @@
+# Forex Research Lab — default config (research only; no live trading)
+
+pairs:
+  EURUSD: "EURUSD=X"
+  GBPUSD: "GBPUSD=X"
+  USDJPY: "USDJPY=X"
+  AUDUSD: "AUDUSD=X"
+  USDCAD: "USDCAD=X"
+
+# OHLCV defaults
+interval: "1h"
+period: "2y"
+
+# Labeling: forward return over `horizon` bars vs threshold
+# BUY  if forward_return >  +label_threshold
+# SELL if forward_return <  -label_threshold
+# HOLD otherwise
+horizon: 4
+label_threshold: 0.0005   # 5 pips on ~1.0 quote (fractional return)
+
+# Optional TP/SL style exits used in backtest simulation (fractional)
+take_profit: 0.0015       # ~15 pips
+stop_loss: 0.0010         # ~10 pips
+use_tp_sl: false          # if false, exit after horizon bars
+
+# Transaction costs
+spread_pips: 1.0          # round-trip-ish cost applied per trade entry
+pip_size: 0.0001          # 0.01 for JPY pairs (auto-adjusted for *JPY)
+
+# Features
+sma_windows: [10, 20, 50]
+ema_windows: [12, 26]
+rsi_period: 14
+atr_period: 14
+vol_window: 20
+
+# Walk-forward backtest (time-ordered; no shuffle)
+walk_forward:
+  train_bars: 2000
+  test_bars: 250
+  step_bars: 250
+  min_train_bars: 500
+
+# Model
+model:
+  type: xgboost            # xgboost | logistic
+  random_state: 42
+  xgboost:
+    n_estimators: 120
+    max_depth: 4
+    learning_rate: 0.08
+    subsample: 0.9
+    colsample_bytree: 0.9
+  logistic:
+    max_iter: 500
+    C: 1.0
+
+# Signal generation
+signals:
+  min_confidence: 0.40     # min P(class) to emit BUY/SELL (else HOLD)
+  lookback_bars: 64        # rows written to latest_signals.csv
+
+# Paths (relative to project root)
+paths:
+  data_dir: data
+  models_dir: models
+  signals_dir: signals
+  reports_dir: reports

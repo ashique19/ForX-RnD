@@ -1,0 +1,62 @@
+{
+  "pair": "EURUSD",
+  "model_type": "xgboost",
+  "features": [
+    "ret_1",
+    "ret_3",
+    "ret_6",
+    "sma_10_ratio",
+    "sma_20_ratio",
+    "sma_50_ratio",
+    "ema_12_ratio",
+    "ema_26_ratio",
+    "rsi",
+    "atr_pct",
+    "volatility",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos"
+  ],
+  "val_accuracy": 0.4517579721995094,
+  "classification_report": {
+    "SELL": {
+      "precision": 0.350210970464135,
+      "recall": 0.3536931818181818,
+      "f1-score": 0.3519434628975265,
+      "support": 704.0
+    },
+    "HOLD": {
+      "precision": 0.5559055118110237,
+      "recall": 0.6269982238010657,
+      "f1-score": 0.5893155258764607,
+      "support": 1126.0
+    },
+    "BUY": {
+      "precision": 0.3225806451612903,
+      "recall": 0.2435064935064935,
+      "f1-score": 0.27752081406105455,
+      "support": 616.0
+    },
+    "accuracy": 0.4517579721995094,
+    "macro avg": {
+      "precision": 0.40956570914548296,
+      "recall": 0.408065966375247,
+      "f1-score": 0.4062599342783473,
+      "support": 2446.0
+    },
+    "weighted avg": {
+      "precision": 0.4379426847609642,
+      "recall": 0.4517579721995094,
+      "f1-score": 0.44247354925525884,
+      "support": 2446.0
+    }
+  },
+  "label_map": {
+    "0": "SELL",
+    "1": "HOLD",
+    "2": "BUY"
+  },
+  "horizon": 4,
+  "label_threshold": 0.0005
+}

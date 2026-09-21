@@ -1,0 +1,48 @@
+{
+  "pair": "EURUSD",
+  "model_type": "xgboost",
+  "folds": 41,
+  "n_test_bars": 10228,
+  "label_accuracy_on_test": 0.39880719593273367,
+  "model": {
+    "n_trades": 6888,
+    "win_rate": 0.49753193960511033,
+    "win_rate_buy": 0.49895678092399404,
+    "win_rate_sell": 0.49617888480045286,
+    "n_buy": 3355,
+    "n_sell": 3533,
+    "avg_return_per_trade": -4.468763735746811e-05,
+    "total_return": -0.2748514119589569,
+    "max_drawdown": -0.3592912682990441,
+    "profit_factor": 0.9372074382844787
+  },
+  "baseline_sma_crossover": {
+    "n_trades": 10223,
+    "win_rate": 0.4611170889171476,
+    "win_rate_buy": 0.4629667003027245,
+    "win_rate_sell": 0.45937737281700836,
+    "n_buy": 4955,
+    "n_sell": 5268,
+    "avg_return_per_trade": -8.402394594237141e-05,
+    "total_return": -0.5833503025835556,
+    "max_drawdown": -0.688590013101239,
+    "profit_factor": 0.8711567052872968
+  },
+  "baseline_always_long": {
+    "n_trades": 10224,
+    "win_rate": 0.48014475743348983,
+    "win_rate_buy": 0.48014475743348983,
+    "win_rate_sell": null,
+    "n_buy": 10224,
+    "n_sell": 0,
+    "avg_return_per_trade": -4.8646345782651476e-05,
+    "total_return": -0.4018197602432617,
+    "max_drawdown": -0.5417596235504563,
+    "profit_factor": 0.923115659572549
+  },
+  "costs": {
+    "spread_pips": 1.0,
+    "horizon": 4,
+    "label_threshold": 0.0005
+  }
+}
