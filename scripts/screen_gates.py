@@ -79,7 +79,11 @@ def _verdict(row: dict, base: dict) -> str:
     d_dd = (row.get("max_dd") or 0) - (base.get("max_dd") or 0)
     # More negative DD is worse. Fold PF std is ~0.5; 0.01 PF is noise.
     if d_pf > 0 and d_ret > 0 and d_dd >= -1e-4:
-        return "better on this sample — still not an edge"
+        wr_b = base.get("win_rate") or 0
+        wr = row.get("win_rate") or 0
+        if abs(d_pf) < 0.10 and (wr_b - wr) > 0.05:
+            return "mixed — WR dropped; PF tick inside fold noise — keep off"
+        return "better on this sample — still not an edge; keep off unless large"
     if abs(d_pf) < 0.05 and abs(d_ret) < 0.03 and abs(d_dd) < 0.01:
         return "null / fold noise — keep off"
     if d_pf < 0 or d_ret < 0 or d_dd < -0.002:

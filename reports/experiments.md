@@ -59,3 +59,19 @@ FRED loaded via public CSV (**no** `FRED_API_KEY`): `DFF`, `DGS10`, `T10Y2Y`, `D
 **Default stays off for both packs.** A 0.01 profit-factor tick is well inside fold PF std (~0.5–0.6). Every variant still has PF < 1 and negative total return. This is **not** a trading edge. Enable in `config/default.yaml` only for research retrains.
 
 Reproduce: `python3 scripts/screen_feature_packs.py` (writes `reports/feature_pack_screen.md`).
+
+### Selective open gates + cost-aware / asymmetric ATR (this PR)
+
+Same walk-forward protocol, current `data/EURUSD_1h.csv`, logistic off (matches the feature-pack baseline, **not** a reprint of `reports/latest_report.md`). Event-window gate is **not** in the WF book — no historical Forex Factory dump; missing calendar fail-softs the same way the desk does.
+
+| Variant | Trades | Win rate | Total return | Max DD | Profit factor | vs baseline |
+|---|---:|---:|---:|---:|---:|---|
+| baseline | 1067 | 50.52% | -9.78% | -10.36% | 0.8894 | — |
+| gated MTF + min conf (same preds) | 615 | 50.73% | -8.00% | -8.46% | 0.8465 | worse PF — keep off |
+| gated MTF + min conf 0.50 | 394 | 49.24% | -7.08% | -7.57% | 0.7926 | worse PF — keep off |
+| cost-aware HOLD if TP < spread | 1067 | 50.52% | -9.78% | -10.36% | 0.8894 | null (2 ATR ≫ 1 pip) |
+| asymmetric 1.5:1 ATR (matched labels+BT) | 1622 | 42.66% | -6.74% | -10.23% | 0.9339 | mixed; WR 42.7%; PF tick inside fold noise |
+
+**Defaults stay off / 2:2.** Gates improve the *path* of a thinner book (shallower DD) but **hurt profit factor**. Cost-aware is a no-op. 1.5:1 is not a clear non-regression: win rate collapses, and a prior screen vs the PF 0.978 headline was worse. Not a live edge.
+
+Reproduce: `python3 scripts/screen_gates.py` (writes `reports/gate_screen.md`).

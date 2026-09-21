@@ -1,0 +1,58 @@
+{
+  "pair": "EURUSD",
+  "protocol": "train 2000 / test 250 / step 250, next-open, 1 pip, one-position, XGBoost",
+  "event_gate": "not applied in WF (no historical calendar; fail-soft pass)",
+  "claim": "not a live edge",
+  "rows": [
+    {
+      "variant": "baseline",
+      "n_trades": 1067,
+      "win_rate": 0.5051546391752577,
+      "total_return": -0.0977570711721748,
+      "max_dd": -0.1036160670483689,
+      "profit_factor": 0.8894169603844656,
+      "sec": 10.4,
+      "notes": "gates.enabled=false, cost_aware=false, tp/sl=2/2"
+    },
+    {
+      "variant": "gated_mtf_conf",
+      "n_trades": 615,
+      "win_rate": 0.5073170731707317,
+      "total_return": -0.07996642214578187,
+      "max_dd": -0.0845729390365394,
+      "profit_factor": 0.8464522289202572,
+      "sec": 0.1,
+      "notes": "same fold preds; require_mtf_agree + min_confidence; event gate n/a in WF"
+    },
+    {
+      "variant": "gated_mtf_conf50",
+      "n_trades": 394,
+      "win_rate": 0.49238578680203043,
+      "total_return": -0.07084253306200794,
+      "max_dd": -0.07565873863681549,
+      "profit_factor": 0.7926202172368658,
+      "sec": 0.0,
+      "notes": "same preds; MTF agree + min_confidence=0.50"
+    },
+    {
+      "variant": "cost_aware",
+      "n_trades": 1067,
+      "win_rate": 0.5051546391752577,
+      "total_return": -0.0977570711721748,
+      "max_dd": -0.1036160670483689,
+      "profit_factor": 0.8894169603844656,
+      "sec": 10.4,
+      "notes": "retrained labels+exits matched; gates off"
+    },
+    {
+      "variant": "asymmetric_1p5_1",
+      "n_trades": 1622,
+      "win_rate": 0.42663378545006164,
+      "total_return": -0.06742713767018382,
+      "max_dd": -0.10227737471813314,
+      "profit_factor": 0.9339066513465634,
+      "sec": 10.6,
+      "notes": "retrained labels+exits matched; gates off"
+    }
+  ]
+}
