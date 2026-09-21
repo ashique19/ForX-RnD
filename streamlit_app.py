@@ -5,7 +5,10 @@ Run from the project root:  streamlit run streamlit_app.py
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+import base64
+import html
 
 import pandas as pd
 import streamlit as st
@@ -13,18 +16,33 @@ import streamlit as st
 from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_pair
 from forex_lab.calendar import CalendarBundle, countdown_label
 from forex_lab import calendar as calendar_lab
+from forex_lab.clock import clock_note, fmt_display, relabel, timezone_tag, zoneinfo_for
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.advise import Suggestion, suggest_actions
 from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MtfStatus
 from forex_lab.ui.board import (
+    BOARD_TABLE_COLS,
     board_table,
     build_board_row,
     research_risk,
     research_target,
     style_board,
 )
+from forex_lab.session import SessionState, classify_session
+from forex_lab.ui.quote import QuoteView
 from forex_lab.fred import fred_feed_status
+from forex_lab.ui.alerts import (
+    alerts_cfg,
+    beep_wav,
+    dismiss_alert,
+    format_alert_time,
+    kind_tone,
+    load_state as load_alert_state,
+    process_watch,
+    save_state as save_alert_state,
+    visible_alerts,
+)
 from forex_lab.ui.health import build_health_rows, health_strip, health_unhealthy
 from forex_lab.ui.pipeline import (
     artifact_status,
@@ -62,7 +80,6 @@ from forex_lab.freshness import (
     YF_MIN_INTERVAL_S,
     assess_ohlcv,
     board_cfg,
-    fmt_ts,
     is_rate_limited_reason,
     now_utc,
     should_fetch_ohlcv,
@@ -86,8 +103,14 @@ DISCLAIMER = (
     "not an official Fed/BLS/ECB schedule, not a trade instruction. "
     "Advisory cards (no new opens / hold / close / tighten SL) never auto-submit via BrokerPort. "
     "MTF badges use causal higher-TF SMA slope on the same CSV — not a live trend service. "
+    "Last on the board is yfinance **last/mid-ish**, not executable bid/ask. "
+    "Spread is the **config pip estimate** (cost context), not your broker’s live spread. "
+    "Session is a UTC-window clock badge (Asia/London/NY); times on the desk are **Asia/Dhaka**. "
+    "Paper uPnL is a local mark vs that last/mid-ish cache — **not** live broker PnL. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
+    "The alerts strip flags BUY/SELL/HOLD flips and STALE/MISSING vs the last snapshot — "
+    "it never auto-submits via BrokerPort. Optional alert sound is **off by default**. "
     "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket."
 )
 
@@ -101,6 +124,18 @@ A per-pair override can be set when adding.
 During a liquid FX session, a last bar older than ~2× the timeframe is **STALE**.
 Weekends / Friday after ~21:00 UTC show **CLOSED** (last bar + “market likely closed”),
 not a false STALE panic. STALE/MISSING flash **—** with a reason — not a live BUY/SELL.
+
+**Last** — cached yfinance close shown as **last/mid-ish**. Yahoo FX is not a bid/ask
+book; this is not your broker’s executable quote. Mid is labeled only when Bid/Ask
+columns exist (they do not on the default yfinance path).
+
+**Spread** — `spread_pips` from `config/default.yaml` as **cost context** (same pip
+assumption as backtest). Optional last-bar High−Low is a **range proxy**, labeled
+as such — not a live spread.
+
+**Session** — Asia / London / NY from the **clock** (UTC windows under `board.sessions`,
+overlap shown as LONDON+NY). Weekend / Friday after ~21:00 UTC → CLOSED. Not a
+broker session calendar.
 
 **Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`.
 Color badge is a research label, **not** an order. Only flashed when validity is OK or CLOSED.
@@ -122,11 +157,18 @@ Research suggestion only: **no lot size, no auto-submit, no live broker order**.
 Fills at the last cached close like a practice book: open position, uPnL, SL/TP hits.
 A future `mt5` / `oanda` backend would implement the same four methods. **Not** a live order.
 
+**Alerts** — compact top strip when a watchlist pair **flips** BUY/SELL/HOLD vs the
+previous refresh, or validity becomes **STALE / MISSING**. Last-seen signals persist
+in `data/alert_state.json` (local; not a broker). Unchanged polls stay quiet; the same
+transition is rate-limited. Optional high-impact **event within 60m** uses the calendar.
+Sound is **off by default** (checkbox + `board.alerts.sound`). Times are **Asia/Dhaka**.
+Dismissible; never places orders.
+
 **Awareness** — always-visible **Feeds:** line plus expander listing OHLCV + news
 with last update, cadence, and OK/STALE/FAIL. Opens itself when a feed is STALE/FAIL/MISSING.
 
 **Last update** — last candle time, last successful CSV write (fetch), last signal time.
-The board also shows a global **board last refreshed** timestamp.
+The board also shows a global **board last refreshed** timestamp. Desk clocks are **Asia/Dhaka** (`ui.timezone`) with an `Asia/Dhaka` tag. Session windows stay UTC.
 
 **Signal details** — confidence, probabilities, top feature drivers, rule overlay, short rationale.
 
@@ -265,6 +307,65 @@ def _signal_badge(sig: str, *, weak: bool = False) -> None:
     )
 
 
+def _session_badge(session: SessionState | None, *, show_note: bool = False) -> None:
+    if session is None:
+        name = "n/a"
+        note = "session n/a"
+    else:
+        name = session.badge()
+        note = session.note
+    colors = {
+        "ASIA": "#3730a3",
+        "LONDON": "#1d4ed8",
+        "NY": "#0f766e",
+        "ASIA+LONDON": "#1e3a8a",
+        "LONDON+NY": "#b45309",
+        "ASIA+NY": "#6d28d9",
+        "ASIA+LONDON+NY": "#b45309",
+        "CLOSED": "#475569",
+        "OFF": "#57534e",
+        "N/A": "#57534e",
+    }
+    bg = colors.get(name, "#334155")
+    st.markdown(
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.75rem;'
+        f"letter-spacing:0.08em;text-align:center;padding:4px 8px;border-radius:6px;"
+        f'display:inline-block">{name}</div>',
+        unsafe_allow_html=True,
+    )
+    if show_note and note:
+        st.caption(note)
+
+
+def _render_quote_strip(row) -> None:
+    """Last / spread / session — scan in seconds. Not a broker ticker."""
+    q: QuoteView | None = getattr(row, "quote", None)
+    last_txt = q.last_label() if q is not None else "n/a"
+    kind = (q.kind if q is not None else "last/mid-ish") or "last/mid-ish"
+    spr = q.spread_label() if q is not None else "n/a"
+    st.markdown(
+        f'<div style="font-variant-numeric:tabular-nums;line-height:1.15">'
+        f'<div style="font-size:1.35rem;font-weight:800;letter-spacing:0.02em">{last_txt}</div>'
+        f'<div style="font-size:0.72rem;color:#64748b;font-weight:600">{kind}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    s1, s2 = st.columns(2)
+    with s1:
+        st.markdown(
+            f'<div style="background:#0f172a;color:#e2e8f0;font-weight:700;font-size:0.72rem;'
+            f"letter-spacing:0.04em;text-align:center;padding:4px 6px;border-radius:6px\">"
+            f"SPR {spr} cfg</div>",
+            unsafe_allow_html=True,
+        )
+    with s2:
+        _session_badge(getattr(row, "session", None), show_note=False)
+    if q is not None:
+        st.caption(q.note)
+        if q.range_pips is not None:
+            st.caption(f"bar range {q.range_pips:.1f}p · {q.range_note}")
+
+
 def _mtf_badge(mtf: MtfStatus | None) -> None:
     if mtf is None:
         status = "n/a"
@@ -309,12 +410,65 @@ def _render_sparkline(row) -> None:
     st.caption(row.sparkline_note)
 
 
-def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str]) -> None:
+def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
+    """Dense dismissible banner. Hidden when there is nothing to show."""
+    acfg = alerts_cfg(cfg)
+    shown = visible_alerts(state, max_visible=int(acfg.get("max_visible") or 6))
+    if shown:
+        head, clear = st.columns([7.2, 1.1])
+        with head:
+            st.markdown("**Alerts**")
+            st.caption(
+                "Flips and STALE vs last snapshot · dismissible · not orders. "
+                f"{'Sound on' if sound_on else 'Sound off'}."
+            )
+        with clear:
+            st.markdown("&nbsp;")
+            if st.button("Clear", key="alert_clear_all", help="Dismiss every visible alert"):
+                for a in list(state.alerts):
+                    dismiss_alert(state, a.id)
+                save_alert_state(state, cfg)
+                st.rerun()
+        clicked = None
+        for alert in shown:
+            msg, xbtn = st.columns([8.6, 0.55])
+            with msg:
+                bg = kind_tone(alert.kind)
+                when = format_alert_time(alert, cfg)
+                st.markdown(
+                    f'<div style="display:flex;gap:10px;align-items:center;background:{bg};'
+                    f"color:#fff;font-size:0.78rem;font-weight:700;padding:5px 8px;"
+                    f'border-radius:6px;letter-spacing:0.02em;line-height:1.2">'
+                    f"<span>{html.escape(alert.message)}</span>"
+                    f'<span style="margin-left:auto;font-weight:600;opacity:.9;white-space:nowrap">'
+                    f"{html.escape(when)}</span></div>",
+                    unsafe_allow_html=True,
+                )
+            with xbtn:
+                if st.button("×", key=f"alert_dismiss_{alert.id}", help="Dismiss this alert"):
+                    clicked = alert.id
+        hidden_n = max(0, len([a for a in state.alerts if a.id not in {s.id for s in shown}]) )
+        if hidden_n:
+            st.caption(f"{hidden_n} older alert(s) not shown — Clear to drop them.")
+        if clicked:
+            dismiss_alert(state, clicked)
+            save_alert_state(state, cfg)
+            st.rerun()
+    if sound_on and fresh:
+        b64 = base64.b64encode(beep_wav()).decode("ascii")
+        st.markdown(
+            f'<audio autoplay src="data:audio/wav;base64,{b64}"></audio>',
+            unsafe_allow_html=True,
+        )
+
+
+def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str], cfg=None) -> None:
     st.markdown("**Event calendar**")
     st.caption(
         "High-impact FX releases (NFP, FOMC, CPI, rate decisions, …). "
         "Free unofficial Forex Factory weekly JSON via nfs.faireconomy.media — no API key. "
-        "Cached locally; fail-soft if offline. **Not a trade instruction.**"
+        "Cached locally; fail-soft if offline. **Not a trade instruction.** "
+        f"{clock_note(cfg)}"
     )
     if bundle is None:
         st.info("Calendar not loaded this tick.")
@@ -328,18 +482,20 @@ def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str]) -> N
         st.caption("No high-impact events in the look-ahead window.")
         return
     wanted = {str(p).upper() for p in pairs}
+    dhaka_now = datetime.now(zoneinfo_for(cfg))
+    st.caption(f"Now {fmt_display(dhaka_now, cfg, seconds=True)} — countdowns vs this clock.")
     for e in bundle.events:
         when = e.when_dt()
-        cd = countdown_label(when)
+        cd = countdown_label(when, now=dhaka_now)
         hit = [p for p in wanted if e.currency in {p[:3], p[3:6]} and len(p) >= 6]
         pairs_txt = ", ".join(hit) if hit else "(no watchlist pair)"
         mark = " · highlight" if e.highlight else ""
         st.markdown(
             f"- **{cd}** · {e.currency} · {e.impact}{mark} · {e.title}  \n"
-            f"  {e.when} · pairs {pairs_txt}"
+            f"  {fmt_display(when or e.when, cfg)} · pairs {pairs_txt}"
             + (f" · forecast {e.forecast} prev {e.previous}" if e.forecast or e.previous else "")
         )
-    src = bundle.fetched_at or "cache"
+    src = relabel(bundle.fetched_at, cfg) if bundle.fetched_at else "cache"
     stale = " · stale cache" if bundle.stale_cache else ""
     st.caption(f"Source: {bundle.source} · {src}{stale}")
 
@@ -392,8 +548,11 @@ def _render_advice_card(
     )
     st.caption(card.detail)
     if card.countdown or card.event_title:
+        when_txt = relabel(getattr(card, "event_when", None), cfg)
+        when_bit = f" · {when_txt}" if when_txt != "n/a" else ""
         st.caption(
-            f"{card.currencies or ''} {card.event_title or ''} · {card.countdown or ''} · window {card.window}"
+            f"{card.currencies or ''} {card.event_title or ''} · {card.countdown or ''}"
+            f"{when_bit} · window {card.window}"
         )
     st.caption(card.disclaimer)
     if card.action == "tighten_sl" and card.suggested_sl is not None and broker is not None:
@@ -517,6 +676,7 @@ def _render_paper_actions(
             f"{_fmt_num(open_pos['entry_price'], 5)}  ·  "
             f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  {open_pos.get('outcome') or 'PENDING'}"
         )
+        st.caption("paper mark vs last/mid-ish cache — not live broker PnL")
         if st.button("Paper CLOSE", key=f"paper_close_{row.pair}_{row.timeframe}", use_container_width=True):
             try:
                 if price is None:
@@ -582,7 +742,7 @@ def _render_paper_actions(
         st.error(str(exc))
 
 
-def _render_paper_journal(broker: BrokerPort) -> None:
+def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
     backend = "paper"
     st.caption(
         f"Practice book via BrokerPort (`broker.backend: {backend}`). "
@@ -601,6 +761,7 @@ def _render_paper_journal(broker: BrokerPort) -> None:
     b2.metric("Unrealized (paper)", _fmt_num(unreal, 5))
     b3.metric("Realized (paper)", _fmt_num(realized, 5))
     b4.metric("Fills", str(len(fills)))
+    st.caption("Paper marks use last/mid-ish cache — not live broker PnL.")
     if positions:
         st.markdown("**Open book**")
         st.dataframe(
@@ -612,6 +773,7 @@ def _render_paper_journal(broker: BrokerPort) -> None:
                         "side": p.get("side"),
                         "size": p.get("size"),
                         "entry": p.get("entry_price"),
+                        "when": relabel(p.get("entry_time"), cfg, seconds=True),
                         "sl": p.get("sl"),
                         "tp": p.get("tp"),
                         "uPnL": p.get("unrealized"),
@@ -635,7 +797,7 @@ def _render_paper_journal(broker: BrokerPort) -> None:
         show = pd.DataFrame(
             [
                 {
-                    "when": r.get("entry_time"),
+                    "when": relabel(r.get("entry_time"), cfg, seconds=True),
                     "pair": r.get("pair"),
                     "side": r.get("side"),
                     "status": r.get("status"),
@@ -693,10 +855,16 @@ def _render_paper_journal(broker: BrokerPort) -> None:
             st.caption("• " + note)
     if fills:
         st.markdown("**Fills** (`BrokerPort.list_fills`)")
-        st.dataframe(pd.DataFrame(fills), use_container_width=True, hide_index=True)
+        fill_rows = []
+        for f in fills:
+            d = dict(f)
+            if "time" in d:
+                d["time"] = relabel(d.get("time"), cfg, seconds=True)
+            fill_rows.append(d)
+        st.dataframe(pd.DataFrame(fill_rows), use_container_width=True, hide_index=True)
 
 
-def _render_news_lane(bundle: NewsBundle | None) -> None:
+def _render_news_lane(bundle: NewsBundle | None, cfg=None) -> None:
     st.caption("News context, not a trade instruction")
     if bundle is None:
         st.info("No news yet.")
@@ -710,11 +878,11 @@ def _render_news_lane(bundle: NewsBundle | None) -> None:
     for h in (bundle.headlines or [])[:8]:
         title = h.title if len(h.title) < 110 else h.title[:107] + "…"
         if h.link:
-            st.markdown(f"- [{title}]({h.link})  \n  {h.published} {('· ' + h.source) if h.source else ''}")
+            st.markdown(f"- [{title}]({h.link})  \n  {relabel(h.published, cfg)} {('· ' + h.source) if h.source else ''}")
         else:
             st.markdown(f"- {title}")
     if bundle.fetched_at:
-        st.caption(f"Source: Google News RSS · {bundle.fetched_at}")
+        st.caption(f"Source: Google News RSS · {relabel(bundle.fetched_at, cfg)}")
 
 
 def _watch_cache_key(pair: str, interval: str) -> str:
@@ -791,7 +959,7 @@ def _sync_watch_rows(wl, cfg, *, manual: bool, realtime: bool) -> tuple[list, st
         rows.append(row)
     for stale in [k for k in cache if k not in wanted]:
         del cache[stale]
-    st.session_state["board_last_refreshed"] = fmt_ts(clock, seconds=True)
+    st.session_state["board_last_refreshed"] = fmt_display(clock, cfg, seconds=True)
     return rows, rate_msg
 
 
@@ -811,12 +979,20 @@ def render_watch_board(cfg) -> None:
     with st.expander("Column help (research only)"):
         st.markdown(BOARD_HELP)
 
-    c_real, c_secs, c_note = st.columns([1.1, 1.1, 2.4])
+    c_real, c_secs, c_sound, c_note = st.columns([1.0, 1.0, 1.15, 2.1])
     realtime = c_real.checkbox(
         "Realtime",
         value=False,
         help="Rebuild signals from local cache on a timer. yfinance only when a bar is due. "
         "Not broker quotes and not streaming.",
+    )
+    if "alert_sound" not in st.session_state:
+        st.session_state["alert_sound"] = bool(load_alert_state(cfg).sound)
+    sound_on = c_sound.checkbox(
+        "Alert sound",
+        key="alert_sound",
+        help="Off by default. Short beep when a watchlist pair flips BUY/SELL/HOLD or goes "
+        "STALE/MISSING. Never places orders.",
     )
     bcfg = board_cfg(cfg)
     default_rt = int(bcfg.get("realtime_seconds") or max(60, int(wl.refresh_seconds)))
@@ -863,9 +1039,34 @@ def render_watch_board(cfg) -> None:
             rows, rate_msg = _sync_watch_rows(wl, cfg, manual=manual, realtime=realtime)
         if rate_msg:
             st.warning(rate_msg)
+
+        calendar: CalendarBundle | None = None
+        try:
+            calendar = calendar_lab.fetch_calendar(cfg, force=bool(manual))
+        except Exception as exc:  # noqa: BLE001 — never break the math board
+            calendar = CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
+
+        alert_state, alert_fresh = process_watch(
+            rows,
+            calendar=calendar,
+            cfg=cfg,
+            now=now_utc(),
+            sound=bool(sound_on),
+        )
+        _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
         refreshed = st.session_state.get("board_last_refreshed")
         if refreshed:
-            st.caption(f"Board last refreshed at {refreshed} (local process clock, UTC).")
+            st.caption(
+                f"Board last refreshed at {relabel(refreshed, cfg, seconds=True)} "
+                f"({timezone_tag(cfg)} clock)."
+            )
+        board_sess = classify_session(cfg=cfg)
+        st.caption(
+            f"Session **{board_sess.badge()}** · {board_sess.note}. "
+            "Last is yfinance last/mid-ish — not broker bid/ask. "
+            "Spread is the config pip estimate (cost context). "
+            f"{clock_note(cfg)}"
+        )
 
         news_map: dict = {}
         try:
@@ -876,12 +1077,6 @@ def render_watch_board(cfg) -> None:
             )
         except Exception:
             news_map = {}
-
-        calendar: CalendarBundle | None = None
-        try:
-            calendar = calendar_lab.fetch_calendar(cfg, force=bool(manual))
-        except Exception as exc:  # noqa: BLE001 — never break the math board
-            calendar = CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
 
         try:
             broker = _paper_broker(cfg)
@@ -942,7 +1137,7 @@ def render_watch_board(cfg) -> None:
             st.info("Watchlist is empty. Add a pair below.")
         else:
             with st.container(border=True):
-                _render_calendar_panel(calendar, [r.pair for r in rows])
+                _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
             for row in rows:
                 news = news_map.get(row.pair)
                 with st.container(border=True):
@@ -950,6 +1145,7 @@ def render_watch_board(cfg) -> None:
                     with left:
                         st.markdown(f"### {row.pair}")
                         st.caption(f"Timeframe **{row.timeframe}**")
+                        _render_quote_strip(row)
                         _validity_badge(row.validity)
                         _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)))
                         _mtf_badge(getattr(row, "mtf", None))
@@ -999,7 +1195,7 @@ def render_watch_board(cfg) -> None:
                         ):
                             st.caption(f"Last model class (not live / MTF overlay): {row.raw_signal}")
                     with right:
-                        _render_news_lane(news)
+                        _render_news_lane(news, cfg)
                     sp, rk = st.columns([1.55, 1.45])
                     with sp:
                         _render_sparkline(row)
@@ -1010,11 +1206,24 @@ def render_watch_board(cfg) -> None:
                     with st.expander("Drivers, rules, rationale, headlines"):
                         st.markdown(
                             f"- **Buy/Sell:** {row.buy_sell}  \n"
+                            f"- **Last:** {(row.quote.as_table_last() if row.quote else 'n/a')}  \n"
+                            f"- **Spread:** {(row.quote.as_table_spread() if row.quote else 'n/a')}  \n"
+                            f"- **Session:** {(row.session.badge() if row.session else 'n/a')}  \n"
                             f"- **MTF:** {(row.mtf.as_label() if row.mtf else 'n/a')}  \n"
                             f"- **Target:** {row.target}  \n"
                             f"- **Confidence / edge:** conf={row.confidence} · dir_edge={row.dir_edge}  \n"
                             f"- **p_buy / p_sell / p_hold:** {row.p_buy} / {row.p_sell} / {row.p_hold}"
                         )
+                        if row.quote is not None:
+                            st.caption(row.quote.note)
+                            if row.quote.range_note:
+                                st.caption(
+                                    f"bar range "
+                                    f"{'n/a' if row.quote.range_pips is None else f'{row.quote.range_pips:.1f}p'}"
+                                    f" · {row.quote.range_note}"
+                                )
+                        if row.session is not None and row.session.note:
+                            st.caption(row.session.note)
                         if row.target_note:
                             st.caption(row.target_note)
                         _render_risk(row)
@@ -1033,7 +1242,7 @@ def render_watch_board(cfg) -> None:
                             _render_explanation(expl, heading="Why this math signal?")
                         if news is not None and news.headlines:
                             st.markdown("**Headlines used for the news note**")
-                            _render_news_lane(news)
+                            _render_news_lane(news, cfg)
                         if row.error:
                             st.caption(f"Status detail: {row.error}")
                         if row.validity_reason:
@@ -1046,10 +1255,11 @@ def render_watch_board(cfg) -> None:
 
             if broker is not None:
                 with st.expander("Paper portfolio (practice desk — not a broker)", expanded=False):
-                    _render_paper_journal(broker)
+                    _render_paper_journal(broker, cfg)
 
             table = board_table(rows)
-            with st.expander("Table view (Pair | Timeframe | Validity | Buy/Sell | MTF | Target | Last bar | Signal details)"):
+            cols_help = " | ".join(BOARD_TABLE_COLS)
+            with st.expander(f"Table view ({cols_help})"):
                 try:
                     st.dataframe(style_board(table), use_container_width=True, hide_index=True)
                 except Exception:
@@ -1227,7 +1437,9 @@ def render() -> None:
                 when = last.get("datetime", "")
                 close = last.get("close", "")
                 conf = last.get("confidence", "")
-                st.caption(f"{last.get('pair', '')}  {when}  close={close}  conf={conf}")
+                st.caption(
+                    f"{last.get('pair', '')}  {relabel(when, cfg)}  close={close}  conf={conf}"
+                )
             else:
                 st.metric("Latest signal", "—")
                 st.caption("No `signals/latest_signals.csv` yet.")

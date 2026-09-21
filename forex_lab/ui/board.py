@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.clock import fmt_display, relabel_in_text
 from forex_lab.config_loader import load_config
 from forex_lab.data import csv_mtime_utc, load_cached_ohlcv, try_yfinance_refresh
 from forex_lab.explain import SignalExplanation, explain_latest_signal
@@ -21,7 +22,6 @@ from forex_lab.freshness import (
     VALIDITY_STALE,
     Freshness,
     assess_ohlcv,
-    fmt_ts,
     now_utc,
 )
 from forex_lab.mtf import (
@@ -32,8 +32,10 @@ from forex_lab.mtf import (
     assess_mtf,
     conflict_flash_mode,
 )
+from forex_lab.session import SessionState, classify_session
 from forex_lab.signals import generate_signals
 from forex_lab.ui.pipeline import artifact_status, load_signals
+from forex_lab.ui.quote import QuoteView, quote_from_ohlcv
 from forex_lab.ui.watchlist import Watchlist
 
 NEED_FETCH_TRAIN = "need Fetch/Train"
@@ -99,14 +101,21 @@ class BoardRow:
     risk: RiskBox | None = None
     mtf: MtfStatus | None = None
     flash_weak: bool = False
+    quote: QuoteView | None = None
+    session: SessionState | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
         mtf_label = self.mtf.status if self.mtf is not None else "n/a"
+        q = self.quote
+        sess = self.session.badge() if self.session is not None else "n/a"
         return {
             "Pair": self.pair,
             "Timeframe": self.timeframe,
             "Validity": self.validity,
+            "Last": q.as_table_last() if q is not None else "n/a",
+            "Spread": q.as_table_spread() if q is not None else "n/a",
+            "Session": sess,
             "Buy/Sell": self.buy_sell,
             "MTF": mtf_label,
             "Target": self.target,
@@ -124,13 +133,8 @@ def _fmt(x: object, digits: int = 4) -> str:
         return str(x)
 
 
-def _fmt_when(value: object) -> str:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return "n/a"
-    ts = pd.to_datetime(value, errors="coerce")
-    if pd.isna(ts):
-        return str(value)
-    return ts.strftime("%Y-%m-%d %H:%M")
+def _fmt_when(value: object, cfg: dict[str, Any] | None = None) -> str:
+    return fmt_display(value, cfg)
 
 
 def _barrier_levels(ohlcv: pd.DataFrame | None, cfg: dict[str, Any]) -> dict[str, Any] | None:
@@ -270,12 +274,27 @@ def sparkline_closes(ohlcv: pd.DataFrame | None, n: int = SPARKLINE_BARS) -> lis
     return [float(x) for x in s.tail(max(2, int(n))).tolist()]
 
 
+def attach_quote_session(
+    row: BoardRow,
+    ohlcv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+    *,
+    now: Any = None,
+) -> BoardRow:
+    """Last/mid + config spread + clock session. No invented bid/ask."""
+    row.quote = quote_from_ohlcv(ohlcv, row.pair, cfg)
+    row.session = classify_session(now, cfg)
+    return row
+
+
 def attach_visuals(
     row: BoardRow,
     ohlcv: pd.DataFrame | None,
     cfg: dict[str, Any],
+    *,
+    now: Any = None,
 ) -> BoardRow:
-    """Sparkline + risk box from cached bars. Never invents prices."""
+    """Sparkline + risk box + quote/session from cached bars. Never invents prices."""
     n = int((cfg.get("board") or {}).get("sparkline_bars") or SPARKLINE_BARS)
     if row.validity in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR} or ohlcv is None or ohlcv.empty:
         row.sparkline = []
@@ -292,6 +311,7 @@ def attach_visuals(
             else "no sparkline — close series empty"
         )
     row.risk = research_risk(ohlcv, cfg, row.buy_sell, validity=row.validity)
+    attach_quote_session(row, ohlcv, cfg, now=now)
     return attach_mtf(row, ohlcv, cfg)
 
 
@@ -335,6 +355,7 @@ def _details_from_signal(
     *,
     status: str | None = None,
     explanation: SignalExplanation | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> str:
     if status and status != STATUS_READY:
         return status
@@ -342,7 +363,7 @@ def _details_from_signal(
     conf = get("confidence")
     edge = get("dir_edge")
     model = get("model") or "n/a"
-    when = _fmt_when(get("datetime"))
+    when = _fmt_when(get("datetime"), cfg)
     pb, ps, ph = get("p_buy"), get("p_sell"), get("p_hold")
     base = (
         f"conf={_fmt(conf, 4)}  dir_edge={_fmt(edge, 4)}  "
@@ -395,7 +416,7 @@ def row_from_signal(
         timeframe=timeframe,
         buy_sell=sig,
         target=target,
-        signal_details=_details_from_signal(last, explanation=explanation),
+        signal_details=_details_from_signal(last, explanation=explanation, cfg=cfg),
         status=STATUS_READY,
         confidence=_num("confidence"),
         dir_edge=_num("dir_edge"),
@@ -403,7 +424,7 @@ def row_from_signal(
         p_sell=_num("p_sell"),
         p_hold=_num("p_hold"),
         model=None if get("model") is None else str(get("model")),
-        datetime=_fmt_when(get("datetime")),
+        datetime=_fmt_when(get("datetime"), cfg),
         close=_num("close"),
         raw_signal=None if get("raw_signal") is None else str(get("raw_signal")),
         target_note=note,
@@ -413,10 +434,10 @@ def row_from_signal(
         explain_method=None if explanation is None else explanation.method,
         drivers=list(explanation.drivers) if explanation is not None else [],
         rules=list(explanation.rules) if explanation is not None else [],
-        last_signal_at=_fmt_when(get("datetime")),
+        last_signal_at=_fmt_when(get("datetime"), cfg),
         validity=VALIDITY_OK,
     )
-    return apply_mtf_flash(attach_visuals(row, ohlcv, cfg), cfg)
+    return apply_mtf_flash(attach_visuals(row, ohlcv, cfg, now=None), cfg)
 
 
 def _status_row(
@@ -457,11 +478,12 @@ def apply_freshness(
     fresh: Freshness,
     *,
     last_fetch_at: str | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> BoardRow:
     """Attach validity. STALE/MISSING/ERROR never flash a live BUY/SELL."""
     row.validity = fresh.validity
-    row.validity_reason = fresh.reason
-    row.last_bar_at = fresh.last_bar_label
+    row.validity_reason = relabel_in_text(fresh.reason, cfg) if fresh.reason else fresh.reason
+    row.last_bar_at = fmt_display(fresh.last_bar, cfg) if fresh.last_bar else fresh.last_bar_label
     if last_fetch_at:
         row.last_fetch_at = last_fetch_at
     if row.status in {STATUS_NEED_FETCH, STATUS_NEED_TRAIN}:
@@ -474,7 +496,7 @@ def apply_freshness(
         row.buy_sell = "—"
         last_model = row.raw_signal or "n/a"
         row.signal_details = (
-            f"data stale — refresh required (last model {last_model}; {fresh.reason})"
+            f"data stale — refresh required (last model {last_model}; {row.validity_reason})"
         )
         if row.status == STATUS_READY:
             row.status = STATUS_STALE
@@ -524,7 +546,7 @@ def build_board_row(
 
     status = artifact_status(pair, cfg, interval=interval)
     data_source: str | None = None
-    fetch_at = fmt_ts(csv_mtime_utc(pair, cfg, interval))
+    fetch_at = fmt_display(csv_mtime_utc(pair, cfg, interval), cfg)
     # Light yfinance refresh only when a model exists — never synthetic, never a silent fetch.
     if refresh_data and status.get("model_exists"):
         _df, reason = try_yfinance_refresh(
@@ -532,7 +554,7 @@ def build_board_row(
         )
         if _df is not None:
             data_source = reason
-            fetch_at = fmt_ts(clock)
+            fetch_at = fmt_display(clock, cfg)
         else:
             data_source = f"cached ({reason})"
         status = artifact_status(pair, cfg, interval=interval)
@@ -554,6 +576,7 @@ def build_board_row(
             ),
             None,
             cfg,
+            now=clock,
         )
     if not status.get("model_exists"):
         ohlcv_only = load_cached_ohlcv(pair, cfg, interval)
@@ -572,9 +595,10 @@ def build_board_row(
             last_fetch_at=fetch_at if fetch_at != "n/a" else None,
         )
         return attach_visuals(
-            apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at),
+            apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at, cfg=cfg),
             ohlcv_only,
             cfg,
+            now=clock,
         )
 
     ohlcv = load_cached_ohlcv(pair, cfg, interval)
@@ -592,6 +616,7 @@ def build_board_row(
             ),
             None,
             cfg,
+            now=clock,
         )
 
     last: pd.Series | dict[str, Any] | None = None
@@ -614,6 +639,7 @@ def build_board_row(
                 ),
                 ohlcv,
                 cfg,
+                now=clock,
             )
         except Exception as exc:  # noqa: BLE001 — surface as row status
             fresh_e = assess_ohlcv(ohlcv, interval, cfg, now=clock)
@@ -630,7 +656,7 @@ def build_board_row(
                 last_bar_at=fresh_e.last_bar_label,
                 last_fetch_at=fetch_at if fetch_at != "n/a" else None,
             )
-            return attach_visuals(row, ohlcv, cfg)
+            return attach_visuals(row, ohlcv, cfg, now=clock)
         if sigs is None or sigs.empty:
             return attach_visuals(
                 _status_row(
@@ -645,6 +671,7 @@ def build_board_row(
                 ),
                 ohlcv,
                 cfg,
+                now=clock,
             )
         last = sigs.iloc[-1]
 
@@ -659,9 +686,10 @@ def build_board_row(
     )
     fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
     row = attach_visuals(
-        apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None),
+        apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None, cfg=cfg),
         ohlcv,
         cfg,
+        now=clock,
     )
     return apply_mtf_flash(row, cfg)
 
@@ -690,8 +718,23 @@ def build_board_rows(
     return rows
 
 
+BOARD_TABLE_COLS = [
+    "Pair",
+    "Timeframe",
+    "Validity",
+    "Last",
+    "Spread",
+    "Session",
+    "Buy/Sell",
+    "MTF",
+    "Target",
+    "Last bar",
+    "Signal details",
+]
+
+
 def board_table(rows: list[BoardRow]) -> pd.DataFrame:
-    cols = ["Pair", "Timeframe", "Validity", "Buy/Sell", "MTF", "Target", "Last bar", "Signal details"]
+    cols = list(BOARD_TABLE_COLS)
     if not rows:
         return pd.DataFrame(columns=cols)
     return pd.DataFrame([r.as_table_dict() for r in rows])
@@ -745,6 +788,23 @@ def style_board(df: pd.DataFrame):
                     return ""
 
                 styler = mapper(_mtf, subset=["MTF"])
+            if "Session" in df.columns:
+
+                def _sess(val: object) -> str:
+                    v = str(val).upper()
+                    if v in {"CLOSED", "OFF", "N/A"}:
+                        return "background-color: #e2e8f0; color: #334155; font-weight: 700"
+                    if "+" in v:
+                        return "background-color: #ffedd5; color: #9a3412; font-weight: 700"
+                    if v == "ASIA":
+                        return "background-color: #e0e7ff; color: #3730a3; font-weight: 700"
+                    if v == "LONDON":
+                        return "background-color: #dbeafe; color: #1e40af; font-weight: 700"
+                    if v == "NY":
+                        return "background-color: #ccfbf1; color: #115e59; font-weight: 700"
+                    return "background-color: #e2e8f0; color: #334155; font-weight: 700"
+
+                styler = mapper(_sess, subset=["Session"])
         return styler
     except Exception:
         return df

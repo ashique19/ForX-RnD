@@ -106,6 +106,19 @@ def test_stale_row_does_not_flash_buy_sell():
     assert row.raw_signal == "BUY"
     assert row.sparkline == []
     assert row.risk is not None and row.risk.available is False
+    if row.quote is not None and row.quote.available:
+        assert row.quote.bid is None and row.quote.ask is None
+        assert "last/mid-ish" in row.quote.kind
+        assert "not broker bid/ask" in row.quote.note.lower()
+    # MTF hold-flash must not resurrect BUY/SELL on STALE
+    from forex_lab.ui.board import apply_mtf_flash
+    from forex_lab.mtf import MtfStatus, MTF_CONFLICT
+
+    row.mtf = MtfStatus(status=MTF_CONFLICT, timeframe="4h", direction="down", signal="BUY", note="x")
+    row = apply_mtf_flash(row, {"board": {"mtf_confirm": {"conflict_flash": "hold"}}})
+    assert row.buy_sell == "—"
+    assert "Asia/Dhaka" in (row.validity_reason or "")
+    assert "10:00 UTC" not in (row.validity_reason or "")
 
 
 def test_closed_row_keeps_last_model_class():

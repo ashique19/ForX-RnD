@@ -16,3 +16,4 @@ data/calendar_cache.json
 data/fred_cache/
 data/paper_broker.json
 data/paper_broker.json.tmp
+data/alert_state.json
