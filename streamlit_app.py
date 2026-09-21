@@ -336,7 +336,14 @@ def render_watch_board(cfg) -> None:
                             st.warning(row.signal_details)
                     with mid:
                         st.markdown("**Math signal details**")
-                        st.caption(row.signal_details)
+                        st.caption(
+                            f"conf={_fmt_num(row.confidence, 4)} · dir_edge={_fmt_num(row.dir_edge, 4)}"
+                        )
+                        st.caption(
+                            f"p_buy={_fmt_num(row.p_buy, 3)} / "
+                            f"p_sell={_fmt_num(row.p_sell, 3)} / "
+                            f"p_hold={_fmt_num(row.p_hold, 3)}"
+                        )
                         if row.datetime:
                             st.caption(f"{row.model or ''} · {row.datetime}")
                         if row.drivers:
@@ -344,6 +351,16 @@ def render_watch_board(cfg) -> None:
                                 f"{d.feature} {d.contribution:+.3f}" for d in row.drivers[:3]
                             )
                             st.caption(f"Drivers: {bits}")
+                        failed_rules = [
+                            r.name for r in (row.rules or []) if getattr(r, "enabled", False) and r.passed is False
+                        ]
+                        passed_rules = [
+                            r.name for r in (row.rules or []) if getattr(r, "enabled", False) and r.passed is True
+                        ]
+                        if failed_rules:
+                            st.caption("Rules blocked: " + ", ".join(failed_rules))
+                        elif passed_rules:
+                            st.caption("Rules passed: " + ", ".join(passed_rules))
                     with right:
                         _render_news_lane(news)
                     with st.expander("Drivers, rules, rationale, headlines"):
