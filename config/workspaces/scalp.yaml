@@ -1,0 +1,12 @@
+# Scalp workspace — liquid majors, faster TF. Board view only.
+# Apply from the Streamlit desk. Does not rewrite config/default.yaml,
+# the paper journal (data/paper_broker.json), or BrokerPort.
+name: scalp
+label: Scalp
+pairs:
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+interval: 15m
+refresh_seconds: 60
+min_confidence: 0.45

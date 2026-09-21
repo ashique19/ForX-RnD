@@ -173,6 +173,9 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "data●" in low or "next event" in low
     assert "disabled when" in low and "stale" in low
     assert "detail" in low
+    assert "workspace" in low
+    assert "scalp" in low or "swing" in low
+    assert "paper journal" in low or "brokerport" in low
     buy_btns = [b for b in at.button if "BUY" in str(getattr(b, "label", "")).upper()]
     sell_btns = [b for b in at.button if "SELL" in str(getattr(b, "label", "")).upper()]
     assert buy_btns and sell_btns

@@ -69,6 +69,8 @@ A **trader-facing signal screen** on **localhost:8501**. Math analysis + news co
 
 The top of the page is the **signal screen** (primary): one **dense board** — **Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | actions**. **BUY** is green, **SELL** red, **HOLD** grey. Click a pair to open a **detail drawer** (chart / SHAP / news / risk / rationale) so the scan line stays clean. Add / remove pairs; the list is saved to `config/watchlist.yaml` so it survives reruns. Rows without cached data or a trained model show `need Fetch/Train` instead of a fake signal.
 
+**Workspace presets** (scalp / swing, plus save-as custom): one compact row — **select / Apply / Reset / Save current**. They switch watchlist pairs, lab interval/TF, realtime refresh seconds, and a **min-confidence display overlay**. Builtins live in `config/workspaces/`. User copies and the last-applied pointer live in `data/workspaces/` (gitignored). Applying a preset **does not** rewrite `config/default.yaml`, **does not** wipe `data/paper_broker.json`, and **does not** change `BrokerPort`. Desk clocks stay **Asia/Dhaka**.
+
 **Realtime** (default **60s**, minimum 60s): rebuilds signals from the **local** cache each tick. yfinance is called only when a bar is due or the cache is approaching stale, **one pair per tick**, with exponential backoff after errors or 429-like responses. Yahoo’s download endpoint is unofficial and has no SLA — 60–120s is the practical band; do not set this like a broker stream. A **rate limited — backing off until …** banner appears if throttled. Realtime off: **Manual update** only.
 
 **Data validity:** each row’s **Data●** is `OK` / `CLOSED` / `STALE` / `MISSING` / `ERROR`. In a liquid session, a last candle older than ~2× the timeframe is **STALE** and the flash is **—** plus “data stale — refresh required” (the last model class is kept as a note, not as a live call). Weekends / Friday after ~21:00 UTC show **CLOSED** with last bar time — not a false STALE alarm. Last bar, last fetch, and last signal times live in the detail drawer; the board shows **board last refreshed at …**. Clocks on the desk are **Asia/Dhaka** (`ui.timezone`, UTC+6) with an `Asia/Dhaka` tag; stored data stays UTC. Session windows remain UTC.
@@ -127,6 +129,9 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `models/EURUSD_logistic.joblib` | Logistic baseline model |
 | `signals/latest_signals.csv` | Latest BUY/SELL/HOLD rows (confidence-filtered) |
 | `config/watchlist.yaml` | Streamlit watch-board pairs (local; survives reruns) |
+| `config/workspaces/scalp.yaml` | Scalp board preset (15m, liquid majors, min conf 0.45) |
+| `config/workspaces/swing.yaml` | Swing board preset (1h, majors + AUD, min conf 0.40) |
+| `data/workspaces/` | User-saved presets + `active.yaml` last-applied pointer (local; gitignored) |
 | `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
 | `data/calendar_cache.json` | Forex Factory weekly JSON cache for the event calendar (local; gitignored) |
 | `data/alert_state.json` | Last-seen watchlist signals + undismissed alerts for the strip (local; gitignored) |
@@ -183,6 +188,7 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `calendar` / `advice` — event calendar source URL, impact filter, cache TTL, before/during/after minutes, flatten keywords, and whether open positions get hold / close / tighten-SL cards. Advice never auto-submits.
 - `gates` — selective open filters (`enabled` default **false**): `require_mtf_agree`, `min_confidence` (null = reuse `signals.min_confidence`), `no_new_opens_in_event_window`. Fail-soft if calendar/MTF is missing. Applies to flash + paper opens. Not a live edge.
 - `board.alerts` — watchlist flip / STALE strip (`sound` default **false**, `cooldown_s` 300, optional `event_warning` within 60m). Last-seen snapshot in `data/alert_state.json`. Not orders.
+- Workspace presets — `config/workspaces/{scalp,swing}.yaml` (and `data/workspaces/` for custom). Overlay watchlist pairs, `interval`, `board.realtime_seconds`, and in-memory `signals.min_confidence`. Apply / save / reset on the desk. Not a rewrite of this file or the paper journal.
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
 - `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
 
@@ -226,7 +232,7 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 ## Config
 
-Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `gates`, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, `board.quote`, `board.alerts`, and `ui.timezone`.
+Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `gates`, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, `board.quote`, `board.alerts`, and `ui.timezone`. Workspace presets (`config/workspaces/`) overlay board view fields only — they do not rewrite this file.
 
 ## Connecting a live broker later
 
@@ -247,7 +253,7 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), paper journal session labels matching the board Asia wrap (`test_paper_session_matches_board_asia_wrap_and_overlap`), Asia/Dhaka display-time formatting, data-health rows, PaperBroker fills/SL-TP scoring, paper lookback scorer RIGHT/WRONG/PENDING (`tests/test_score.py`: TP/SL, horizon signed move, STALE/session/conf aggregates, mistake filters), the event calendar parse/cache/fail-soft path plus next-event labels, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, **selective open gates** (`tests/test_gates.py`: MTF/confidence/event, fail-soft when calendar/MTF missing, default-off), the pandas-ta subset (causal / default-off), FRED as-of lag plus fail-soft when the cache is missing (no network), watchlist alert flips / STALE / MISSING / rate-limit / event-within-60m (`tests/test_alerts.py`), the dense board columns (Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | Actions), unicode sparklines, and **Paper BUY/SELL disabled on STALE/MISSING** (`paper_submit_allowed`, AppTest on disabled buttons).
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, **workspace preset load/save/apply/reset** (`tests/test_workspace.py`: scalp/swing builtins, user shadow, JSON load, in-memory overlay does not write `default.yaml`, **applying a preset does not wipe the paper journal**), local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), paper journal session labels matching the board Asia wrap (`test_paper_session_matches_board_asia_wrap_and_overlap`), Asia/Dhaka display-time formatting, data-health rows, PaperBroker fills/SL-TP scoring, paper lookback scorer RIGHT/WRONG/PENDING (`tests/test_score.py`: TP/SL, horizon signed move, STALE/session/conf aggregates, mistake filters), the event calendar parse/cache/fail-soft path plus next-event labels, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, **selective open gates** (`tests/test_gates.py`: MTF/confidence/event, fail-soft when calendar/MTF missing, default-off), the pandas-ta subset (causal / default-off), FRED as-of lag plus fail-soft when the cache is missing (no network), watchlist alert flips / STALE / MISSING / rate-limit / event-within-60m (`tests/test_alerts.py`), the dense board columns (Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | Actions), unicode sparklines, and **Paper BUY/SELL disabled on STALE/MISSING** (`paper_submit_allowed`, AppTest on disabled buttons).
 
 ## Project layout
 
@@ -275,9 +281,10 @@ forex_lab/
   backtest.py    # walk-forward + metrics + report
   signals.py     # latest_signals.csv
   cli.py         # CLI entry
-  ui/            # Streamlit helpers (watch board, health strip, alerts; no live trading)
+  ui/            # Streamlit helpers (watch board, health strip, alerts, workspace presets; no live trading)
 config/default.yaml
 config/watchlist.yaml  # persisted research watchlist for the Streamlit board
+config/workspaces/     # scalp / swing board presets (pairs, TF, refresh, min conf)
 tests/
 scripts/screen_variants.py  # optional research screen (not a user command)
 scripts/screen_feature_packs.py  # pandas-ta / FRED walk-forward screen
