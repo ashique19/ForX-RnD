@@ -12,6 +12,8 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 - Always paper-trade and validate independently before risking capital.
 - Beating SMA / always-long in this lab is a **research signal**, not a deployable edge (slippage, weekend gaps, and broker quotes are not modeled).
 - News headlines (Google News RSS) can be **late, incomplete, or wrong**. The bias note is a keyword heuristic on fetched titles only — not a trade instruction.
+- The event calendar uses an **unofficial** weekly Forex Factory JSON dump (`nfs.faireconomy.media`). Times can be revised; confirm on Fed / BLS / ECB / BoE sources. Fail-soft if offline.
+- Advisory cards (no new opens / hold / close / tighten SL) are **decision support**. They never auto-submit via `BrokerPort`. MTF badges are causal SMA slope on the same CSV — not a live trend service.
 
 ## Install (Windows)
 
@@ -75,6 +77,12 @@ The top of the page is the **signal screen** (primary): one flash card per watch
 
 **News lane (v1):** Google News RSS search per pair (no API key). Shows a few recent headlines (title, time, link) plus a short bullish/bearish/mixed/unclear note from a keyword heuristic on those titles only — it never invents articles. Labeled **news context, not a trade instruction**. Cache: `data/news_cache.json` (gitignored), default TTL **300s**, HTTP timeout **6s**. Be polite to the feed; if fetch fails, the math board still renders with an empty news state.
 
+**Event calendar:** upcoming **High**-impact FX releases (NFP, FOMC, CPI, rate decisions, unemployment, GDP, and similar) with a countdown, currency, and which watchlist pairs are affected. Free source: unofficial Forex Factory weekly JSON at `https://nfs.faireconomy.media/ff_calendar_thisweek.json` (no API key, no SLA — not an official Forex Factory / Fed / BLS API). Cache: `data/calendar_cache.json` (gitignored), default TTL **1800s**. If the CDN is down, the board **reuses a stale cache** or shows empty + a warning; the math cards still render.
+
+**Advice (not orders):** cards next to Paper Buy/Sell combine event proximity (before / during / after windows), the open paper position, and the model / MTF badge. Typical suggestions: **no new opens**, **hold**, **close**, **tighten SL**. Tighten SL reuses the ATR risk box at `advice.tighten_sl_atr` (default 1.0 vs `barrier.sl_atr` 2.0) and never widens a stop. **Nothing is submitted** until you click Paper BUY/SELL/CLOSE or **Apply paper SL** (PaperBroker extra — not part of the four-method `BrokerPort`). NFP / FOMC / CPI-style names can suggest flatten (`advice.flatten_action`).
+
+**Multi-timeframe confirmation:** each card shows **MTF agree / conflict / n/a** from a causal higher-TF SMA slope (default 4h resample of the **same** pair CSV — completed bars only). Optional `board.mtf_confirm.conflict_flash`: `off` (default, badge only), `weaken` (dimmer BUY/SELL), or `hold` (flash HOLD, keep last model class as a note). This is **not** the same as `signals.htf_trend_filter` (still default off; that gate hurt EURUSD in prior screens).
+
 **Explainability:** expand a card for local feature drivers (XGBoost `pred_contribs`, optional SHAP, logistic coef fallback), which config rules passed/failed, and a grounded rationale. This describes the fitted model on one bar — not evidence of an edge.
 
 Fetch / Train / Backtest / Generate signals live in the collapsed sidebar **Lab** expander. Walk-forward CSV/metrics/equity/logs are in a collapsed **Research lab** expander under the board. Open those when you need data or a model, not to read the screen.
@@ -106,6 +114,7 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `signals/latest_signals.csv` | Latest BUY/SELL/HOLD rows (confidence-filtered) |
 | `config/watchlist.yaml` | Streamlit watch-board pairs (local; survives reruns) |
 | `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
+| `data/calendar_cache.json` | Forex Factory weekly JSON cache for the event calendar (local; gitignored) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
 | `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, …); included in the report |
 | `reports/latest_metrics.json` | Same metrics as JSON |
@@ -148,6 +157,8 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `signals.min_dir_edge` — min |P(BUY) − P(SELL)| (default `0.0`; leave the model's HOLD class to do the sitting-out).
 - `signals.sessions` — optional UTC session allow-list (`london`, `ny`, `asia`). Empty = all hours. London+NY-only **hurt** EURUSD vs the unfiltered model.
 - `signals.htf_trend_filter` — optional higher-timeframe SMA-slope agreement (`4h` / `1D`). **Default off**: session/vol-style filters hurt EURUSD in prior screens.
+- `board.mtf_confirm` — UI badge (`agree` / `conflict` / `n/a`) from causal H4 (or D1) SMA slope. `conflict_flash: off|weaken|hold` (default **off**).
+- `calendar` / `advice` — event calendar source URL, impact filter, cache TTL, before/during/after minutes, flatten keywords, and whether open positions get hold / close / tighten-SL cards. Advice never auto-submits.
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
 - `model.prune_bottom_frac` — drop lowest train-fold XGBoost gain. Unstable across fractions; not enabled.
 
@@ -185,7 +196,7 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 ## Config
 
-Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, and signal filters.
+Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `calendar`, `advice`, and `board.mtf_confirm`.
 
 ## Connecting a live broker later
 
@@ -206,7 +217,7 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, data-health rows, and PaperBroker fills/SL-TP scoring.
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, watchlist load/save plus board-row status, local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, data-health rows, PaperBroker fills/SL-TP scoring, the event calendar parse/cache/fail-soft path, advisory cards (no auto-submit), and MTF agree/conflict/hold-flash.
 
 ## Project layout
 
@@ -220,6 +231,9 @@ forex_lab/
   explain.py     # local drivers / rule overlay / grounded rationale
   freshness.py   # OK/STALE/CLOSED vs last bar (UI; not a broker clock)
   news.py        # Google News RSS + keyword bias (UI context only)
+  calendar.py    # unofficial FF weekly JSON + cache (UI; fail-soft)
+  advise.py      # no-new-open / hold / close / tighten-SL cards (not orders)
+  mtf.py         # causal HTF SMA-slope badge + optional conflict flash
   broker.py      # BrokerPort + PaperBroker (practice fills; no live venue)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report

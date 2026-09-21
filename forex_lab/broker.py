@@ -390,6 +390,59 @@ class PaperBroker(BrokerPort):
     def list_fills(self) -> list[dict[str, Any]]:
         return list(self._state.get("fills") or [])
 
+    def modify_sl(
+        self,
+        position_id: str,
+        sl: float,
+        **meta: Any,
+    ) -> dict[str, Any]:
+        """Paper-only extra (not on BrokerPort). Tightens SL; never auto-called.
+
+        The UI must only invoke this after an explicit click. A live backend
+        would need its own modify path; this repo does not add it to the
+        four-method BrokerPort contract.
+        """
+        pid = str(position_id)
+        pos = next(
+            (p for p in self._state["positions"] if p.get("id") == pid and p.get("status") == "open"),
+            None,
+        )
+        if pos is None:
+            raise BrokerError(f"no open paper position {pid}")
+        try:
+            new_sl = float(sl)
+        except (TypeError, ValueError):
+            raise BrokerError("paper SL must be a number") from None
+        if not pd.notna(new_sl) or new_sl <= 0:
+            raise BrokerError("paper SL must be a positive price")
+        side = str(pos.get("side") or "").upper()
+        price = meta.get("price")
+        try:
+            px = float(price) if price is not None else float("nan")
+        except (TypeError, ValueError):
+            px = float("nan")
+        if pd.notna(px) and px > 0:
+            if side == "BUY" and new_sl >= px:
+                raise BrokerError("BUY SL must sit below the last close")
+            if side == "SELL" and new_sl <= px:
+                raise BrokerError("SELL SL must sit above the last close")
+        old = pos.get("sl")
+        try:
+            old_f = float(old) if old is not None else None
+        except (TypeError, ValueError):
+            old_f = None
+        if old_f is not None:
+            if side == "BUY" and new_sl <= old_f:
+                raise BrokerError("refusing to widen BUY SL (paper tighten-only)")
+            if side == "SELL" and new_sl >= old_f:
+                raise BrokerError("refusing to widen SELL SL (paper tighten-only)")
+        pos["sl_prev"] = old
+        pos["sl"] = new_sl
+        pos["sl_note"] = str(meta.get("note") or "advisory tighten (user click)")[:200]
+        pos["sl_modified_at"] = meta.get("timestamp") or _now_label()
+        self._touch_open(pos)
+        return dict(pos)
+
     def list_closed(self) -> list[dict[str, Any]]:
         return list(self._state.get("closed") or [])
 

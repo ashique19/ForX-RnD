@@ -94,6 +94,7 @@ def test_row_from_signal_fills_table_fields():
         "Timeframe",
         "Validity",
         "Buy/Sell",
+        "MTF",
         "Target",
         "Last bar",
         "Signal details",

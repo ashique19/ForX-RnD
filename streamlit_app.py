@@ -11,8 +11,12 @@ import pandas as pd
 import streamlit as st
 
 from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_pair
+from forex_lab.calendar import CalendarBundle, countdown_label
+from forex_lab import calendar as calendar_lab
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
+from forex_lab.advise import Suggestion, suggest_actions
+from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MtfStatus
 from forex_lab.ui.board import (
     board_table,
     build_board_row,
@@ -77,6 +81,10 @@ DISCLAIMER = (
     "— not a vendor order, not auto-submit, not linked to a real account. "
     "yfinance quotes are **not** executable broker prices. "
     "News can be late, incomplete, or wrong; the bias note is a keyword heuristic on fetched headlines, not a call. "
+    "The event calendar is an unofficial Forex Factory weekly dump (cached; fail-soft if offline) — "
+    "not an official Fed/BLS/ECB schedule, not a trade instruction. "
+    "Advisory cards (no new opens / hold / close / tighten SL) never auto-submit via BrokerPort. "
+    "MTF badges use causal higher-TF SMA slope on the same CSV — not a live trend service. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
     "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
     "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket."
@@ -95,6 +103,13 @@ not a false STALE panic. STALE/MISSING flash **—** with a reason — not a liv
 
 **Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`.
 Color badge is a research label, **not** an order. Only flashed when validity is OK or CLOSED.
+Optional `board.mtf_confirm.conflict_flash: hold|weaken` can flash HOLD or a weaker badge when higher-TF SMA slope conflicts (default **off** — badge only).
+
+**MTF** — causal higher-TF SMA slope (default 4h of the same pair CSV): **agree / conflict / n/a**. Not a live trend filter.
+
+**Event calendar** — upcoming High-impact FX releases (NFP, FOMC, CPI, rate decisions, …) from the free unofficial Forex Factory weekly JSON (`nfs.faireconomy.media`). Cached locally; fail-soft if offline. Countdown + affected currencies/pairs. **Not a trade instruction.**
+
+**Advice** — cards next to Paper Buy/Sell: no new opens / hold / close / tighten SL from event windows + open paper position + model/MTF. **Never auto-submitted.** Tighten SL uses the ATR risk box at `advice.tighten_sl_atr`. Click **Apply paper SL** or Paper CLOSE yourself.
 
 **Target / Risk** — ATR SL and TP from the same `barrier.tp_atr` / `sl_atr` as labels and backtest,
 plus R:R and config spread. Entry is **last close as proxy** when `entry_timing=next_open`.
@@ -235,16 +250,37 @@ def _validity_badge(validity: str) -> None:
     )
 
 
-def _signal_badge(sig: str) -> None:
+def _signal_badge(sig: str, *, weak: bool = False) -> None:
     s = str(sig).upper() if sig and str(sig).strip() not in {"—", "-", "n/a"} else "—"
     colors = {"BUY": "#15803d", "SELL": "#b91c1c", "HOLD": "#57534e", "—": "#64748b"}
     bg = colors.get(s, "#64748b")
+    label = s if not weak or s in {"—", "HOLD"} else f"{s} (weak)"
+    size = "1.15rem" if weak and s in {"BUY", "SELL"} else "1.55rem"
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:800;font-size:1.55rem;'
+        f'<div style="background:{bg};color:#fff;font-weight:800;font-size:{size};'
         f"text-align:center;padding:14px 10px;border-radius:10px;letter-spacing:0.12em;"
-        f'box-shadow:0 0 0 1px rgba(0,0,0,0.08)">{s}</div>',
+        f'box-shadow:0 0 0 1px rgba(0,0,0,0.08);opacity:{0.72 if weak else 1}">{label}</div>',
         unsafe_allow_html=True,
     )
+
+
+def _mtf_badge(mtf: MtfStatus | None) -> None:
+    if mtf is None:
+        status = "n/a"
+        note = "MTF n/a"
+    else:
+        status = str(mtf.status or "n/a")
+        note = mtf.as_label()
+    colors = {MTF_AGREE: "#166534", MTF_CONFLICT: "#9a3412", "n/a": "#57534e"}
+    bg = colors.get(status, "#57534e")
+    st.markdown(
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.75rem;'
+        f"letter-spacing:0.06em;text-align:center;padding:4px 8px;border-radius:6px;"
+        f'display:inline-block">{note}</div>',
+        unsafe_allow_html=True,
+    )
+    if mtf is not None and mtf.note:
+        st.caption(mtf.note)
 
 
 def _news_bias_badge(bias: str) -> None:
@@ -270,6 +306,121 @@ def _render_sparkline(row) -> None:
     chart = pd.DataFrame({"close": list(row.sparkline)})
     st.line_chart(chart, height=90, use_container_width=True)
     st.caption(row.sparkline_note)
+
+
+def _render_calendar_panel(bundle: CalendarBundle | None, pairs: list[str]) -> None:
+    st.markdown("**Event calendar**")
+    st.caption(
+        "High-impact FX releases (NFP, FOMC, CPI, rate decisions, …). "
+        "Free unofficial Forex Factory weekly JSON via nfs.faireconomy.media — no API key. "
+        "Cached locally; fail-soft if offline. **Not a trade instruction.**"
+    )
+    if bundle is None:
+        st.info("Calendar not loaded this tick.")
+        return
+    if bundle.error and not bundle.events:
+        st.warning(f"{bundle.error} — math board is unchanged.")
+        return
+    if bundle.stale_cache:
+        st.warning(bundle.error or "Showing stale calendar cache (live fetch failed).")
+    if not bundle.events:
+        st.caption("No high-impact events in the look-ahead window.")
+        return
+    wanted = {str(p).upper() for p in pairs}
+    for e in bundle.events:
+        when = e.when_dt()
+        cd = countdown_label(when)
+        hit = [p for p in wanted if e.currency in {p[:3], p[3:6]} and len(p) >= 6]
+        pairs_txt = ", ".join(hit) if hit else "(no watchlist pair)"
+        mark = " · highlight" if e.highlight else ""
+        st.markdown(
+            f"- **{cd}** · {e.currency} · {e.impact}{mark} · {e.title}  \n"
+            f"  {e.when} · pairs {pairs_txt}"
+            + (f" · forecast {e.forecast} prev {e.previous}" if e.forecast or e.previous else "")
+        )
+    src = bundle.fetched_at or "cache"
+    stale = " · stale cache" if bundle.stale_cache else ""
+    st.caption(f"Source: {bundle.source} · {src}{stale}")
+
+
+def _render_suggestions(
+    row,
+    cfg,
+    broker: BrokerPort | None,
+    *,
+    calendar: CalendarBundle | None,
+    news: NewsBundle | None = None,  # noqa: ARG001
+    price: float | None,
+    ohlcv,
+    position,
+) -> None:
+    events = list(calendar.events) if calendar is not None else []
+    cards = suggest_actions(
+        pair=row.pair,
+        signal=row.raw_signal or row.buy_sell,
+        validity=row.validity,
+        position=position,
+        events=events,
+        cfg=cfg,
+        ohlcv=ohlcv,
+        risk=getattr(row, "risk", None),
+        mtf=getattr(row, "mtf", None),
+        last_price=price,
+    )
+    if not cards:
+        return
+    for i, card in enumerate(cards):
+        _render_advice_card(row, cfg, broker, card, price=price, index=i)
+
+
+def _render_advice_card(
+    row,
+    cfg,
+    broker: BrokerPort | None,
+    card: Suggestion,
+    *,
+    price: float | None,
+    index: int,
+) -> None:
+    colors = {"warn": "#9f1239", "caution": "#b45309", "info": "#334155"}
+    bg = colors.get(card.severity, "#334155")
+    st.markdown(
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.85rem;'
+        f'padding:6px 10px;border-radius:8px;margin-bottom:4px">{card.title}</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(card.detail)
+    if card.countdown or card.event_title:
+        st.caption(
+            f"{card.currencies or ''} {card.event_title or ''} · {card.countdown or ''} · window {card.window}"
+        )
+    st.caption(card.disclaimer)
+    if card.action == "tighten_sl" and card.suggested_sl is not None and broker is not None:
+        apply_fn = getattr(broker, "modify_sl", None)
+        key = f"paper_sl_{row.pair}_{row.timeframe}_{index}"
+        if callable(apply_fn) and st.button(
+            f"Apply paper SL {_fmt_num(card.suggested_sl, 5)}",
+            key=key,
+            use_container_width=True,
+            help="Writes a tighter SL on the local paper position. Not a broker modify. Not auto-submit.",
+        ):
+            pos = position_for_pair(broker, row.pair)
+            if not pos:
+                st.error("No open paper position to tighten.")
+            else:
+                try:
+                    apply_fn(
+                        pos["id"],
+                        card.suggested_sl,
+                        price=price,
+                        note=card.sl_note or "advisory tighten (user click)",
+                    )
+                    st.session_state["paper_flash"] = (
+                        f"Paper SL updated to {_fmt_num(card.suggested_sl, 5)} — local journal only."
+                    )
+                    st.rerun()
+                except BrokerError as exc:
+                    st.error(str(exc))
 
 
 def _render_risk(row) -> None:
@@ -327,13 +478,19 @@ def _driver_snapshot(row) -> str:
     return ", ".join(bits)
 
 
-def _render_paper_actions(row, cfg, broker: BrokerPort, news: NewsBundle | None = None) -> None:
+def _render_paper_actions(
+    row,
+    cfg,
+    broker: BrokerPort,
+    news: NewsBundle | None = None,
+    calendar: CalendarBundle | None = None,
+) -> None:
     st.markdown("**Practice desk**")
     backend = str((cfg.get("broker") or {}).get("backend") or "paper")
     st.caption(
         f"backend=`{backend}` — practice in parallel with live markets. "
         "Same submit/close a live venue would use; fills are local until a real backend exists. "
-        "Not a broker order. No auto-submit."
+        "Not a broker order. No auto-submit. Advisory cards never place fills."
     )
     flash = st.session_state.pop("paper_flash", None)
     warn = st.session_state.pop("paper_flash_warn", None)
@@ -343,6 +500,16 @@ def _render_paper_actions(row, cfg, broker: BrokerPort, news: NewsBundle | None 
         st.warning(warn)
     price, entry_bar, ohlcv = _cached_quote(row, cfg)
     open_pos = position_for_pair(broker, row.pair)
+    _render_suggestions(
+        row,
+        cfg,
+        broker,
+        calendar=calendar,
+        news=news,
+        price=price,
+        ohlcv=ohlcv,
+        position=open_pos,
+    )
     if open_pos:
         st.caption(
             f"Open {open_pos['side']} {float(open_pos['size']):g} @ "
@@ -709,6 +876,12 @@ def render_watch_board(cfg) -> None:
         except Exception:
             news_map = {}
 
+        calendar: CalendarBundle | None = None
+        try:
+            calendar = calendar_lab.fetch_calendar(cfg, force=bool(manual))
+        except Exception as exc:  # noqa: BLE001 — never break the math board
+            calendar = CalendarBundle(error=str(exc), notes=["Calendar unavailable."])
+
         try:
             broker = _paper_broker(cfg)
         except BrokerError as exc:
@@ -725,9 +898,12 @@ def render_watch_board(cfg) -> None:
                     )
 
         news_ttl = int((cfg.get("news") or {}).get("cache_ttl_s") or 300)
+        cal_ttl = int((cfg.get("calendar") or {}).get("cache_ttl_s") or 1800)
         health = build_health_rows(
             rows,
             news_map=news_map,
+            calendar=calendar,
+            calendar_ttl_s=cal_ttl,
             gate=_yf_gate(),
             realtime=realtime,
             refresh_s=seconds,
@@ -748,7 +924,7 @@ def render_watch_board(cfg) -> None:
             )
         with st.expander(exp_label, expanded=bool(unhealthy)):
             st.caption(
-                "v0 — active feeds this board can see (OHLCV per pair + news). "
+                "v0 — active feeds this board can see (OHLCV per pair + news + event calendar). "
                 "Full registry / daily digest / weekly retrain stay later."
             )
             if health:
@@ -759,6 +935,8 @@ def render_watch_board(cfg) -> None:
         if not rows:
             st.info("Watchlist is empty. Add a pair below.")
         else:
+            with st.container(border=True):
+                _render_calendar_panel(calendar, [r.pair for r in rows])
             for row in rows:
                 news = news_map.get(row.pair)
                 with st.container(border=True):
@@ -767,7 +945,8 @@ def render_watch_board(cfg) -> None:
                         st.markdown(f"### {row.pair}")
                         st.caption(f"Timeframe **{row.timeframe}**")
                         _validity_badge(row.validity)
-                        _signal_badge(row.buy_sell)
+                        _signal_badge(row.buy_sell, weak=bool(getattr(row, "flash_weak", False)))
+                        _mtf_badge(getattr(row, "mtf", None))
                         st.caption(f"Target  {row.target}")
                         if row.validity == VALIDITY_STALE:
                             st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
@@ -808,8 +987,11 @@ def render_watch_board(cfg) -> None:
                             st.caption("Rules blocked: " + ", ".join(failed_rules))
                         elif passed_rules:
                             st.caption("Rules passed: " + ", ".join(passed_rules))
-                        if row.raw_signal and row.buy_sell == "—" and row.validity == VALIDITY_STALE:
-                            st.caption(f"Last model class (not live): {row.raw_signal}")
+                        if row.raw_signal and row.buy_sell in {"—", "HOLD"} and (
+                            row.validity == VALIDITY_STALE or bool(getattr(row, "flash_weak", False))
+                            or (row.mtf is not None and row.mtf.status == "conflict")
+                        ):
+                            st.caption(f"Last model class (not live / MTF overlay): {row.raw_signal}")
                     with right:
                         _render_news_lane(news)
                     sp, rk = st.columns([1.55, 1.45])
@@ -818,10 +1000,11 @@ def render_watch_board(cfg) -> None:
                     with rk:
                         _render_risk(row)
                         if broker is not None:
-                            _render_paper_actions(row, cfg, broker, news=news)
+                            _render_paper_actions(row, cfg, broker, news=news, calendar=calendar)
                     with st.expander("Drivers, rules, rationale, headlines"):
                         st.markdown(
                             f"- **Buy/Sell:** {row.buy_sell}  \n"
+                            f"- **MTF:** {(row.mtf.as_label() if row.mtf else 'n/a')}  \n"
                             f"- **Target:** {row.target}  \n"
                             f"- **Confidence / edge:** conf={row.confidence} · dir_edge={row.dir_edge}  \n"
                             f"- **p_buy / p_sell / p_hold:** {row.p_buy} / {row.p_sell} / {row.p_hold}"
@@ -860,7 +1043,7 @@ def render_watch_board(cfg) -> None:
                     _render_paper_journal(broker)
 
             table = board_table(rows)
-            with st.expander("Table view (Pair | Timeframe | Validity | Buy/Sell | Target | Last bar | Signal details)"):
+            with st.expander("Table view (Pair | Timeframe | Validity | Buy/Sell | MTF | Target | Last bar | Signal details)"):
                 try:
                     st.dataframe(style_board(table), use_container_width=True, hide_index=True)
                 except Exception:

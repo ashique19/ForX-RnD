@@ -13,6 +13,38 @@ from forex_lab.freshness import FetchGate, fmt_ts
 from forex_lab.news import NewsBundle
 
 
+def _calendar_health(calendar: Any | None, ttl_s: int) -> dict[str, str] | None:
+    if calendar is None:
+        return None
+    cadence = f"FF weekly JSON · cache TTL {int(ttl_s)}s"
+    events = list(getattr(calendar, "events", None) or [])
+    err = getattr(calendar, "error", None)
+    stale = bool(getattr(calendar, "stale_cache", False))
+    fetched = str(getattr(calendar, "fetched_at", None) or "n/a")
+    if err and not events:
+        status, observed, detail = "FAIL", "no events", str(err)
+    elif stale:
+        status = "STALE"
+        observed = f"{len(events)} cached events"
+        detail = str(err or "stale calendar cache")
+    elif events:
+        first = events[0]
+        title = getattr(first, "title", None) or "event"
+        ccy = getattr(first, "currency", "")
+        observed = f"{ccy} {title}"[:80]
+        status, detail = "OK", f"{len(events)} high-impact events · {getattr(calendar, 'source', 'calendar')}"
+    else:
+        status, observed, detail = "MISSING", "no high-impact events", str(err or "empty")
+    return {
+        "Feed": "Event calendar",
+        "Status": status,
+        "Observed": observed,
+        "Cadence": cadence,
+        "Last update": fetched,
+        "Detail": detail,
+    }
+
+
 def _yf_last_label(gate: FetchGate | None, pair: str) -> str:
     if gate is None:
         return "n/a"
@@ -29,13 +61,15 @@ def build_health_rows(
     board_rows: Iterable[Any],
     *,
     news_map: dict[str, NewsBundle] | None = None,
+    calendar: Any | None = None,
+    calendar_ttl_s: int = 1800,
     gate: FetchGate | None = None,
     realtime: bool = False,
     refresh_s: int = 60,
     news_ttl_s: int = 300,
     yf_min_interval_s: int = 60,
 ) -> list[dict[str, str]]:
-    """One row per OHLCV feed + one per news feed. Cheap v0."""
+    """One row per OHLCV feed + one per news feed + optional calendar."""
     cadence = (
         f"realtime {int(refresh_s)}s (local signals; yfinance when due, "
         f"1 pair/tick, min {int(yf_min_interval_s)}s)"
@@ -112,6 +146,9 @@ def build_health_rows(
                 "Detail": f"backing off until {gate.backoff_until_label()}",
             },
         )
+    cal_row = _calendar_health(calendar, calendar_ttl_s)
+    if cal_row is not None:
+        out.append(cal_row)
     return out
 
 
