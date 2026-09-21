@@ -252,6 +252,41 @@ board:
     event_minutes: 60
     persist_file: data/alert_state.json  # last-seen signals; gitignored; not a broker store
 
+# Daily digest (CLI `python -m forex_lab digest` + Streamlit section).
+# Yesterday/today in ui.timezone (Asia/Dhaka). Fail-soft if a cache is missing.
+# Not a live edge. Does not call BrokerPort.
+digest:
+  enabled: true
+  when: both                 # today | yesterday | both
+  persist_file: data/digest_latest.json
+  calendar_lookahead_hours: 24
+  allow_network: false       # CLI uses disk caches only (calendar/news)
+  fail_soft: true
+
+# Weekly champion/challenger retrain gate (`python -m forex_lab retrain`).
+# Train/score a challenger on current config+CSV via walk-forward. Promote only
+# if PF / total return / max DD all improve vs the saved champion (mode: improve)
+# or clear the non-regression bar (mode: non_regression). Else keep champion
+# and report null. First run seeds the slot — that is not a promotion.
+# Persist under data/champion/ (plus models/<PAIR>_champion.json pointer).
+# Fail-soft. No live broker. Not a live edge.
+retrain:
+  enabled: true
+  fail_soft: true
+  pair: EURUSD
+  store: data/champion
+  mode: improve              # improve | non_regression
+  pf_eps: 0.0                # improve: challenger PF must exceed champion by more than this
+  return_eps: 0.0
+  dd_eps: 0.0                # max DD is negative; challenger must not be worse than champ - eps
+  # non_regression acceptance bar (used when mode: non_regression and eps left at 0):
+  #   PF 0.05 / total return 0.03 / max DD 0.01  — fold noise, not an edge
+  min_trades: 1
+  seed_from_metrics: true    # if no champion, copy reports/latest_metrics.json
+  compare_logistic: false    # skip extra WF column (speed)
+  train_on_promote: true     # refresh production joblib only when seeding/promoting
+  write_report: false        # leave reports/latest_report.md unless true
+
 # Paths (relative to project root)
 paths:
   data_dir: data

@@ -18,6 +18,8 @@ Research-only **BUY / SELL / HOLD** signal pipeline with walk-forward success-ra
 - Advisory cards (no new opens / hold / close / tighten SL) are **decision support**. They never auto-submit via `BrokerPort`. MTF badges are causal SMA slope on the same CSV — not a live trend service.
 - Selective **open gates** (`gates.enabled`, default **off**) can HOLD a BUY/SELL flash and disable Paper BUY/SELL when MTF disagrees, confidence is below the floor, or a high-impact event window is live. Missing calendar or MTF **fail-soft** (no crash, no invented block). EURUSD walk-forward did not clear the PF / total return / max DD bar — see `reports/gate_screen.md`. Not a live edge.
 - Extra TA (`feature_extras.pandas_ta`) and FRED macro (`feature_extras.fred`) packs are **off by default**. A EURUSD walk-forward screen showed a ~0.01 PF tick for TA (fold noise, still PF < 1) and a null FRED pack with a slightly worse drawdown — not an edge. FRED uses an as-of lag (not ALFRED vintages). A missing `FRED_API_KEY` is fine — public CSV is tried; if that fails the pack adds no columns.
+- The **daily digest** (yesterday/today in **Asia/Dhaka**) is a research snapshot of freshness, signal flips, paper RIGHT/WRONG, calendar events ahead, and Awareness FAIL/STALE sources. It is **not** a live edge and does not call `BrokerPort`.
+- The **champion/challenger retrain gate** walk-forward-compares a new fit against the saved champion. It **promotes only** if profit factor, total return, and max drawdown all improve (or a configured non-regression bar). Otherwise it keeps the champion and reports **null**. First run **seeds** the slot — that is not a claimed improvement. Not a live edge.
 
 ## Install (Windows)
 
@@ -77,6 +79,8 @@ python -m forex_lab fetch --pair EURUSD --period 2y --interval 1h
 python -m forex_lab train --pair EURUSD
 python -m forex_lab backtest --pair EURUSD
 python -m forex_lab signals --pair EURUSD
+python -m forex_lab digest
+python -m forex_lab retrain --pair EURUSD --dry-run
 ```
 
 If `yfinance` download fails (network / Yahoo blocks), fetch falls back to a **synthetic OHLCV** generator so the pipeline still demos end-to-end. Force it with:
@@ -117,6 +121,8 @@ The top of the page is the **signal screen** (primary): one **dense board** — 
 
 **Awareness:** a count bar (**N OK · N STALE · N FAIL**) plus expander **Awareness** lists **every source** the desk fetches or observes: watchlist **OHLCV** (price), **news RSS** (headlines), **model file** presence (signals), **calendar** (events), and optional **FRED** (macro; **OFF** when the pack is disabled). Columns: **Source | Observing | Cadence | Last OK | Status**. Cadence is the realtime interval vs **manual** / **daily**. **Last OK** is **Asia/Dhaka**. Status is **OK / STALE / FAIL** (plus **MISSING / CLOSED / OFF**) with a short error — **STALE and FAIL never look OK**. The expander opens itself when anything is STALE/FAIL/MISSING. CLOSED (weekend) is not a panic. Paper `BrokerPort` is unchanged.
 
+**Daily digest:** expander **Daily digest** (also `python -m forex_lab digest` / `scripts/daily_digest.py`) summarizes **yesterday + today** in **Asia/Dhaka**: data freshness, BUY/SELL/HOLD flips, paper RIGHT/WRONG counts, calendar events ahead, and Awareness FAIL/STALE/MISSING sources. Missing caches **fail-soft**. Times on the digest are **Asia/Dhaka**. Not a live edge. `BrokerPort` four methods are unchanged.
+
 **Alerts strip:** a compact, dismissible banner at the top of the board when a watchlist pair **flips** BUY↔SELL or to/from HOLD, or validity becomes **STALE / MISSING**. Last-seen signals are stored in `data/alert_state.json` (gitignored; survives reruns). Unchanged polls do not re-fire; the same transition is rate-limited (`board.alerts.cooldown_s`, default 300s). Optional **event within 60m** reuses the high-impact calendar (once per event). **Sound is off by default** (`board.alerts.sound` plus an **Alert sound** checkbox). Alert times use `ui.timezone` (**Asia/Dhaka**). The strip never places orders; `BrokerPort` is unchanged.
 
 **Paper portfolio:** **BUY / SELL / CLOSE** on each board row record a dummy fill at the last cached close into `data/paper_broker.json` (gitignored). The UI talks only to `forex_lab.broker.BrokerPort`. Default implementation is `PaperBroker` (`broker.backend: paper` — the only supported value). Open positions mark-to-market from later bars and auto-close when the same ATR TP/SL (or horizon) would hit. `forex_lab.score` lookback-scores PENDING → **RIGHT / WRONG** once enough cached bars exist (TP first = RIGHT, SL first = WRONG, horizon = signed move at the last bar after spread; manual close stays **FLAT**). Unrealized is a **paper mark vs last/mid-ish cache**, not live broker PnL. The **Paper book stats** section shows **hit rate**, plus breakdowns by **session**, **confidence bucket**, and **validity_at_entry (STALE vs OK)**. Filter wrongs (and session / STALE / conf) to inspect entry context: signal, confidence, session, news bias, data validity. Short **how to improve** notes are driven by those aggregates (e.g. many STALE wrongs → don’t trade stale) and always say this is **not a live edge**. Times on the journal are **Asia/Dhaka**. **STALE or MISSING disables Paper BUY/SELL** (buttons greyed out) with the caption “Paper BUY/SELL is disabled when Data● is STALE or MISSING — refresh (Fetch) first.” The card flash is **—** (not a live call). CLOSE stays available on an open paper position. Optional **selective gates** (default **off**) can also HOLD the flash and disable BUY/SELL when MTF disagrees, confidence is below the floor, or a high-impact event window is live (same before/during/after minutes as the advice cards). Missing calendar or MTF does not crash the desk. This is a practice desk that pretends to be a real book — **not** linked to any broker. A future `mt5` / `oanda` class would implement the same four methods (`submit`, `close`, `list_positions`, `list_fills`); this repo does not store API keys or wire live orders. `BrokerPort` four methods are unchanged.
@@ -133,7 +139,7 @@ The top of the page is the **signal screen** (primary): one **dense board** — 
 
 **Explainability:** expand a card for local feature drivers (XGBoost `pred_contribs`, optional SHAP, logistic coef fallback), which config rules passed/failed, and a grounded rationale. This describes the fitted model on one bar — not evidence of an edge.
 
-Fetch / Train / Backtest / Generate signals live in the collapsed sidebar **Lab** expander. Walk-forward CSV/metrics/equity/logs are in a collapsed **Research lab** expander under the board. Open those when you need data or a model, not to read the screen.
+Fetch / Train / Backtest / Generate signals live in the collapsed sidebar **Lab** expander, along with the **champion/challenger retrain gate**. Walk-forward CSV/metrics/equity/logs are in a collapsed **Research lab** expander under the board. Open those when you need data or a model, not to read the screen.
 
 Windows (activates `.venv` if present, installs `requirements.txt` if Streamlit is missing). Prefer `INSTALL.bat` first so the OK/MISSING checklist has already passed:
 
@@ -167,6 +173,9 @@ Then open http://localhost:8501 (default port). Stop with Ctrl+C in that termina
 | `data/news_cache.json` | Google News RSS cache for the UI news lane (local; gitignored) |
 | `data/calendar_cache.json` | Forex Factory weekly JSON cache for the event calendar (local; gitignored) |
 | `data/alert_state.json` | Last-seen watchlist signals + undismissed alerts for the strip (local; gitignored) |
+| `data/digest_latest.json` | Last daily digest payload (local; gitignored) |
+| `data/champion/` | Champion metadata + joblib snapshots from the retrain gate (local; gitignored) |
+| `models/<PAIR>_champion.json` | Pointer to the saved champion (local; gitignored) |
 | `data/fred_cache/` | FRED daily CSV cache when the macro pack is enabled (local; gitignored) |
 | `reports/latest_report.md` | Win-rate style metrics vs baselines + fold stability |
 | `reports/experiments.md` | Screens that were tried (asymmetric R:R, calibration, sessions, pandas-ta/FRED, …); included in the report |
@@ -183,6 +192,40 @@ python -m forex_lab signals --pair EURUSD
 ```
 
 `fetch` overwrites `data/<PAIR>_<interval>.csv`. Walk-forward metrics are only as current as that file. Use `--synthetic` only for an offline demo — do not mix synthetic numbers with yfinance numbers in the same report.
+
+## Daily digest
+
+Yesterday + today in **Asia/Dhaka** (`ui.timezone`). Fail-soft if a cache is missing. CLI uses **disk caches only** (no Google News / calendar HTTP). Not a live edge. Does not call `BrokerPort`.
+
+```bat
+python -m forex_lab digest
+python -m forex_lab digest --when today
+python -m forex_lab digest --json
+python3 scripts/daily_digest.py --when yesterday
+```
+
+The Streamlit **Daily digest** expander (under Awareness) is the same payload: data freshness, BUY/SELL/HOLD flips from `data/alert_state.json`, paper RIGHT/WRONG from `data/paper_broker.json`, calendar events ahead, Awareness FAIL/STALE/MISSING. Optional write: `data/digest_latest.json` (gitignored). Config: `digest:` in `config/default.yaml`.
+
+## Weekly champion / challenger retrain gate
+
+Walk-forward compare a challenger (current `config/default.yaml` + cached CSV) against the saved champion. **Promote only if all three improve**, otherwise **keep champion and report null**. First run **seeds** the champion slot from `reports/latest_metrics.json` (or a new walk-forward) — that is **not** a promotion and **not** a claimed edge.
+
+Promotion rules (`retrain.mode`):
+
+| Mode | Promote when |
+|------|----------------|
+| `improve` (default) | Challenger **profit factor** > champion, **total return** > champion, and **max drawdown** is not worse (DD is negative: challenger DD ≥ champion DD − `dd_eps`). Equal metrics → **null**. |
+| `non_regression` | No metric regresses beyond the acceptance bar (defaults PF **0.05** / total return **0.03** / max DD **0.01** when the eps knobs are left at 0) **and** at least one of the three strictly improves. Equal-within-eps → **null**. |
+
+Empty challenger / `n_trades` below `retrain.min_trades` → **null**. Walk-forward failure **fail-softs** (champion unchanged). Production joblib is refreshed only on a real **promote** (or a seed that came from a fresh walk-forward), never on **null**. Paper `BrokerPort` is untouched.
+
+```bat
+python -m forex_lab retrain --pair EURUSD --dry-run
+python -m forex_lab retrain --pair EURUSD
+python3 scripts/weekly_retrain.py --pair EURUSD
+```
+
+`--dry-run` compares `reports/latest_metrics.json` to the saved champion without walk-forward or train. Full `retrain` can take several minutes (same as `backtest`). Champion JSON lives in `data/champion/<PAIR>.json`; a pointer is written to `models/<PAIR>_champion.json`. Lab sidebar: **Retrain gate** / **Retrain dry-run**. Config: `retrain:` in `config/default.yaml`. **Not a live edge.**
 
 ## Label scheme (current default: `triple_barrier`)
 
@@ -219,6 +262,8 @@ Optional filters applied to **both** `backtest` and `signals` (so the CSV is the
 - `feature_extras.fred.enabled` — FRED as-of macro columns (default **off**). `FRED_API_KEY` is optional; CSV works without it. Fail-soft if offline.
 - `calendar` / `advice` — event calendar source URL, impact filter, cache TTL, before/during/after minutes, flatten keywords, and whether open positions get hold / close / tighten-SL cards. Advice never auto-submits.
 - `gates` — selective open filters (`enabled` default **false**): `require_mtf_agree`, `min_confidence` (null = reuse `signals.min_confidence`), `no_new_opens_in_event_window`. Fail-soft if calendar/MTF is missing. Applies to flash + paper opens. Not a live edge.
+- `digest` — daily yesterday/today snapshot (`when`, persist file, calendar lookahead). CLI disk-only. Not a live edge.
+- `retrain` — champion/challenger walk-forward gate (`mode: improve` \| `non_regression`, eps bars, `store: data/champion`). Promote only on a clear WF improve; else null. Not a live edge.
 - `board.alerts` — watchlist flip / STALE strip (`sound` default **false**, `cooldown_s` 300, optional `event_warning` within 60m). Last-seen snapshot in `data/alert_state.json`. Not orders.
 - Workspace presets — `config/workspaces/{scalp,swing}.yaml` (and `data/workspaces/` for custom). Overlay watchlist pairs, `interval`, `board.realtime_seconds`, and in-memory `signals.min_confidence`. Apply / save / reset on the desk. Not a rewrite of this file or the paper journal.
 - `model.calibrate` — `isotonic` or `sigmoid` on the last 20% of each train window. Both **hurt** EURUSD (over-confident wrong ranks).
@@ -264,7 +309,7 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 ## Config
 
-Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `gates`, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, `board.quote`, `board.alerts`, and `ui.timezone`. Workspace presets (`config/workspaces/`) overlay board view fields only — they do not rewrite this file.
+Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, signal filters, `gates`, `digest`, `retrain`, `feature_extras.pandas_ta`, `feature_extras.fred`, `calendar`, `advice`, `board.mtf_confirm`, `board.sessions`, `board.quote`, `board.alerts`, and `ui.timezone`. Workspace presets (`config/workspaces/`) overlay board view fields only — they do not rewrite this file.
 
 ## Connecting a live broker later
 
@@ -285,7 +330,7 @@ This project does **not** ship that class, those SDKs, or live wiring. Paper rem
 python -m pytest tests -q
 ```
 
-Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, **dark dense terminal theme** (`.streamlit/config.toml` + `forex_lab/ui/theme.py` BUY/SELL/HOLD contrast), watchlist load/save plus board-row status, **workspace preset load/save/apply/reset** (`tests/test_workspace.py`: scalp/swing builtins, user shadow, JSON load, in-memory overlay does not write `default.yaml`, **applying a preset does not wipe the paper journal**), local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), paper journal session labels matching the board Asia wrap (`test_paper_session_matches_board_asia_wrap_and_overlap`), Asia/Dhaka display-time formatting, **Awareness panel** rows (`tests/test_health.py`: Source / Observing / Cadence / Last OK / Status, watchlist OHLCV + news RSS + calendar + optional FRED + model file presence, STALE/FAIL never look OK, Last OK in Asia/Dhaka, paper BrokerPort untouched), PaperBroker fills/SL-TP scoring, paper lookback scorer RIGHT/WRONG/PENDING (`tests/test_score.py`: TP/SL, horizon signed move, STALE/session/conf aggregates, mistake filters), the event calendar parse/cache/fail-soft path plus next-event labels, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, **selective open gates** (`tests/test_gates.py`: MTF/confidence/event, fail-soft when calendar/MTF missing, default-off), the pandas-ta subset (causal / default-off), FRED as-of lag plus fail-soft when the cache is missing (no network), watchlist alert flips / STALE / MISSING / rate-limit / event-within-60m (`tests/test_alerts.py`), the dense board columns (Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | Actions), unicode sparklines, **Paper BUY/SELL disabled on STALE/MISSING** (`paper_submit_allowed`, AppTest on disabled buttons), and the **Windows installer preflight** (`tests/test_install_check.py`: missing Python prints `[MISSING]` plus the python.org link, old 3.10 is rejected, pip/venv/write-access failures, optional network does not fail required checks, mocked `.venv` + import verify, `INSTALL.bat` still documents the no-Python path).
+Tests check causal features (future bar edits must not change past rows), triple-barrier first-touch / timeout / conflict labels, confidence filters, the Streamlit UI smoke render against sample reports/signals, **dark dense terminal theme** (`.streamlit/config.toml` + `forex_lab/ui/theme.py` BUY/SELL/HOLD contrast), watchlist load/save plus board-row status, **workspace preset load/save/apply/reset** (`tests/test_workspace.py`: scalp/swing builtins, user shadow, JSON load, in-memory overlay does not write `default.yaml`, **applying a preset does not wipe the paper journal**), local explanations, Google News RSS parse + keyword bias (no network), OHLCV freshness (OK / STALE / CLOSED / MISSING), sparklines + ATR risk box, last/mid + config spread + clock session classification (Asia/London/NY, overlap, weekend closed, configurable windows), paper journal session labels matching the board Asia wrap (`test_paper_session_matches_board_asia_wrap_and_overlap`), Asia/Dhaka display-time formatting, **Awareness panel** rows (`tests/test_health.py`: Source / Observing / Cadence / Last OK / Status, watchlist OHLCV + news RSS + calendar + optional FRED + model file presence, STALE/FAIL never look OK, Last OK in Asia/Dhaka, paper BrokerPort untouched), **daily digest** builders (`tests/test_digest.py`: Asia/Dhaka yesterday/today windows, paper RIGHT/WRONG, signal flips, calendar ahead, Awareness FAIL/STALE, fail-soft empty caches, no `BrokerPort` import), **champion/challenger promotion** (`tests/test_retrain.py`: promote only when PF / total return / max DD improve, null on regression or equal metrics, non-regression bar, seed is not a promotion, fail-soft WF error keeps champion, no `BrokerPort` import), PaperBroker fills/SL-TP scoring, paper lookback scorer RIGHT/WRONG/PENDING (`tests/test_score.py`: TP/SL, horizon signed move, STALE/session/conf aggregates, mistake filters), the event calendar parse/cache/fail-soft path plus next-event labels, advisory cards (no auto-submit), MTF agree/conflict/hold-flash, **selective open gates** (`tests/test_gates.py`: MTF/confidence/event, fail-soft when calendar/MTF missing, default-off), the pandas-ta subset (causal / default-off), FRED as-of lag plus fail-soft when the cache is missing (no network), watchlist alert flips / STALE / MISSING / rate-limit / event-within-60m (`tests/test_alerts.py`), the dense board columns (Pair | TF | Signal | Conf | Data● | MTF | Session | Last/mid | Spread | Next event | Spark | Actions), unicode sparklines, **Paper BUY/SELL disabled on STALE/MISSING** (`paper_submit_allowed`, AppTest on disabled buttons), and the **Windows installer preflight** (`tests/test_install_check.py`: missing Python prints `[MISSING]` plus the python.org link, old 3.10 is rejected, pip/venv/write-access failures, optional network does not fail required checks, mocked `.venv` + import verify, `INSTALL.bat` still documents the no-Python path).
 
 ## Project layout
 
@@ -310,10 +355,12 @@ forex_lab/
   clock.py       # store UTC, display Asia/Dhaka (ui.timezone)
   broker.py      # BrokerPort + PaperBroker (practice fills; no live venue)
   score.py       # paper lookback scorer (RIGHT/WRONG/PENDING; not a live edge)
+  digest.py      # daily digest builders (yesterday/today, Asia/Dhaka; not a live edge)
+  retrain.py     # champion/challenger walk-forward gate (promote or null; not a live edge)
   model.py       # XGBoost + logistic
   backtest.py    # walk-forward + metrics + report
   signals.py     # latest_signals.csv
-  cli.py         # CLI entry
+  cli.py         # CLI entry (fetch/train/backtest/signals/digest/retrain)
   install_check.py  # stdlib preflight / installer (python -m forex_lab.install_check)
   ui/            # Streamlit helpers (watch board, awareness panel, alerts, workspace presets, dark terminal theme; no live trading)
 config/default.yaml
@@ -323,4 +370,6 @@ tests/
 scripts/screen_variants.py  # optional research screen (not a user command)
 scripts/screen_feature_packs.py  # pandas-ta / FRED walk-forward screen
 scripts/screen_gates.py          # MTF/confidence gates + cost-aware / asymmetric ATR WF
+scripts/daily_digest.py          # same as python -m forex_lab digest
+scripts/weekly_retrain.py        # same as python -m forex_lab retrain
 ```

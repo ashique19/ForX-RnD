@@ -18,5 +18,9 @@ data/fred_cache/
 data/paper_broker.json
 data/paper_broker.json.tmp
 data/alert_state.json
+data/digest_latest.json
+data/champion/
+models/*_champion.json
+models/*_challenger.*
 # user workspace presets + last-applied pointer (builtins live in config/workspaces/)
 data/workspaces/

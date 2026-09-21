@@ -1,4 +1,4 @@
-"""CLI: python -m forex_lab <fetch|train|backtest|signals>."""
+"""CLI: python -m forex_lab <fetch|train|backtest|signals|digest|retrain>."""
 from __future__ import annotations
 
 import argparse
@@ -91,6 +91,40 @@ def cmd_signals(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     return 0
 
 
+def cmd_digest(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    """Yesterday/today snapshot. Fail-soft. No live broker. Asia/Dhaka clocks."""
+    from forex_lab.digest import collect_digest, format_digest_text
+
+    which = getattr(args, "when", None) or "both"
+    persist = not bool(getattr(args, "no_save", False))
+    payload = collect_digest(cfg, which=which, persist=persist)
+    if bool(getattr(args, "json", False)):
+        safe_print(json.dumps(payload, indent=2, default=str))
+    else:
+        safe_print(format_digest_text(payload))
+    errs = list(payload.get("errors") or [])
+    # Fail-soft: missing caches still exit 0. A hard assembler crash would raise.
+    if errs and not payload.get("freshness") and not payload.get("paper"):
+        return 0
+    return 0
+
+
+def cmd_retrain(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    """Champion/challenger walk-forward gate. Promote or report null. Not a live edge."""
+    from forex_lab.retrain import format_retrain_text, run_retrain_gate
+
+    pair = str(getattr(args, "pair", None) or (cfg.get("retrain") or {}).get("pair") or "EURUSD")
+    dry = bool(getattr(args, "dry_run", False))
+    result = run_retrain_gate(pair, cfg, dry_run=dry)
+    if bool(getattr(args, "json", False)):
+        safe_print(json.dumps(result, indent=2, default=str))
+    else:
+        safe_print(format_retrain_text(result))
+    if result.get("ok") is False and not bool((cfg.get("retrain") or {}).get("fail_soft", True)):
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m forex_lab",
@@ -114,6 +148,33 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("signals", help="Write signals/latest_signals.csv")
     _add_common(s)
 
+    d = sub.add_parser(
+        "digest",
+        help="Daily digest (yesterday/today, Asia/Dhaka) - freshness, flips, paper, calendar, awareness",
+    )
+    d.add_argument("--config", default=None, help="Path to YAML config")
+    d.add_argument(
+        "--when",
+        default="both",
+        choices=["today", "yesterday", "both"],
+        help="Calendar day in ui.timezone (default both = yesterday + today)",
+    )
+    d.add_argument("--json", action="store_true", help="Print JSON instead of text")
+    d.add_argument("--no-save", action="store_true", help="Do not write data/digest_latest.json")
+
+    r = sub.add_parser(
+        "retrain",
+        help="Weekly champion/challenger walk-forward gate (promote or null; not a live edge)",
+    )
+    r.add_argument("--pair", default=None, help="e.g. EURUSD (default retrain.pair or EURUSD)")
+    r.add_argument("--config", default=None, help="Path to YAML config")
+    r.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Compare latest_metrics.json vs champion without walk-forward or train",
+    )
+    r.add_argument("--json", action="store_true", help="Print JSON instead of text")
+
     return p
 
 
@@ -132,6 +193,8 @@ def main(argv: list[str] | None = None) -> int:
         "train": cmd_train,
         "backtest": cmd_backtest,
         "signals": cmd_signals,
+        "digest": cmd_digest,
+        "retrain": cmd_retrain,
     }
     try:
         return int(cmds[args.command](args, cfg))

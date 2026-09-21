@@ -71,6 +71,7 @@ from forex_lab.ui.pipeline import (
     metrics_table,
     run_backtest,
     run_fetch,
+    run_retrain,
     run_signals,
     run_train,
     style_signals,
@@ -113,7 +114,14 @@ from forex_lab.ui.workspace import (
     save_workspace,
 )
 from forex_lab.data import load_cached_ohlcv
+from forex_lab.digest import (
+    build_digest,
+    digest_cfg,
+    format_digest_markdown,
+    persist_digest,
+)
 from forex_lab.explain import SignalExplanation, explain_latest_signal
+from forex_lab.retrain import load_champion
 from forex_lab.freshness import (
     VALIDITY_CLOSED,
     VALIDITY_ERROR,
@@ -166,7 +174,11 @@ DISCLAIMER = (
     "Click a board row for chart / SHAP / news / risk / rationale. "
     "**Workspace** presets (scalp / swing / save-as) switch watchlist pairs, TF, "
     "realtime interval, and min-confidence display only — they do **not** wipe the "
-    "paper journal or change BrokerPort."
+    "paper journal or change BrokerPort. "
+    "The **daily digest** is yesterday/today in Asia/Dhaka (freshness, flips, paper "
+    "RIGHT/WRONG, calendar, Awareness FAIL/STALE) — not a live edge. "
+    "The **champion/challenger retrain gate** promotes a walk-forward challenger only "
+    "if PF / total return / max DD improve (else null). Not a live edge."
 )
 
 BOARD_HELP = """
@@ -1070,6 +1082,69 @@ def _rate_frame(block: list) -> pd.DataFrame:
     return df
 
 
+def _render_daily_digest(
+    cfg,
+    *,
+    health,
+    calendar,
+    broker: BrokerPort | None,
+    alert_state,
+    board_rows,
+) -> None:
+    """Yesterday/today snapshot. Fail-soft. Paper BrokerPort is only read, never submitted."""
+    if digest_cfg(cfg).get("enabled") is False:
+        return
+    closed = []
+    open_rows = []
+    if broker is not None:
+        closed = list(getattr(broker, "list_closed", lambda: [])())
+        try:
+            open_rows = list(broker.list_positions())
+        except Exception:
+            open_rows = []
+    alerts = list(getattr(alert_state, "alerts", None) or [])
+    try:
+        payload = build_digest(
+            cfg,
+            health_rows=health,
+            board_rows=board_rows,
+            calendar=calendar,
+            alerts=alerts,
+            closed_paper=closed,
+            open_paper=open_rows,
+        )
+    except Exception as exc:  # noqa: BLE001 — digest must never break the board
+        with st.expander("Daily digest — unavailable", expanded=False):
+            st.caption("Fail-soft: digest builder error. Paper BrokerPort unchanged.")
+            st.warning(str(exc))
+        return
+    try:
+        persist_digest(payload, cfg)
+    except Exception:
+        pass
+    issues = int((payload.get("awareness") or {}).get("n_unhealthy") or 0)
+    paper = payload.get("paper") or {}
+    n_flips = len(payload.get("flips") or [])
+    expand = bool(issues or paper.get("wrong") or n_flips)
+    label = "Daily digest"
+    bits = []
+    if issues:
+        bits.append(f"{issues} FAIL/STALE/MISSING")
+    if n_flips:
+        bits.append(f"{n_flips} flips")
+    bits.append(f"{paper.get('right', 0)}R/{paper.get('wrong', 0)}W paper")
+    if bits:
+        label += " — " + " · ".join(bits)
+    with st.expander(label, expanded=expand):
+        st.caption(
+            "Yesterday + today in "
+            f"**{timezone_tag(cfg)}**. Freshness, signal flips, paper RIGHT/WRONG, "
+            "calendar ahead, Awareness FAIL/STALE. "
+            "Paper lookback only — **not a live edge**. BrokerPort unchanged."
+        )
+        st.markdown(format_digest_markdown(payload))
+
+
 def _render_paper_journal(broker: BrokerPort, cfg=None) -> None:
     backend = "paper"
     st.caption(
@@ -1681,6 +1756,18 @@ def render_watch_board(cfg) -> None:
             else:
                 st.info("Watchlist is empty — no sources to report.")
 
+        try:
+            _render_daily_digest(
+                cfg,
+                health=health,
+                calendar=calendar,
+                broker=broker,
+                alert_state=alert_state,
+                board_rows=rows,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         if not rows:
             st.info("Watchlist is empty. Add a pair below.")
         else:
@@ -1894,6 +1981,36 @@ def render() -> None:
                 _run_step(f"Backtest {pair}", lambda: run_backtest(pair, cfg=cfg))
             if st.button("Generate signals", use_container_width=True):
                 _run_step(f"Signals {pair}", lambda: run_signals(pair, cfg=cfg))
+            st.subheader("Champion / challenger")
+            st.caption(
+                "Walk-forward gate. Promotes only if PF, total return, and max DD all improve "
+                "(or the non-regression bar). Else **null** — champion stays. "
+                "First run seeds the slot (not a promotion). Not a live edge. Can take several minutes."
+            )
+            try:
+                champ = load_champion(pair, cfg)
+            except Exception:
+                champ = None
+            if champ:
+                m = champ.get("metrics") or {}
+                st.markdown(
+                    f"Saved champion `{pair}`: PF `{m.get('profit_factor')}` · "
+                    f"ret `{m.get('total_return')}` · DD `{m.get('max_drawdown')}` · "
+                    f"{champ.get('promoted_at_display') or champ.get('promoted_at') or ''}"
+                )
+            else:
+                st.caption(
+                    "No champion yet — first **Retrain gate** seeds from "
+                    "`reports/latest_metrics.json` or a new walk-forward."
+                )
+            g1, g2 = st.columns(2)
+            if g1.button("Retrain gate", use_container_width=True):
+                _run_step(f"Retrain {pair}", lambda: run_retrain(pair, cfg=cfg))
+            if g2.button("Retrain dry-run", use_container_width=True):
+                _run_step(
+                    f"Retrain dry-run {pair}",
+                    lambda: run_retrain(pair, dry_run=True, cfg=cfg),
+                )
             if st.button("Reload files", use_container_width=True):
                 st.rerun()
 
