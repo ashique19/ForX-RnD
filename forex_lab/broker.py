@@ -29,7 +29,11 @@ class BrokerError(RuntimeError):
 
 
 class BrokerPort(ABC):
-    """Minimal order gateway. UI must not call a vendor SDK directly."""
+    """Minimal order gateway. UI must not call a vendor SDK directly.
+
+    Live backends (future ``mt5`` / ``oanda``) implement these four methods only.
+    Paper-specific extras (mark-to-market, journal scoring) stay on PaperBroker.
+    """
 
     @abstractmethod
     def submit(
@@ -54,6 +58,19 @@ class BrokerPort(ABC):
     @abstractmethod
     def list_fills(self) -> list[dict[str, Any]]:
         """All fills (open + close), oldest first."""
+
+
+# Alias used in product copy. Same contract.
+OrderGateway = BrokerPort
+
+
+def position_for_pair(port: BrokerPort, pair: str) -> dict[str, Any] | None:
+    """Lookup via list_positions() so the UI never needs a PaperBroker method."""
+    key = str(pair).upper()
+    for p in port.list_positions():
+        if str(p.get("pair")).upper() == key:
+            return p
+    return None
 
 
 def broker_cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:
@@ -377,11 +394,7 @@ class PaperBroker(BrokerPort):
         return list(self._state.get("closed") or [])
 
     def open_for_pair(self, pair: str) -> dict[str, Any] | None:
-        key = str(pair).upper()
-        for p in self.list_positions():
-            if str(p.get("pair")).upper() == key:
-                return p
-        return None
+        return position_for_pair(self, pair)
 
     def refresh_from_ohlcv(
         self,

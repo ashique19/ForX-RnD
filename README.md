@@ -187,6 +187,19 @@ A model with a slightly higher win rate but worse profit factor / deeper drawdow
 
 Edit `config/default.yaml` for pairs, interval, `label_scheme`, horizon, ATR barriers, spread/commission pips, one-position, walk-forward window sizes, and signal filters.
 
+## Connecting a live broker later
+
+The Streamlit Buy/Sell/Close buttons never import a vendor SDK. They call `make_broker(cfg)`, which returns a `BrokerPort` (`OrderGateway` alias) with four methods: `submit`, `close`, `list_positions`, `list_fills`.
+
+Today `broker.backend: paper` constructs `PaperBroker` (local JSON, cached last-close fills, paper SL/TP). To plug in a real venue later:
+
+1. Subclass `BrokerPort` (e.g. `forex_lab/broker_mt5.py`) with those four methods.
+2. Set `broker.backend: mt5` (or `oanda`) in `config/default.yaml`.
+3. Teach `make_broker` to construct that class.
+4. Keep credentials **out of this repo** (environment variables or a gitignored local secret). Do not commit API keys.
+
+This project does **not** ship that class, those SDKs, or live wiring. Paper remains the only supported backend.
+
 ## Tests
 
 ```bat

@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from forex_lab.broker import BrokerError, PaperBroker, make_broker
+from forex_lab.broker import BrokerError, BrokerPort, make_broker, position_for_pair
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.ui.board import (
@@ -103,8 +103,8 @@ Research suggestion only: **no lot size, no auto-submit, no live broker order**.
 **Sparkline** — last 24–48 cached closes of the row timeframe. Missing/STALE: empty chart + validity badge (no invented prices).
 
 **Paper desk** — Buy / Sell / Close talk only to `BrokerPort` (`broker.backend: paper`).
-Fills at the last cached close, stores a local JSON journal, and scores RIGHT/WRONG when
-later bars hit the same ATR barriers. **Not** a live order. One open paper position per pair.
+Fills at the last cached close like a practice book: open position, uPnL, SL/TP hits.
+A future `mt5` / `oanda` backend would implement the same four methods. **Not** a live order.
 
 **Awareness** — always-visible **Feeds:** line plus expander listing OHLCV + news
 with last update, cadence, and OK/STALE/FAIL. Opens itself when a feed is STALE/FAIL/MISSING.
@@ -290,17 +290,18 @@ def _render_risk(row) -> None:
         )
 
 
-def _paper_broker(cfg) -> PaperBroker:
-    b = st.session_state.get("paper_broker")
-    if not isinstance(b, PaperBroker):
-        port = make_broker(cfg)
-        if not isinstance(port, PaperBroker):
-            raise BrokerError("expected PaperBroker")
-        b = port
-        st.session_state.paper_broker = b
+def _paper_broker(cfg) -> BrokerPort:
+    """UI entry point: always BrokerPort. Never a vendor SDK."""
+    b = st.session_state.get("broker")
+    if not isinstance(b, BrokerPort):
+        b = make_broker(cfg)
+        st.session_state.broker = b
     else:
-        b.cfg = cfg
-        b.reload()
+        if hasattr(b, "cfg"):
+            b.cfg = cfg  # type: ignore[attr-defined]
+        reload = getattr(b, "reload", None)
+        if callable(reload):
+            reload()
     return b
 
 
@@ -326,9 +327,14 @@ def _driver_snapshot(row) -> str:
     return ", ".join(bits)
 
 
-def _render_paper_actions(row, cfg, broker: PaperBroker, news: NewsBundle | None = None) -> None:
-    st.markdown("**Paper desk**")
-    st.caption("Practice fill at last cached close. Not a broker order. No auto-submit.")
+def _render_paper_actions(row, cfg, broker: BrokerPort, news: NewsBundle | None = None) -> None:
+    st.markdown("**Practice desk**")
+    backend = str((cfg.get("broker") or {}).get("backend") or "paper")
+    st.caption(
+        f"backend=`{backend}` — practice in parallel with live markets. "
+        "Same submit/close a live venue would use; fills are local until a real backend exists. "
+        "Not a broker order. No auto-submit."
+    )
     flash = st.session_state.pop("paper_flash", None)
     warn = st.session_state.pop("paper_flash_warn", None)
     if flash:
@@ -336,7 +342,7 @@ def _render_paper_actions(row, cfg, broker: PaperBroker, news: NewsBundle | None
     if warn:
         st.warning(warn)
     price, entry_bar, ohlcv = _cached_quote(row, cfg)
-    open_pos = broker.open_for_pair(row.pair)
+    open_pos = position_for_pair(broker, row.pair)
     if open_pos:
         st.caption(
             f"Open {open_pos['side']} {float(open_pos['size']):g} @ "
@@ -408,13 +414,51 @@ def _render_paper_actions(row, cfg, broker: PaperBroker, news: NewsBundle | None
         st.error(str(exc))
 
 
-def _render_paper_journal(broker: PaperBroker) -> None:
+def _render_paper_journal(broker: BrokerPort) -> None:
+    backend = "paper"
     st.caption(
-        "Local practice journal (`broker.backend: paper`). RIGHT = TP before SL on later cached bars; "
-        "WRONG = SL first; TIMEOUT = horizon; FLAT = manual close. PENDING until enough bars pass."
+        f"Practice book via BrokerPort (`broker.backend: {backend}`). "
+        "RIGHT = TP before SL on later cached bars; WRONG = SL first; "
+        "TIMEOUT = horizon; FLAT = manual close. PENDING until enough bars pass. "
+        "A live mt5/oanda backend would use the same submit/close/list_positions/list_fills "
+        "methods — this repo does not store API keys."
     )
+    positions = broker.list_positions()
+    closed = list(getattr(broker, "list_closed", lambda: [])())
+    fills = broker.list_fills()
+    unreal = sum(float(p.get("unrealized") or 0) for p in positions)
+    realized = sum(float(c.get("realized") or 0) for c in closed)
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("Open positions", str(len(positions)))
+    b2.metric("Unrealized (paper)", _fmt_num(unreal, 5))
+    b3.metric("Realized (paper)", _fmt_num(realized, 5))
+    b4.metric("Fills", str(len(fills)))
+    if positions:
+        st.markdown("**Open book**")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "id": p.get("id"),
+                        "pair": p.get("pair"),
+                        "side": p.get("side"),
+                        "size": p.get("size"),
+                        "entry": p.get("entry_price"),
+                        "sl": p.get("sl"),
+                        "tp": p.get("tp"),
+                        "uPnL": p.get("unrealized"),
+                        "validity": p.get("validity_at_entry"),
+                        "model": p.get("model_signal"),
+                    }
+                    for p in positions
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+    journal_fn = getattr(broker, "journal", None)
+    rows = list(journal_fn()) if callable(journal_fn) else list(reversed(closed)) + list(reversed(positions))
     wrong_only = st.checkbox("Wrong trades only", key="paper_wrong_only")
-    rows = broker.journal()
     if wrong_only:
         rows = [r for r in rows if str(r.get("outcome")) == "WRONG"]
     if not rows:
@@ -454,29 +498,34 @@ def _render_paper_journal(broker: PaperBroker) -> None:
                     f"news={r.get('news_bias') or 'n/a'}  "
                     f"{(r.get('rationale') or r.get('news_note') or '')[:180]}"
                 )
-    agg = broker.aggregates()
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Right", str(agg["right"]))
-    m2.metric("Wrong", str(agg["wrong"]))
-    m3.metric("Pending", str(agg["n_pending"]))
-    err = agg.get("error_rate")
-    m4.metric("Error rate", "n/a" if err is None else f"{100 * err:.0f}%")
-    st.caption(
-        f"Timeout {agg['timeout']} · manual/flat {agg['flat']} · closed {agg['n_closed']}"
-    )
-    for title, key in (
-        ("By pair", "by_pair"),
-        ("By session", "by_session"),
-        ("By validity at entry", "by_validity"),
-        ("By confidence bucket", "by_confidence"),
-    ):
-        block = agg.get(key) or []
-        if block:
-            st.markdown(f"**{title}**")
-            st.dataframe(pd.DataFrame(block), use_container_width=True, hide_index=True)
-    st.markdown("**How to improve (stubs from this journal)**")
-    for note in agg.get("notes") or []:
-        st.caption("• " + note)
+    agg_fn = getattr(broker, "aggregates", None)
+    if callable(agg_fn):
+        agg = agg_fn()
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Right", str(agg["right"]))
+        m2.metric("Wrong", str(agg["wrong"]))
+        m3.metric("Pending", str(agg["n_pending"]))
+        err = agg.get("error_rate")
+        m4.metric("Error rate", "n/a" if err is None else f"{100 * err:.0f}%")
+        st.caption(
+            f"Timeout {agg['timeout']} · manual/flat {agg['flat']} · closed {agg['n_closed']}"
+        )
+        for title, key in (
+            ("By pair", "by_pair"),
+            ("By session", "by_session"),
+            ("By validity at entry", "by_validity"),
+            ("By confidence bucket", "by_confidence"),
+        ):
+            block = agg.get(key) or []
+            if block:
+                st.markdown(f"**{title}**")
+                st.dataframe(pd.DataFrame(block), use_container_width=True, hide_index=True)
+        st.markdown("**How to improve (stubs from this journal)**")
+        for note in agg.get("notes") or []:
+            st.caption("• " + note)
+    if fills:
+        st.markdown("**Fills** (`BrokerPort.list_fills`)")
+        st.dataframe(pd.DataFrame(fills), use_container_width=True, hide_index=True)
 
 
 def _render_news_lane(bundle: NewsBundle | None) -> None:
@@ -666,12 +715,14 @@ def render_watch_board(cfg) -> None:
             st.error(str(exc))
             broker = None
         if broker is not None:
-            for row in rows:
-                broker.refresh_from_ohlcv(
-                    row.pair,
-                    load_cached_ohlcv(row.pair, cfg, row.timeframe),
-                    cfg,
-                )
+            refresh = getattr(broker, "refresh_from_ohlcv", None)
+            if callable(refresh):
+                for row in rows:
+                    refresh(
+                        row.pair,
+                        load_cached_ohlcv(row.pair, cfg, row.timeframe),
+                        cfg,
+                    )
 
         news_ttl = int((cfg.get("news") or {}).get("cache_ttl_s") or 300)
         health = build_health_rows(

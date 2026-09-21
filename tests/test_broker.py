@@ -8,9 +8,12 @@ import pytest
 
 from forex_lab.broker import (
     BrokerError,
+    BrokerPort,
+    OrderGateway,
     PaperBroker,
     journal_aggregates,
     make_broker,
+    position_for_pair,
 )
 
 
@@ -26,6 +29,9 @@ def test_make_broker_paper_only(tmp_path):
     cfg = {"broker": {"backend": "paper", "store": str(tmp_path / "p.json"), "default_size": 1.0}}
     b = make_broker(cfg)
     assert isinstance(b, PaperBroker)
+    assert isinstance(b, BrokerPort)
+    assert OrderGateway is BrokerPort
+    assert position_for_pair(b, "EURUSD") is None
     with pytest.raises(BrokerError, match="not implemented"):
         make_broker({"broker": {"backend": "mt5"}})
     with pytest.raises(BrokerError, match="unknown"):
@@ -42,6 +48,7 @@ def test_submit_requires_price_and_one_position(tmp_path):
     assert b.list_positions()[0]["news_bias"] == "mixed"
     assert "fixture" in b.list_positions()[0]["news_note"]
     assert len(b.list_positions()) == 1
+    assert position_for_pair(b, "EURUSD")["side"] == "BUY"
     with pytest.raises(BrokerError, match="already has an open"):
         b.submit("SELL", "EURUSD", price=1.11)
     assert len(b.list_fills()) == 1
