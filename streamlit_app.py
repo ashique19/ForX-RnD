@@ -1494,7 +1494,8 @@ def render_watch_board(cfg) -> None:
     available = ui_pairs(cfg)
 
     st.caption(
-        f"Dense board — seconds to decide. Lab timeframe **{lab_iv}**. "
+        f"Dense board — seconds to decide. BUY green / SELL red / HOLD grey. "
+        f"Lab timeframe **{lab_iv}**. "
         f"Click a pair for the detail drawer. Watchlist: `{watchlist_path()}`."
     )
     _render_workspace_bar(cfg, wl)
@@ -1580,13 +1581,15 @@ def render_watch_board(cfg) -> None:
         )
         _render_alert_strip(alert_state, alert_fresh, cfg, sound_on=bool(sound_on))
         refreshed = st.session_state.get("board_last_refreshed")
-        if refreshed:
-            st.caption(
-                f"Board last refreshed at {relabel(refreshed, cfg, seconds=True)} "
-                f"({timezone_tag(cfg)} clock)."
-            )
         board_sess = classify_session(cfg=cfg)
+        refresh_bit = (
+            f"Board last refreshed at {relabel(refreshed, cfg, seconds=True)} "
+            f"({timezone_tag(cfg)} clock). "
+            if refreshed
+            else ""
+        )
         st.caption(
+            f"{refresh_bit}"
             f"Session **{board_sess.badge()}** · {board_sess.note}. "
             "Last is yfinance last/mid-ish — not broker bid/ask. "
             "Spread is the config pip estimate (cost context). "
@@ -1676,14 +1679,6 @@ def render_watch_board(cfg) -> None:
             )
             with st.expander("Event calendar", expanded=False):
                 _render_calendar_panel(calendar, [r.pair for r in rows], cfg)
-            st.markdown(
-                '<div class="fx-status">'
-                "<span><b>SCAN</b> pair · signal · last/mid · conf</span>"
-                "<span>BUY green · SELL red · HOLD grey</span>"
-                f"<span>clocks <b>{html.escape(timezone_tag(cfg))}</b></span>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
             _render_dense_header()
             selected = st.session_state.get("board_detail_pair")
             if selected and selected not in {r.pair for r in rows}:

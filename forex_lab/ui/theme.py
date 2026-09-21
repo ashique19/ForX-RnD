@@ -209,12 +209,6 @@ footer { visibility: hidden; height: 0; }
 [data-testid="stMainBlockContainer"] {
   padding-top: 1.05rem !important;
 }
-div[data-testid="stVerticalBlock"] {
-  gap: 0.32rem !important;
-}
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-  gap: 0.45rem !important;
-}
 [data-testid="stCaptionContainer"], .stCaption {
   font-size: 0.72rem !important;
   line-height: 1.28 !important;
@@ -302,9 +296,10 @@ div[data-testid="stAlert"] {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 2px 0 8px;
+  padding: 4px 0 10px;
   border-bottom: 1px solid var(--fx-border);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+  min-height: 1.6rem;
 }
 .fx-masthead-left, .fx-masthead-right {
   display: flex;
