@@ -46,8 +46,8 @@ def test_theme_config_is_dark_terminal():
     assert "#16c784" in cfg
     assert "toolbarMode" in cfg and "minimal" in cfg
     assert "backgroundColor" in cfg
-    assert "baseFontSize = 15" in cfg
-    assert "textColor = \"#e6edf3\"" in cfg
+    assert "baseFontSize = 16" in cfg
+    assert "textColor = \"#f2f5f8\"" in cfg
 
 
 def test_buy_sell_hold_are_high_contrast():
@@ -73,10 +73,11 @@ def test_buy_sell_hold_are_high_contrast():
 
 
 def test_muted_captions_and_labels_are_readable():
-    """Secondary copy must be light grey + slightly larger, not near-black 8px type."""
+    """Body 16px, captions 14px, secondary #c8d0db+ — not dark grey on dark."""
     from forex_lab.ui.health import awareness_table_html
     from forex_lab.ui.theme import (
         BG,
+        FONT_BODY,
         FONT_CAPTION,
         FONT_CELL,
         FONT_EXPANDER,
@@ -87,26 +88,29 @@ def test_muted_captions_and_labels_are_readable():
         validity_badge_html,
     )
 
-    assert min(_rgb(MUTED)) >= 160
-    assert _contrast(MUTED, BG) >= 7.0
-    assert _contrast(TEXT, BG) >= 10.0
-    assert _contrast(NEUTRAL, BG) >= 6.0
+    assert FONT_BODY == "16px"
+    assert FONT_CAPTION == "14px"
+    assert FONT_LABEL == "14px"
+    assert FONT_CELL == "15px"
+    assert FONT_EXPANDER == "16px"
+    assert min(_rgb(MUTED)) >= 200
+    assert MUTED.lower() >= "#c8d0db"
+    assert _contrast(MUTED, BG) >= 10.0
+    assert _contrast(TEXT, BG) >= 12.0
+    assert _contrast(NEUTRAL, BG) >= 8.0
     css = terminal_css()
     assert MUTED in css
+    assert TEXT in css
     assert "--fx-muted" in css
-    assert FONT_CAPTION in css
-    assert FONT_LABEL in css
-    assert FONT_CELL in css
-    assert FONT_EXPANDER in css
     assert "stSidebar" in css
     assert "stTooltipContent" in css
-    assert "stCaptionContainer" in css
-    assert "font-size: 15px" in css
-    # Old too-small caption / widget-label sizes must not remain.
+    assert "font-size: 16px" in css
+    assert "font-size: 14px" in css
+    # Old too-small caption / widget-label rem sizes must not remain.
     assert "font-size: 0.70rem !important" not in css
     assert "font-size: 0.62rem !important" not in css
     stale = validity_badge_html("STALE", compact=True)
-    assert "0.74rem" in stale or "0.70rem" in stale
+    assert "14px" in stale
     table = awareness_table_html(
         [
             {
@@ -119,8 +123,36 @@ def test_muted_captions_and_labels_are_readable():
         ]
     )
     assert MUTED in table
-    assert "0.86rem" in table or "0.84rem" in table
+    assert "15px" in table
     assert "data stale" in table
+
+
+def test_theme_css_applies_to_captions_markdown_dataframe_expanders():
+    """CSS must actually target Streamlit caption / markdown / grid / expander nodes."""
+    from forex_lab.ui.theme import FONT_CAPTION, FONT_BODY, MUTED, TEXT
+
+    css = terminal_css()
+    for needle in (
+        '[data-testid="stCaptionContainer"]',
+        '[data-testid="stMarkdownContainer"]',
+        '[data-testid="stDataFrame"]',
+        '[data-testid="stExpander"]',
+        '[data-testid="stWidgetLabel"]',
+        '[data-testid="stHeading"]',
+        "stCaption",
+    ):
+        assert needle in css, f"missing selector {needle}"
+    # Forced sizes (px) so Streamlit cannot mix captions back to ~11px.
+    assert f"font-size: {FONT_BODY}" in css
+    assert f"font-size: {FONT_CAPTION}" in css
+    assert f"color: var(--fx-muted)" in css
+    assert f"color: var(--fx-text)" in css
+    assert MUTED in css and TEXT in css
+    # Masthead clock / title are large and bold.
+    assert "font-size: 22px" in css
+    assert ".fx-clock" in css and ".fx-title" in css
+    source = Path(project_root() / "forex_lab" / "ui" / "theme.py").read_text(encoding="utf-8")
+    assert "data-fx-theme" in source
 
 
 def test_style_board_uses_dark_signal_colors():

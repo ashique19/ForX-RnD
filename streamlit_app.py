@@ -107,6 +107,7 @@ from forex_lab.ui.theme import (
     signal_badge_html,
     validity_badge_html,
 )
+from forex_lab.ui.chart import candlestick_figure
 from forex_lab.ui.workspace import (
     Workspace,
     WorkspaceError,
@@ -365,8 +366,8 @@ def _session_badge(session: SessionState | None, *, show_note: bool = False) -> 
         note = session.note
     bg = session_fill(name)
     st.markdown(
-        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:0.76rem;'
-        f"letter-spacing:0.08em;text-align:center;padding:3px 6px;border-radius:3px;"
+        f'<div style="background:{bg};color:#fff;font-weight:700;font-size:13px;'
+        f"letter-spacing:0.08em;text-align:center;padding:4px 8px;border-radius:3px;"
         f'display:inline-block">{name}</div>',
         unsafe_allow_html=True,
     )
@@ -383,14 +384,14 @@ def _render_quote_strip(row) -> None:
     st.markdown(
         f'<div style="font-variant-numeric:tabular-nums;line-height:1.15">'
         f'<div style="font-size:1.2rem;font-weight:800;letter-spacing:0.02em;color:{TEXT_BRIGHT}">{last_txt}</div>'
-        f'<div style="font-size:0.76rem;color:{MUTED};font-weight:600">{kind}</div>'
+        f'<div style="font-size:14px;color:{MUTED};font-weight:600">{kind}</div>'
         f"</div>",
         unsafe_allow_html=True,
     )
     s1, s2 = st.columns(2)
     with s1:
         st.markdown(
-            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:0.76rem;'
+            f'<div style="background:{SURFACE};color:{TEXT};font-weight:700;font-size:13px;'
             f"letter-spacing:0.04em;text-align:center;padding:3px 6px;border-radius:3px;"
             f'border:1px solid #243040">'
             f"SPR {spr} cfg</div>",
@@ -416,7 +417,7 @@ def _mtf_badge(mtf: MtfStatus | None, *, compact: bool = False) -> None:
     bg = colors.get(status, HOLD_BG)
     color = fg.get(status, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.76rem;'
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:13px;'
         f"letter-spacing:0.04em;text-align:center;padding:3px 5px;border-radius:3px;"
         f'display:block">{note}</div>',
         unsafe_allow_html=True,
@@ -442,19 +443,44 @@ def _news_bias_badge(bias: str) -> None:
     st.markdown(
         f'<div style="background:{colors.get(b, HOLD_BG)};color:{fg.get(b, TEXT)};font-weight:800;'
         f'padding:4px 8px;border-radius:3px;display:inline-block;letter-spacing:0.08em;'
-        f'font-size:0.80rem">{b.upper()}</div>',
+        f'font-size:13px">{b.upper()}</div>',
         unsafe_allow_html=True,
     )
 
 
 def _render_sparkline(row, *, height: int = 90) -> None:
-    st.caption("Sparkline (cached close)")
+    st.caption("Close sparkline (cached) — fallback when OHLC candles are unavailable")
     if not getattr(row, "sparkline", None):
         st.caption(getattr(row, "sparkline_note", None) or "n/a")
         return
     chart = pd.DataFrame({"close": list(row.sparkline)})
     st.line_chart(chart, height=height, use_container_width=True)
     st.caption(row.sparkline_note)
+
+
+def _render_price_chart(row, cfg) -> None:
+    """Detail Chart tab: dark candlestick from cached OHLCV. Not a live ticker."""
+    _price, _ts, ohlcv = _cached_quote(row, cfg)
+    title = f"{row.pair}  {row.timeframe}"
+    fig, note = candlestick_figure(ohlcv, title=title, timeframe=row.timeframe)
+    if fig is not None:
+        try:
+            st.pyplot(fig, use_container_width=True, clear_figure=True)
+        except TypeError:
+            st.pyplot(fig, clear_figure=True)
+        st.caption(note)
+        if str(getattr(row, "validity", "")).upper().split()[0] in {
+            VALIDITY_STALE,
+            VALIDITY_MISSING,
+            VALIDITY_ERROR,
+        }:
+            st.caption(
+                f"Validity: {row.validity} — "
+                f"{row.validity_reason or 'cached bars, not live'}"
+            )
+        return
+    st.caption(note)
+    _render_sparkline(row, height=220)
 
 
 def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
@@ -483,7 +509,7 @@ def _render_alert_strip(state, fresh: list, cfg, *, sound_on: bool) -> None:
                 when = format_alert_time(alert, cfg)
                 st.markdown(
                     f'<div style="display:flex;gap:10px;align-items:center;background:{bg};'
-                    f"color:#fff;font-size:0.84rem;font-weight:700;padding:5px 8px;"
+                    f"color:#fff;font-size:15px;font-weight:700;padding:7px 10px;"
                     f'border-radius:6px;letter-spacing:0.02em;line-height:1.2">'
                     f"<span>{html.escape(alert.message)}</span>"
                     f'<span style="margin-left:auto;font-weight:600;opacity:.9;white-space:nowrap">'
@@ -598,7 +624,7 @@ def _render_advice_card(
     bg = colors.get(card.severity, "#334155")
     color = fg.get(card.severity, TEXT)
     st.markdown(
-        f'<div style="background:{bg};color:{color};font-weight:800;font-size:0.86rem;'
+        f'<div style="background:{bg};color:{color};font-weight:800;font-size:15px;'
         f'padding:5px 8px;border-radius:3px;margin-bottom:3px;letter-spacing:0.04em">{card.title}</div>',
         unsafe_allow_html=True,
     )
@@ -869,7 +895,7 @@ def _render_paper_actions(
 def _dense_cell(text: str, *, warn: bool = False, numeric: bool = False, strong: bool = False) -> None:
     color = WARN if warn else (TEXT_BRIGHT if strong else TEXT)
     weight = "800" if warn or strong else "600"
-    size = "0.92rem" if strong else "0.82rem"
+    size = "16px" if strong else "15px"
     variant = "font-variant-numeric:tabular-nums;" if numeric else ""
     st.markdown(
         f'<div style="font-size:{size};font-weight:{weight};color:{color};'
@@ -938,7 +964,7 @@ def _render_dense_row(
         with c[10]:
             spark = spark_ascii(row.sparkline)
             st.markdown(
-                f'<div style="font-size:0.82rem;letter-spacing:-0.08em;line-height:1.15;'
+                f'<div style="font-size:15px;letter-spacing:-0.06em;line-height:1.25;'
                 f'color:{MUTED};font-variant-numeric:tabular-nums">{html.escape(spark)}</div>',
                 unsafe_allow_html=True,
             )
@@ -983,7 +1009,7 @@ def _render_detail_drawer(
             st.warning(row.signal_details or row.validity_reason or NEED_FETCH_TRAIN)
         tabs = st.tabs(["Chart", "SHAP", "News", "Risk", "Rationale"])
         with tabs[0]:
-            _render_sparkline(row, height=180)
+            _render_price_chart(row, cfg)
             st.caption(f"Last bar  {row.last_bar_at or 'n/a'}")
             st.caption(f"Last fetch  {row.last_fetch_at or 'n/a'}")
             st.caption(f"Last signal  {row.last_signal_at or row.datetime or 'n/a'}")
@@ -1637,7 +1663,7 @@ def render_watch_board(cfg) -> None:
     available = ui_pairs(cfg)
 
     st.caption(
-        f"Dense board — seconds to decide. BUY green / SELL red / HOLD grey. "
+        f"Dense board — BUY green / SELL red / HOLD grey. "
         f"Lab timeframe **{lab_iv}**. "
         f"Click a pair for the detail drawer. Watchlist: `{watchlist_path()}`."
     )
