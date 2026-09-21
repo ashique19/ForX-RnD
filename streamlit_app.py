@@ -328,6 +328,12 @@ def _driver_snapshot(row) -> str:
 def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
     st.markdown("**Paper desk**")
     st.caption("Practice fill at last cached close. Not a broker order. No auto-submit.")
+    flash = st.session_state.pop("paper_flash", None)
+    warn = st.session_state.pop("paper_flash_warn", None)
+    if flash:
+        st.success(flash)
+    if warn:
+        st.warning(warn)
     price, entry_bar, ohlcv = _cached_quote(row, cfg)
     open_pos = broker.open_for_pair(row.pair)
     if open_pos:
@@ -342,7 +348,8 @@ def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
                     st.error("No cached price to close against.")
                 else:
                     broker.close(open_pos["id"], price=price, reason="manual")
-                    st.success("Paper position closed (local journal only).")
+                    st.session_state["paper_flash"] = "Paper position closed (local journal only)."
+                    st.rerun()
             except BrokerError as exc:
                 st.error(str(exc))
         return
@@ -382,9 +389,10 @@ def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
             horizon=int(cfg.get("horizon") or 8),
             note=f"validity={row.validity}",
         )
-        st.success(f"Paper {side} recorded @ {_fmt_num(price, 5)} — local journal only.")
+        st.session_state["paper_flash"] = f"Paper {side} recorded @ {_fmt_num(price, 5)} — local journal only."
         if row.validity == VALIDITY_STALE:
-            st.warning("Recorded on STALE data — scored later; not a live call.")
+            st.session_state["paper_flash_warn"] = "Recorded on STALE data — scored later; not a live call."
+        st.rerun()
     except BrokerError as exc:
         st.error(str(exc))
 
