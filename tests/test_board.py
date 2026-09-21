@@ -5,6 +5,8 @@ import sys
 import types
 from pathlib import Path
 
+import pandas as pd
+
 from forex_lab.config_loader import load_config
 from forex_lab.data import generate_synthetic_ohlcv, try_yfinance_refresh
 from forex_lab.ui.board import (
@@ -12,8 +14,10 @@ from forex_lab.ui.board import (
     board_table,
     build_board_row,
     build_board_rows,
+    research_risk,
     research_target,
     row_from_signal,
+    sparkline_closes,
 )
 from forex_lab.ui.watchlist import WatchItem, Watchlist
 
@@ -95,15 +99,56 @@ def test_row_from_signal_fills_table_fields():
         "Signal details",
     ]
     assert table.iloc[0]["Buy/Sell"] == "SELL"
+    assert row.risk is not None and row.risk.available
+    assert row.risk.sl is not None and row.risk.tp is not None
+    assert row.risk.rr == 1.0
+    assert "next-open" in row.risk.entry_ref
+    assert row.sparkline
+    assert len(row.sparkline) <= 48
 
 
-def test_board_row_missing_artifacts_need_fetch_train(tmp_path):
+def test_research_risk_hold_and_stale_are_na():
+    df = generate_synthetic_ohlcv(bars=80, seed=3)
+    cfg = {
+        "label_scheme": "triple_barrier",
+        "horizon": 8,
+        "entry_timing": "next_open",
+        "atr_period": 14,
+        "barrier": {"tp_atr": 2.0, "sl_atr": 1.0},
+        "spread_pips": 1.0,
+    }
+    hold = research_risk(df, cfg, "HOLD", validity="OK")
+    assert hold.available is False
+    assert "HOLD" in hold.reason
+    stale = research_risk(df, cfg, "BUY", validity="STALE")
+    assert stale.available is False
+    assert "stale" in stale.reason.lower()
+    buy = research_risk(df, cfg, "BUY", validity="OK")
+    assert buy.available
+    assert buy.rr == 2.0
+    assert buy.tp > buy.entry > buy.sl
+    sell = research_risk(df, cfg, "SELL", validity="OK")
+    assert sell.tp < sell.entry < sell.sl
+
+
+def test_sparkline_from_cache_empty_when_no_bars():
+    df = generate_synthetic_ohlcv(bars=80, seed=3)
+    pts = sparkline_closes(df, n=24)
+    assert 2 <= len(pts) <= 24
+    assert sparkline_closes(None) == []
+    assert sparkline_closes(pd.DataFrame()) == []
+
+
+def test_missing_cache_row_has_empty_sparkline_and_na_risk(tmp_path):
     cfg = _tmp_cfg(tmp_path)
     row = build_board_row("GBPUSD", cfg, refresh_data=False)
     assert row.buy_sell == "—"
     assert row.target == "n/a"
     assert NEED_FETCH_TRAIN in row.signal_details
     assert row.status == "need_fetch"
+    assert row.sparkline == []
+    assert row.risk is not None and row.risk.available is False
+    assert "no usable data" in (row.risk.reason or "").lower() or "missing" in (row.sparkline_note or "").lower()
 
 
 def test_refresh_skips_yfinance_when_model_missing(tmp_path, monkeypatch):

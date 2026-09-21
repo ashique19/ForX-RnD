@@ -104,6 +104,8 @@ def test_stale_row_does_not_flash_buy_sell():
     assert row.buy_sell == "—"
     assert "data stale" in row.signal_details
     assert row.raw_signal == "BUY"
+    assert row.sparkline == []
+    assert row.risk is not None and row.risk.available is False
 
 
 def test_closed_row_keeps_last_model_class():
@@ -125,6 +127,8 @@ def test_closed_row_keeps_last_model_class():
     row = apply_freshness(row, assess_ohlcv(df, "1h", now=now))
     assert row.validity == VALIDITY_CLOSED
     assert row.buy_sell == "SELL"
+    assert row.sparkline  # CLOSED still plots cached closes
+    assert row.risk is not None and row.risk.available
 
 
 def test_should_fetch_skips_closed_realtime_and_respects_min_interval():

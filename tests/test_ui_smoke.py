@@ -137,3 +137,6 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     assert "signal screen" in low
     assert "news context, not a trade instruction" in low or "news context" in low
     assert "last bar" in low or "board last refreshed" in low or "validity" in low
+    assert "sparkline" in low or "risk" in low
+    assert "paper" in low
+    assert "data health" in low or "awareness" in low

@@ -1,6 +1,6 @@
 """Forex Research Lab — local Streamlit dashboard.
 
-Research only. No broker APIs, no live orders, no auto-trading.
+Research only. No live broker APIs, no auto-trading. Paper fills are local.
 Run from the project root:  streamlit run streamlit_app.py
 """
 from __future__ import annotations
@@ -10,14 +10,17 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from forex_lab.broker import BrokerError, PaperBroker, make_broker
 from forex_lab.config_loader import load_config
 from forex_lab.paths import project_root
 from forex_lab.ui.board import (
     board_table,
     build_board_row,
+    research_risk,
     research_target,
     style_board,
 )
+from forex_lab.ui.health import build_health_rows
 from forex_lab.ui.pipeline import (
     artifact_status,
     equity_from_trades,
@@ -70,11 +73,13 @@ st.set_page_config(
 
 DISCLAIMER = (
     "**Decision-support only — not financial advice, not auto-trading.** "
-    "No broker APIs and **no order buttons**. You decide. "
+    "No live broker APIs. **Paper Buy/Sell/Close** records a local practice fill only "
+    "— not a vendor order, not auto-submit, not linked to a real account. "
     "yfinance quotes are **not** executable broker prices. "
     "News can be late, incomplete, or wrong; the bias note is a keyword heuristic on fetched headlines, not a call. "
     "Past backtests do not predict future results. Auto-refresh is **not** broker realtime. "
-    "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first."
+    "STALE or MISSING data never flashes BUY/SELL as a live call — refresh (Fetch) first. "
+    "Risk SL/TP is a research suggestion only — no lot size auto-submit, no live order ticket."
 )
 
 BOARD_HELP = """
@@ -91,8 +96,17 @@ not a false STALE panic. STALE/MISSING flash **—** with a reason — not a liv
 **Buy/Sell** — latest model class after the same filters as `python -m forex_lab signals`.
 Color badge is a research label, **not** an order. Only flashed when validity is OK or CLOSED.
 
-**Target** — for `triple_barrier`, last close ± ATR × tp/sl. Next-open fill is unknown
-on the latest bar, so close is a **proxy**. If barriers cannot be computed: `n/a`.
+**Target / Risk** — ATR SL and TP from the same `barrier.tp_atr` / `sl_atr` as labels and backtest,
+plus R:R and config spread. Entry is **last close as proxy** when `entry_timing=next_open`.
+Research suggestion only: **no lot size, no auto-submit, no live broker order**. HOLD or STALE/MISSING → n/a.
+
+**Sparkline** — last 24–48 cached closes of the row timeframe. Missing/STALE: empty chart + validity badge (no invented prices).
+
+**Paper desk** — Buy / Sell / Close talk only to `BrokerPort` (`broker.backend: paper`).
+Fills at the last cached close, stores a local JSON journal, and scores RIGHT/WRONG when
+later bars hit the same ATR barriers. **Not** a live order. One open paper position per pair.
+
+**Awareness** — expander listing OHLCV + news feeds with last update, cadence, and OK/STALE/FAIL.
 
 **Last update** — last candle time, last successful CSV write (fetch), last signal time.
 The board also shows a global **board last refreshed** timestamp.
@@ -245,6 +259,202 @@ def _news_bias_badge(bias: str) -> None:
         f'padding:6px 10px;border-radius:8px;display:inline-block">{b.upper()}</div>',
         unsafe_allow_html=True,
     )
+
+
+def _render_sparkline(row) -> None:
+    st.caption("Sparkline (cached close)")
+    if not getattr(row, "sparkline", None):
+        st.caption(getattr(row, "sparkline_note", None) or "n/a")
+        return
+    chart = pd.DataFrame({"close": list(row.sparkline)})
+    st.line_chart(chart, height=90, use_container_width=True)
+    st.caption(row.sparkline_note)
+
+
+def _render_risk(row) -> None:
+    st.markdown("**Risk**")
+    st.caption("Research suggestion only — not an order. No lot size, no auto-submit, no broker ticket.")
+    risk = getattr(row, "risk", None)
+    if risk is None or not risk.available:
+        reason = getattr(risk, "reason", None) if risk is not None else "n/a"
+        st.info(f"n/a — {reason}")
+        return
+    st.caption(f"Entry  {_fmt_num(risk.entry, 5)}  ·  {risk.entry_ref}")
+    st.caption(f"SL  {_fmt_num(risk.sl, 5)}   TP  {_fmt_num(risk.tp, 5)}")
+    rr = "n/a" if risk.rr is None else f"{risk.rr:.2f}"
+    st.caption(f"R:R  {rr}   (tp_atr={risk.tp_atr} / sl_atr={risk.sl_atr})")
+    if risk.spread_pips is not None:
+        st.caption(
+            f"Spread assumption  {risk.spread_pips:g} pips from config — not your broker’s spread."
+        )
+
+
+def _paper_broker(cfg) -> PaperBroker:
+    b = st.session_state.get("paper_broker")
+    if not isinstance(b, PaperBroker):
+        port = make_broker(cfg)
+        if not isinstance(port, PaperBroker):
+            raise BrokerError("expected PaperBroker")
+        b = port
+        st.session_state.paper_broker = b
+    else:
+        b.cfg = cfg
+        b.reload()
+    return b
+
+
+def _cached_quote(row, cfg):
+    ohlcv = load_cached_ohlcv(row.pair, cfg, row.timeframe)
+    if ohlcv is not None and not ohlcv.empty and "Close" in ohlcv.columns:
+        return float(ohlcv["Close"].iloc[-1]), str(ohlcv.index[-1]), ohlcv
+    if row.close:
+        try:
+            return float(row.close), str(row.last_bar_at or ""), ohlcv
+        except (TypeError, ValueError):
+            pass
+    return None, "", ohlcv
+
+
+def _driver_snapshot(row) -> str:
+    bits = []
+    for d in list(row.drivers or [])[:3]:
+        try:
+            bits.append(f"{d.feature} {d.contribution:+.3f}")
+        except Exception:
+            bits.append(str(getattr(d, "feature", d)))
+    return ", ".join(bits)
+
+
+def _render_paper_actions(row, cfg, broker: PaperBroker) -> None:
+    st.markdown("**Paper desk**")
+    st.caption("Practice fill at last cached close. Not a broker order. No auto-submit.")
+    price, entry_bar, ohlcv = _cached_quote(row, cfg)
+    open_pos = broker.open_for_pair(row.pair)
+    if open_pos:
+        st.caption(
+            f"Open {open_pos['side']} {float(open_pos['size']):g} @ "
+            f"{_fmt_num(open_pos['entry_price'], 5)}  ·  "
+            f"uPnL {_fmt_num(open_pos.get('unrealized'), 5)}  ·  {open_pos.get('outcome') or 'PENDING'}"
+        )
+        if st.button("Paper CLOSE", key=f"paper_close_{row.pair}_{row.timeframe}", use_container_width=True):
+            try:
+                if price is None:
+                    st.error("No cached price to close against.")
+                else:
+                    broker.close(open_pos["id"], price=price, reason="manual")
+                    st.success("Paper position closed (local journal only).")
+            except BrokerError as exc:
+                st.error(str(exc))
+        return
+    if price is None:
+        st.caption("n/a — no cached price for a paper fill.")
+        return
+    size = float((cfg.get("broker") or {}).get("default_size") or 1.0)
+    c1, c2 = st.columns(2)
+    buy = c1.button("Paper BUY", key=f"paper_buy_{row.pair}_{row.timeframe}", use_container_width=True)
+    sell = c2.button("Paper SELL", key=f"paper_sell_{row.pair}_{row.timeframe}", use_container_width=True)
+    side = "BUY" if buy else ("SELL" if sell else None)
+    if side is None:
+        return
+    box = research_risk(ohlcv, cfg, side, validity=VALIDITY_OK)
+    sl = box.sl if box.available else None
+    tp = box.tp if box.available else None
+    try:
+        broker.submit(
+            side,
+            row.pair,
+            size=size,
+            sl=sl,
+            tp=tp,
+            price=price,
+            timeframe=row.timeframe,
+            validity=row.validity,
+            model_signal=row.raw_signal or row.buy_sell,
+            confidence=row.confidence,
+            dir_edge=row.dir_edge,
+            p_buy=row.p_buy,
+            p_sell=row.p_sell,
+            p_hold=row.p_hold,
+            rationale=row.rationale or "",
+            drivers=_driver_snapshot(row),
+            entry_bar_time=entry_bar,
+            entry_ref="last close (paper fill; lab path is next-open)",
+            horizon=int(cfg.get("horizon") or 8),
+            note=f"validity={row.validity}",
+        )
+        st.success(f"Paper {side} recorded @ {_fmt_num(price, 5)} — local journal only.")
+        if row.validity == VALIDITY_STALE:
+            st.warning("Recorded on STALE data — scored later; not a live call.")
+    except BrokerError as exc:
+        st.error(str(exc))
+
+
+def _render_paper_journal(broker: PaperBroker) -> None:
+    st.caption(
+        "Local practice journal (`broker.backend: paper`). RIGHT = TP before SL on later cached bars; "
+        "WRONG = SL first; TIMEOUT = horizon; FLAT = manual close. PENDING until enough bars pass."
+    )
+    wrong_only = st.checkbox("Wrong trades only", key="paper_wrong_only")
+    rows = broker.journal()
+    if wrong_only:
+        rows = [r for r in rows if str(r.get("outcome")) == "WRONG"]
+    if not rows:
+        st.info("No paper trades yet. Use Paper BUY / SELL on a card.")
+    else:
+        show = pd.DataFrame(
+            [
+                {
+                    "when": r.get("entry_time"),
+                    "pair": r.get("pair"),
+                    "side": r.get("side"),
+                    "status": r.get("status"),
+                    "outcome": r.get("outcome"),
+                    "entry": r.get("entry_price"),
+                    "exit": r.get("exit_price"),
+                    "sl": r.get("sl"),
+                    "tp": r.get("tp"),
+                    "pnl": r.get("realized") if r.get("status") == "closed" else r.get("unrealized"),
+                    "validity": r.get("validity_at_entry"),
+                    "model": r.get("model_signal"),
+                    "conf": r.get("confidence"),
+                    "session": r.get("session"),
+                    "reason": r.get("exit_reason"),
+                    "drivers": r.get("drivers"),
+                }
+                for r in rows
+            ]
+        )
+        st.dataframe(show, use_container_width=True, hide_index=True)
+        if wrong_only:
+            for r in rows[:8]:
+                st.markdown(
+                    f"- **{r.get('pair')} {r.get('side')}**  validity={r.get('validity_at_entry')}  "
+                    f"model={r.get('model_signal')}  conf={r.get('confidence')}  "
+                    f"{(r.get('rationale') or '')[:180]}"
+                )
+    agg = broker.aggregates()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Right", str(agg["right"]))
+    m2.metric("Wrong", str(agg["wrong"]))
+    m3.metric("Pending", str(agg["n_pending"]))
+    err = agg.get("error_rate")
+    m4.metric("Error rate", "n/a" if err is None else f"{100 * err:.0f}%")
+    st.caption(
+        f"Timeout {agg['timeout']} · manual/flat {agg['flat']} · closed {agg['n_closed']}"
+    )
+    for title, key in (
+        ("By pair", "by_pair"),
+        ("By session", "by_session"),
+        ("By validity at entry", "by_validity"),
+        ("By confidence bucket", "by_confidence"),
+    ):
+        block = agg.get(key) or []
+        if block:
+            st.markdown(f"**{title}**")
+            st.dataframe(pd.DataFrame(block), use_container_width=True, hide_index=True)
+    st.markdown("**How to improve (stubs from this journal)**")
+    for note in agg.get("notes") or []:
+        st.caption("• " + note)
 
 
 def _render_news_lane(bundle: NewsBundle | None) -> None:
@@ -428,6 +638,39 @@ def render_watch_board(cfg) -> None:
         except Exception:
             news_map = {}
 
+        try:
+            broker = _paper_broker(cfg)
+        except BrokerError as exc:
+            st.error(str(exc))
+            broker = None
+        if broker is not None:
+            for row in rows:
+                broker.refresh_from_ohlcv(
+                    row.pair,
+                    load_cached_ohlcv(row.pair, cfg, row.timeframe),
+                    cfg,
+                )
+
+        news_ttl = int((cfg.get("news") or {}).get("cache_ttl_s") or 300)
+        health = build_health_rows(
+            rows,
+            news_map=news_map,
+            gate=_yf_gate(),
+            realtime=realtime,
+            refresh_s=seconds,
+            news_ttl_s=news_ttl,
+            yf_min_interval_s=int(bcfg.get("yf_min_interval_s") or YF_MIN_INTERVAL_S),
+        )
+        with st.expander("Awareness / data health", expanded=False):
+            st.caption(
+                "v0 — active feeds this board can see (OHLCV per pair + news). "
+                "Full registry / daily digest / weekly retrain stay later."
+            )
+            if health:
+                st.dataframe(pd.DataFrame(health), use_container_width=True, hide_index=True)
+            else:
+                st.info("Watchlist is empty — no feeds to report.")
+
         if not rows:
             st.info("Watchlist is empty. Add a pair below.")
         else:
@@ -484,6 +727,13 @@ def render_watch_board(cfg) -> None:
                             st.caption(f"Last model class (not live): {row.raw_signal}")
                     with right:
                         _render_news_lane(news)
+                    sp, rk = st.columns([1.55, 1.45])
+                    with sp:
+                        _render_sparkline(row)
+                    with rk:
+                        _render_risk(row)
+                        if broker is not None:
+                            _render_paper_actions(row, cfg, broker)
                     with st.expander("Drivers, rules, rationale, headlines"):
                         st.markdown(
                             f"- **Buy/Sell:** {row.buy_sell}  \n"
@@ -493,6 +743,8 @@ def render_watch_board(cfg) -> None:
                         )
                         if row.target_note:
                             st.caption(row.target_note)
+                        _render_risk(row)
+                        _render_sparkline(row)
                         if row.rationale or row.drivers or row.rules:
                             expl = SignalExplanation(
                                 pair=row.pair,
@@ -517,6 +769,10 @@ def render_watch_board(cfg) -> None:
                                 "Open **Lab** in the sidebar: Fetch then Train. "
                                 "The board does not invent prices."
                             )
+
+            if broker is not None:
+                with st.expander("Paper portfolio (practice desk — not a broker)", expanded=False):
+                    _render_paper_journal(broker)
 
             table = board_table(rows)
             with st.expander("Table view (Pair | Timeframe | Validity | Buy/Sell | Target | Last bar | Signal details)"):

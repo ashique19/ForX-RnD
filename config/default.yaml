@@ -114,6 +114,14 @@ news:
   cache_ttl_s: 300         # be polite to Google News; reuse for 5 minutes
   cache_file: data/news_cache.json
 
+# Paper practice desk (UI Buy/Sell/Close). Not a live venue.
+# Future mt5 / oanda would implement forex_lab.broker.BrokerPort the same way;
+# this repo does not store API keys or place live orders.
+broker:
+  backend: paper
+  store: data/paper_broker.json
+  default_size: 1.0         # paper units — not a lot-size ticket
+
 # Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
 board:
   realtime_seconds: 60     # st.fragment period when Realtime is checked
@@ -121,6 +129,7 @@ board:
   stale_bars: 2            # STALE if last bar older than N × timeframe in-session
   incremental_period: "5d" # short Yahoo window; merged into the existing CSV
   incremental_min_bars: 20
+  sparkline_bars: 48        # cached closes on each watchlist card
 
 # Paths (relative to project root)
 paths:

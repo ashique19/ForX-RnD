@@ -34,6 +34,26 @@ STATUS_NEED_FETCH = "need_fetch"
 STATUS_NEED_TRAIN = "need_train"
 STATUS_ERROR = "error"
 STATUS_STALE = "stale"
+SPARKLINE_BARS = 48
+
+
+@dataclass
+class RiskBox:
+    """ATR barrier suggestion for the UI. Not an order ticket."""
+
+    available: bool
+    reason: str = ""
+    side: str = ""
+    entry: float | None = None
+    entry_ref: str = ""
+    sl: float | None = None
+    tp: float | None = None
+    rr: float | None = None
+    spread_pips: float | None = None
+    atr: float | None = None
+    tp_atr: float | None = None
+    sl_atr: float | None = None
+    horizon: int | None = None
 
 
 @dataclass
@@ -66,6 +86,9 @@ class BoardRow:
     last_bar_at: str | None = None
     last_fetch_at: str | None = None
     last_signal_at: str | None = None
+    sparkline: list[float] = field(default_factory=list)
+    sparkline_note: str = ""
+    risk: RiskBox | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def as_table_dict(self) -> dict[str, str]:
@@ -98,23 +121,13 @@ def _fmt_when(value: object) -> str:
     return ts.strftime("%Y-%m-%d %H:%M")
 
 
-def research_target(ohlcv: pd.DataFrame | None, cfg: dict[str, Any], signal: str | None) -> tuple[str, str]:
-    """Best-effort barrier prices from the last bar + labeling config.
-
-    Triple-barrier labels fill at the *next* open. That fill is unknown on the
-    latest closed bar, so last close is used as a proxy and labeled as such.
-    """
+def _barrier_levels(ohlcv: pd.DataFrame | None, cfg: dict[str, Any]) -> dict[str, Any] | None:
+    """Last-close proxy + ATR TP/SL used by labels/backtest. None if not computable."""
+    if ohlcv is None or ohlcv.empty or "Close" not in ohlcv.columns:
+        return None
     scheme = str(cfg.get("label_scheme") or "triple_barrier").lower()
-    horizon = int(cfg.get("horizon") or 8)
-    entry_timing = str(cfg.get("entry_timing") or "next_open")
-    if ohlcv is None or ohlcv.empty:
-        return "n/a", f"no bars; scheme={scheme} horizon={horizon}"
     if scheme != "triple_barrier":
-        return (
-            f"n/a (scheme={scheme}, horizon={horizon})",
-            "forward_return / other schemes have no ATR barrier prices on the board",
-        )
-
+        return None
     b = cfg.get("barrier") or {}
     tp_atr = float(b.get("tp_atr", 2.0))
     sl_atr = float(b.get("sl_atr", 2.0))
@@ -123,28 +136,151 @@ def research_target(ohlcv: pd.DataFrame | None, cfg: dict[str, Any], signal: str
     atr = float(atr_s.iloc[-1]) if len(atr_s) else float("nan")
     close = float(ohlcv["Close"].iloc[-1])
     if not pd.notna(atr) or atr <= 0 or not pd.notna(close) or close <= 0:
-        return "n/a", "ATR or close unavailable on last bar"
+        return None
+    entry = close
+    return {
+        "entry": entry,
+        "atr": atr,
+        "tp_atr": tp_atr,
+        "sl_atr": sl_atr,
+        "long_tp": entry + tp_atr * atr,
+        "long_sl": entry - sl_atr * atr,
+        "short_tp": entry - tp_atr * atr,
+        "short_sl": entry + sl_atr * atr,
+        "rr": (tp_atr / sl_atr) if sl_atr else None,
+        "entry_timing": str(cfg.get("entry_timing") or "next_open"),
+        "horizon": int(cfg.get("horizon") or 8),
+        "spread_pips": float(cfg.get("spread_pips") or 0.0),
+        "scheme": scheme,
+    }
 
-    fill_proxy = close
-    long_tp = fill_proxy + tp_atr * atr
-    long_sl = fill_proxy - sl_atr * atr
-    short_tp = fill_proxy - tp_atr * atr
-    short_sl = fill_proxy + sl_atr * atr
+
+def research_risk(
+    ohlcv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+    signal: str | None,
+    *,
+    validity: str = VALIDITY_OK,
+) -> RiskBox:
+    """SL/TP suggestion from the same ATR barriers as labels/backtest.
+
+    Research only — not a broker ticket, no lot size, no submit.
+    """
+    sig = str(signal or "").upper()
+    if validity in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR}:
+        return RiskBox(
+            False,
+            reason=(
+                "data stale — refresh required"
+                if validity == VALIDITY_STALE
+                else "no usable data for a risk box"
+            ),
+        )
+    if sig in {"", "—", "-", "N/A", "HOLD"}:
+        return RiskBox(False, reason="HOLD / no directional signal — no SL/TP suggestion")
+    levels = _barrier_levels(ohlcv, cfg)
+    if levels is None:
+        scheme = str(cfg.get("label_scheme") or "triple_barrier")
+        return RiskBox(False, reason=f"barriers n/a (scheme={scheme})")
+    timing = levels["entry_timing"]
+    if timing == "next_open":
+        entry_ref = (
+            "last close as proxy — lab fill is next-open (unknown on this bar)"
+        )
+    elif timing == "same_close":
+        entry_ref = "last close (entry_timing=same_close)"
+    else:
+        entry_ref = f"last close (entry_timing={timing})"
+    if sig == "BUY":
+        sl, tp = levels["long_sl"], levels["long_tp"]
+    elif sig == "SELL":
+        sl, tp = levels["short_sl"], levels["short_tp"]
+    else:
+        return RiskBox(False, reason="HOLD / no directional signal — no SL/TP suggestion")
+    return RiskBox(
+        True,
+        side=sig,
+        entry=float(levels["entry"]),
+        entry_ref=entry_ref,
+        sl=float(sl),
+        tp=float(tp),
+        rr=None if levels["rr"] is None else float(levels["rr"]),
+        spread_pips=float(levels["spread_pips"]),
+        atr=float(levels["atr"]),
+        tp_atr=float(levels["tp_atr"]),
+        sl_atr=float(levels["sl_atr"]),
+        horizon=int(levels["horizon"]),
+    )
+
+
+def research_target(ohlcv: pd.DataFrame | None, cfg: dict[str, Any], signal: str | None) -> tuple[str, str]:
+    """Best-effort barrier prices from the last bar + labeling config.
+
+    Triple-barrier labels fill at the *next* open. That fill is unknown on the
+    latest closed bar, so last close is used as a proxy and labeled as such.
+    """
+    scheme = str(cfg.get("label_scheme") or "triple_barrier").lower()
+    horizon = int(cfg.get("horizon") or 8)
+    if ohlcv is None or ohlcv.empty:
+        return "n/a", f"no bars; scheme={scheme} horizon={horizon}"
+    levels = _barrier_levels(ohlcv, cfg)
+    if levels is None:
+        return (
+            f"n/a (scheme={scheme}, horizon={horizon})",
+            "forward_return / other schemes have no ATR barrier prices on the board"
+            if scheme != "triple_barrier"
+            else "ATR or close unavailable on last bar",
+        )
     sig = str(signal or "HOLD").upper()
     if sig == "BUY":
-        compact = f"TP {_fmt(long_tp, 5)} / SL {_fmt(long_sl, 5)}"
+        compact = f"TP {_fmt(levels['long_tp'], 5)} / SL {_fmt(levels['long_sl'], 5)}"
     elif sig == "SELL":
-        compact = f"TP {_fmt(short_tp, 5)} / SL {_fmt(short_sl, 5)}"
+        compact = f"TP {_fmt(levels['short_tp'], 5)} / SL {_fmt(levels['short_sl'], 5)}"
     else:
-        compact = f"upper {_fmt(long_tp, 5)} / lower {_fmt(long_sl, 5)}"
-
+        compact = f"upper {_fmt(levels['long_tp'], 5)} / lower {_fmt(levels['long_sl'], 5)}"
+    timing = levels["entry_timing"]
     note = (
         f"Research barriers only (not an order). scheme=triple_barrier "
-        f"tp_atr={tp_atr} sl_atr={sl_atr} ATR={_fmt(atr, 6)} horizon={horizon} bars. "
-        f"Label fill is {entry_timing}; last close {_fmt(close, 5)} used as proxy "
+        f"tp_atr={levels['tp_atr']} sl_atr={levels['sl_atr']} ATR={_fmt(levels['atr'], 6)} "
+        f"horizon={levels['horizon']} bars. "
+        f"Label fill is {timing}; last close {_fmt(levels['entry'], 5)} used as proxy "
         "because the next open is not available yet."
     )
     return compact, note
+
+
+def sparkline_closes(ohlcv: pd.DataFrame | None, n: int = SPARKLINE_BARS) -> list[float]:
+    if ohlcv is None or ohlcv.empty or "Close" not in getattr(ohlcv, "columns", []):
+        return []
+    s = pd.to_numeric(ohlcv["Close"], errors="coerce").dropna()
+    if s.empty:
+        return []
+    return [float(x) for x in s.tail(max(2, int(n))).tolist()]
+
+
+def attach_visuals(
+    row: BoardRow,
+    ohlcv: pd.DataFrame | None,
+    cfg: dict[str, Any],
+) -> BoardRow:
+    """Sparkline + risk box from cached bars. Never invents prices."""
+    n = int((cfg.get("board") or {}).get("sparkline_bars") or SPARKLINE_BARS)
+    if row.validity in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR} or ohlcv is None or ohlcv.empty:
+        row.sparkline = []
+        row.sparkline_note = (
+            "no sparkline — data stale or missing (cached path not shown as live)"
+            if row.validity == VALIDITY_STALE
+            else "no sparkline — no cached OHLCV"
+        )
+    else:
+        row.sparkline = sparkline_closes(ohlcv, n=n)
+        row.sparkline_note = (
+            f"last {len(row.sparkline)} {row.timeframe} closes from local cache"
+            if row.sparkline
+            else "no sparkline — close series empty"
+        )
+    row.risk = research_risk(ohlcv, cfg, row.buy_sell, validity=row.validity)
+    return row
 
 
 def _details_from_signal(
@@ -207,7 +343,7 @@ def row_from_signal(
     if ohlcv is not None and not ohlcv.empty:
         explanation = explain_latest_signal(pair, ohlcv, cfg, last, target=target)
 
-    return BoardRow(
+    row = BoardRow(
         pair=pair.upper(),
         timeframe=timeframe,
         buy_sell=sig,
@@ -231,7 +367,9 @@ def row_from_signal(
         drivers=list(explanation.drivers) if explanation is not None else [],
         rules=list(explanation.rules) if explanation is not None else [],
         last_signal_at=_fmt_when(get("datetime")),
+        validity=VALIDITY_OK,
     )
+    return attach_visuals(row, ohlcv, cfg)
 
 
 def _status_row(
@@ -294,6 +432,9 @@ def apply_freshness(
         if row.status == STATUS_READY:
             row.status = STATUS_STALE
         row.target = "n/a"
+        row.sparkline = []
+        row.sparkline_note = "no sparkline — data stale or missing (cached path not shown as live)"
+        row.risk = RiskBox(False, reason="data stale — refresh required")
     elif fresh.validity in {VALIDITY_MISSING, VALIDITY_ERROR} and row.buy_sell not in {"—"}:
         row.buy_sell = "—"
     return row
@@ -351,17 +492,21 @@ def build_board_row(
 
     n_bars = status.get("n_bars")
     if not status.get("data_exists"):
-        return _status_row(
-            pair,
-            interval,
-            STATUS_NEED_FETCH,
-            NEED_FETCH_TRAIN,
-            data_source=data_source,
-            n_bars=n_bars,
-            error="data CSV missing",
-            validity=VALIDITY_MISSING,
-            validity_reason="no OHLCV cache — Fetch required",
-            last_fetch_at=fetch_at if fetch_at != "n/a" else None,
+        return attach_visuals(
+            _status_row(
+                pair,
+                interval,
+                STATUS_NEED_FETCH,
+                NEED_FETCH_TRAIN,
+                data_source=data_source,
+                n_bars=n_bars,
+                error="data CSV missing",
+                validity=VALIDITY_MISSING,
+                validity_reason="no OHLCV cache — Fetch required",
+                last_fetch_at=fetch_at if fetch_at != "n/a" else None,
+            ),
+            None,
+            cfg,
         )
     if not status.get("model_exists"):
         ohlcv_only = load_cached_ohlcv(pair, cfg, interval)
@@ -379,19 +524,27 @@ def build_board_row(
             last_bar_at=fresh_m.last_bar_label,
             last_fetch_at=fetch_at if fetch_at != "n/a" else None,
         )
-        return apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at)
+        return attach_visuals(
+            apply_freshness(row, fresh_m, last_fetch_at=row.last_fetch_at),
+            ohlcv_only,
+            cfg,
+        )
 
     ohlcv = load_cached_ohlcv(pair, cfg, interval)
     if ohlcv is None or ohlcv.empty:
-        return _status_row(
-            pair,
-            interval,
-            STATUS_NEED_FETCH,
-            NEED_FETCH_TRAIN,
-            data_source=data_source,
-            error="data CSV unreadable",
-            validity=VALIDITY_MISSING,
-            validity_reason="data CSV unreadable",
+        return attach_visuals(
+            _status_row(
+                pair,
+                interval,
+                STATUS_NEED_FETCH,
+                NEED_FETCH_TRAIN,
+                data_source=data_source,
+                error="data CSV unreadable",
+                validity=VALIDITY_MISSING,
+                validity_reason="data CSV unreadable",
+            ),
+            None,
+            cfg,
         )
 
     last: pd.Series | dict[str, Any] | None = None
@@ -402,14 +555,18 @@ def build_board_row(
         try:
             sigs = generate_signals(ohlcv, cfg, pair)
         except FileNotFoundError:
-            return _status_row(
-                pair,
-                interval,
-                STATUS_NEED_TRAIN,
-                NEED_FETCH_TRAIN,
-                data_source=data_source or "cached",
-                n_bars=len(ohlcv),
-                error="model missing",
+            return attach_visuals(
+                _status_row(
+                    pair,
+                    interval,
+                    STATUS_NEED_TRAIN,
+                    NEED_FETCH_TRAIN,
+                    data_source=data_source or "cached",
+                    n_bars=len(ohlcv),
+                    error="model missing",
+                ),
+                ohlcv,
+                cfg,
             )
         except Exception as exc:  # noqa: BLE001 — surface as row status
             fresh_e = assess_ohlcv(ohlcv, interval, cfg, now=clock)
@@ -426,17 +583,21 @@ def build_board_row(
                 last_bar_at=fresh_e.last_bar_label,
                 last_fetch_at=fetch_at if fetch_at != "n/a" else None,
             )
-            return row
+            return attach_visuals(row, ohlcv, cfg)
         if sigs is None or sigs.empty:
-            return _status_row(
-                pair,
-                interval,
-                STATUS_ERROR,
-                "model produced no signal rows",
-                data_source=data_source or "cached",
-                n_bars=len(ohlcv),
-                validity=VALIDITY_ERROR,
-                validity_reason="model produced no signal rows",
+            return attach_visuals(
+                _status_row(
+                    pair,
+                    interval,
+                    STATUS_ERROR,
+                    "model produced no signal rows",
+                    data_source=data_source or "cached",
+                    n_bars=len(ohlcv),
+                    validity=VALIDITY_ERROR,
+                    validity_reason="model produced no signal rows",
+                ),
+                ohlcv,
+                cfg,
             )
         last = sigs.iloc[-1]
 
@@ -450,10 +611,10 @@ def build_board_row(
         n_bars=len(ohlcv),
     )
     fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
-    return apply_freshness(
-        row,
-        fresh,
-        last_fetch_at=fetch_at if fetch_at != "n/a" else None,
+    return attach_visuals(
+        apply_freshness(row, fresh, last_fetch_at=fetch_at if fetch_at != "n/a" else None),
+        ohlcv,
+        cfg,
     )
 
 
