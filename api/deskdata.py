@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.chart_indicators import chart_indicators_aligned, chart_price_digits, empty_indicators
 from forex_lab.clock import fmt_display, parse_ts, timezone_name, timezone_tag
 from forex_lab.config_loader import load_config, pip_size_for_pair
 from forex_lab.data import load_cached_ohlcv, try_yfinance_refresh
@@ -754,6 +755,8 @@ def ohlcv_payload(
             "validity": fresh.validity,
             "reason": fresh.reason or "no OHLCV cache",
             "bars": [],
+            "digits": chart_price_digits(symbol),
+            "indicators": empty_indicators(),
             "note": "MISSING — no cached bars. Fetch required. Nothing is invented.",
         }
     tail = frame.tail(n)
@@ -791,6 +794,8 @@ def ohlcv_payload(
         "reason": fresh.reason,
         "last_bar_dhaka": fmt_display(fresh.last_bar, cfg, seconds=True) if fresh.last_bar else "n/a",
         "bars": out_bars,
+        "digits": chart_price_digits(symbol),
+        "indicators": chart_indicators_aligned(frame, tail.index),
         "note": note,
     }
 

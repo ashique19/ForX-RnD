@@ -142,6 +142,41 @@ def test_ohlcv_uses_cache_and_missing_pair(client: TestClient):
     assert "invented" in miss["note"].lower() or "MISSING" in miss["note"]
 
 
+def test_ohlcv_indicators_align_with_bars(client: TestClient):
+    from forex_lab.chart_indicators import INDICATOR_KEYS
+
+    res = client.get("/ohlcv/EURUSD", params={"interval": "1h", "bars": 40})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["digits"] == 5
+    assert len(body["bars"]) == 40
+    indicators = body["indicators"]
+    assert set(indicators) == set(INDICATOR_KEYS)
+    for key, series in indicators.items():
+        assert len(series) == len(body["bars"]), key
+    assert any(value is not None for value in indicators["ema21"])
+    assert any(value is not None for value in indicators["rsi"])
+    assert any(value is not None for value in indicators["macd"])
+    assert any(value is not None for value in indicators["macd_hist"])
+    assert any(value is not None for value in indicators["atr"])
+    checked = 0
+    for macd, signal, hist in zip(indicators["macd"], indicators["macd_signal"], indicators["macd_hist"]):
+        if macd is None or signal is None or hist is None:
+            continue
+        assert hist == pytest.approx(macd - signal)
+        checked += 1
+    assert checked > 0
+    rsi_values = [value for value in indicators["rsi"] if value is not None]
+    assert rsi_values and all(0.0 <= value <= 100.0 for value in rsi_values)
+
+    missing = client.get("/ohlcv/GBPUSD", params={"interval": "1h", "bars": 30})
+    miss = missing.json()
+    assert miss["bars"] == []
+    assert miss["digits"] == 5
+    assert set(miss["indicators"]) == set(INDICATOR_KEYS)
+    assert all(series == [] for series in miss["indicators"].values())
+
+
 def test_brief_does_not_invent_daily_or_live_call_when_stale(client: TestClient):
     res = client.get("/brief/EURUSD", params={"tf": "1h"})
     assert res.status_code == 200

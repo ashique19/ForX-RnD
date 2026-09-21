@@ -487,13 +487,12 @@
     }
 
     /* —— Chart panel —— */
-    .chart { flex: 1; min-height: 280px; }
+    .chart { flex: 1; min-height: 420px; }
     .chart-toolbar {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
+      padding: 8px 12px 4px;
       flex-wrap: wrap;
     }
     .tf-chips {
@@ -555,6 +554,63 @@
     .ohlc b { color: var(--text); font-weight: 600; }
     .ohlc .up { color: var(--green); }
     .ohlc .dn { color: var(--red); }
+    .ind-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 12px 6px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .ind-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+    .ind-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--border-strong);
+    }
+    .ind-chip.on {
+      background: var(--blue-bg);
+      border-color: #b2ddff;
+      color: #1849a9;
+    }
+    .ind-chip.on .dot { background: var(--on, var(--blue)); }
+    .ind-readout {
+      margin-left: auto;
+      display: flex;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-2);
+    }
+    .pane-tag {
+      position: absolute;
+      z-index: 4;
+      top: 4px;
+      left: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #667085;
+      pointer-events: none;
+      font-family: var(--font);
+      background: rgba(250, 251, 252, 0.88);
+      padding: 0 4px;
+      border-radius: 3px;
+    }
 
     .chart-area {
       flex: 1;
@@ -806,7 +862,7 @@
       background: var(--surface);
     }
     .add-pop input { width: 92px; text-transform: uppercase; }
-    .chart-canvas { flex: 1; min-height: 220px; position: relative; }
+    .chart-canvas { flex: 1; min-height: 320px; position: relative; }
     .chart-note {
       position: absolute;
       top: 8px;
@@ -854,5 +910,5 @@
     }
     .watchlist.panel { overflow: visible; }
     .right-col > .brief { flex: 1 1 48%; min-height: 0; }
-    .right-col > .chart { flex: 1 1 52%; min-height: 240px; }
+    .right-col > .chart { flex: 1 1 62%; min-height: 420px; }
     table.wl tbody tr { cursor: pointer; }
