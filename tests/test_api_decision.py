@@ -378,6 +378,43 @@ def test_live_label_agrees_with_bar_age_and_session_stays_separate():
     assert h1["session"]["text"] == "NY"
     assert h1["session"]["text"] not in h1["data"]["text"]
     assert h1["age"] == "55m"
+    assert h1["fetch_age"] == "—"
+    assert h1["fetch_age_s"] is None
+
+
+def test_fetch_age_is_last_refresh_and_forming_h1_stays_live():
+    """Watchlist primary age is last successful fetch, not the open H1 bar."""
+    from api.deskdata import fetch_age_label, row_json
+
+    now = datetime(2026, 9, 22, 0, 30, 12, tzinfo=timezone.utc)
+    cfg = {"board": {"stale_bars": 2}}
+    forming = _age_row("1h", "2026-09-22 00:00:00 UTC", validity="OK")
+    forming.last_fetch_at = "2026-09-22 00:30:00 UTC"
+    body = row_json(forming, now=now, cfg=cfg)
+    assert body["validity"] == VALIDITY_OK
+    assert body["data"]["text"] == "Live"
+    assert body["signal"] == "BUY"
+    assert body["age"] == "30m"
+    assert body["age_s"] == pytest.approx(1812, abs=1)
+    assert body["fetch_age"] == "just now"
+    assert body["fetch_age_s"] == pytest.approx(12, abs=1)
+
+    two_min = _age_row("1h", "2026-09-22 00:00:00 UTC", validity="OK")
+    two_min.last_fetch_at = "2026-09-22 00:28:00 UTC"
+    older = row_json(two_min, now=now, cfg=cfg)
+    assert older["fetch_age"] == "fetched 2m"
+    assert older["validity"] == VALIDITY_OK
+    assert older["data"]["text"] == "Live"
+    assert older["age"] == "30m"
+
+    missing = row_json(_age_row("1h", "2026-09-22 00:00:00 UTC"), now=now, cfg=cfg)
+    assert missing["fetch_age"] == "—"
+    assert missing["fetch_age_s"] is None
+    assert missing["data"]["text"] == "Live"
+    assert fetch_age_label(0) == "just now"
+    assert fetch_age_label(59) == "just now"
+    assert fetch_age_label(60) == "fetched 1m"
+    assert fetch_age_label(None) == "—"
 
 
 def test_hold_brief_uses_research_barriers_when_price_exists():

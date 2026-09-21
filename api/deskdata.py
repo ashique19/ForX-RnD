@@ -146,6 +146,15 @@ def compact_age(seconds: float | None) -> str:
     return f"{s // 86400}d"
 
 
+def fetch_age_label(seconds: float | None) -> str:
+    """Time since the last successful fetch. Not the forming-bar open age."""
+    if seconds is None:
+        return "—"
+    if seconds < 60:
+        return "just now"
+    return f"fetched {compact_age(seconds)}"
+
+
 def _age_s(label: object, *, now: datetime | None = None) -> float | None:
     ts = parse_ts(label)
     if ts is None:
@@ -234,6 +243,7 @@ def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | Non
         last_px = _num(getattr(quote, "last", None))
     target = _target_price(row)
     age = _age_s(getattr(row, "last_bar_at", None), now=now)
+    fetched = _age_s(getattr(row, "last_fetch_at", None), now=now)
     validity = agree_validity(raw_validity, age, interval, cfg)
     reason = str(getattr(row, "validity_reason", "") or "")
     if validity == VALIDITY_STALE and raw_validity == VALIDITY_OK:
@@ -258,6 +268,8 @@ def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | Non
         "session": session_view(row),
         "age": compact_age(age),
         "age_s": None if age is None else round(age, 1),
+        "fetch_age": fetch_age_label(fetched),
+        "fetch_age_s": None if fetched is None else round(fetched, 1),
         "last_bar_dhaka": fmt_display(getattr(row, "last_bar_at", None), seconds=True),
         "last_fetch_dhaka": fmt_display(getattr(row, "last_fetch_at", None), seconds=True),
         "last_signal_dhaka": fmt_display(getattr(row, "last_signal_at", None), seconds=True),

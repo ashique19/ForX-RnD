@@ -34,6 +34,9 @@ export interface BoardRow {
   data: { text: string; tone: Tone };
   session: { text: string; key: string };
   age: string;
+  age_s?: number | null;
+  fetch_age?: string;
+  fetch_age_s?: number | null;
   last_bar_dhaka: string;
   last_fetch_dhaka: string;
   last_signal_dhaka: string;
