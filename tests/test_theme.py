@@ -66,6 +66,10 @@ def test_style_board_uses_dark_signal_colors():
     assert SELL in sell_css
     assert "background-color" in hold_css
     assert "16c784" in validity_cell_style("OK") or BUY in validity_cell_style("OK")
+    assert "ea3943" in validity_cell_style("FAIL") or SELL in validity_cell_style("FAIL")
+    from forex_lab.ui.theme import awareness_status_style, WARN
+
+    assert WARN in awareness_status_style("STALE · data stale")
     assert alert_tone("stale") != alert_tone("flip")
 
 
