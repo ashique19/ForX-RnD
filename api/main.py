@@ -18,7 +18,7 @@ from forex_lab.clock import fmt_display, timezone_name
 from forex_lab.ui.watchlist import WatchlistError, normalize_pair
 
 from api import __version__ as api_version
-from forex_lab.broker import MAX_OPENS_PER_HOUR, BrokerError
+from forex_lab.broker import MAX_OPENS_PER_HOUR, MIN_CONFIDENCE_CAP, MIN_CONFIDENCE_FLOOR, BrokerError
 
 from api.consensus import ConsensusError, ensure_consensus, read_consensus
 from api.deskdata import (
@@ -107,6 +107,7 @@ class ReplayTrainBody(BaseModel):
 class PaperAutoBody(BaseModel):
     enabled: bool | None = None
     max_opens_per_hour: int | None = Field(default=None, ge=0, le=MAX_OPENS_PER_HOUR)
+    min_confidence: int | None = Field(default=None, ge=MIN_CONFIDENCE_FLOOR, le=MIN_CONFIDENCE_CAP)
 
 
 def create_app() -> FastAPI:
@@ -273,10 +274,14 @@ def create_app() -> FastAPI:
 
     @app.post("/portfolio/auto")
     def post_portfolio_auto(body: PaperAutoBody) -> dict:
-        if body.enabled is None and body.max_opens_per_hour is None:
-            raise HTTPException(status_code=400, detail="enabled or max_opens_per_hour is required")
-        set_auto_settings(enabled=body.enabled, max_opens_per_hour=body.max_opens_per_hour)
-        # Pausing freezes the book. A cap-only change still runs the auto step.
+        if body.enabled is None and body.max_opens_per_hour is None and body.min_confidence is None:
+            raise HTTPException(status_code=400, detail="enabled, max_opens_per_hour, or min_confidence is required")
+        set_auto_settings(
+            enabled=body.enabled,
+            max_opens_per_hour=body.max_opens_per_hour,
+            min_confidence=body.min_confidence,
+        )
+        # Pausing freezes the book. A cap or confidence change still runs the auto step.
         return portfolio_payload(sync=body.enabled is not False)
 
     @app.post("/paper/order")

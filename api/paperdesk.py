@@ -348,6 +348,44 @@ def _live_signal(suggestion: dict[str, Any]) -> str | None:
     return None
 
 
+def _confidence_pct(suggestion: dict[str, Any], row: Any) -> int | None:
+    """Same percent the desk prints. 0–1 fractions become 0–100. Missing stays missing."""
+    raw = _f(suggestion.get("confidence"))
+    if raw is None:
+        raw = _f(getattr(row, "confidence", None))
+    if raw is None:
+        return None
+    if 0.0 <= raw <= 1.0:
+        raw = 100.0 * raw
+    return int(round(raw))
+
+
+def _eligible_side(live: str | None, pct: int | None, min_confidence: int) -> str:
+    if live in {"BUY", "SELL"} and pct is not None and pct >= min_confidence:
+        return live
+    return ""
+
+
+def _block_status(
+    *,
+    enabled: bool,
+    rate_status: str | None,
+    blocks: list[str],
+    min_confidence: int,
+) -> str | None:
+    """One short line for the binding auto-open block. Empty when nothing is blocking."""
+    parts: list[str] = []
+    if not enabled:
+        parts.append("Paused")
+    if rate_status:
+        parts.append(rate_status)
+    elif "gated" in blocks:
+        parts.append("Gated")
+    elif "below" in blocks:
+        parts.append(f"Below threshold ({min_confidence}%)")
+    return " · ".join(parts) or None
+
+
 def _watch_rows(cfg: dict[str, Any]) -> list[Any]:
     desk = _desk()
     wl = desk.load_wl(cfg)
@@ -411,6 +449,10 @@ def _auto_one(
     cfg: dict[str, Any],
     now: datetime | None,
     seen: dict[str, str],
+    *,
+    min_confidence: int,
+    blocks: list[str],
+    trade: bool = True,
 ) -> list[str]:
     symbol = str(getattr(row, "pair", "") or "").upper()
     if not symbol:
@@ -422,11 +464,18 @@ def _auto_one(
     price, entry_bar = _price_from_cache(symbol, cfg, interval, row)
     live = _live_signal(suggestion)
     allowed = paper_submit_allowed(getattr(row, "validity", None), row, cfg)
+    pct = _confidence_pct(suggestion, row)
+    eligible = _eligible_side(live, pct, min_confidence) if allowed else ""
+    if not trade:
+        if live and not allowed:
+            blocks.append("gated")
+        elif live and allowed and not eligible and position_for_pair(broker, symbol) is None:
+            blocks.append("below")
+        return []
     when = _stamp(now)
     clock = _as_utc(now)
     events: list[str] = []
     pos = position_for_pair(broker, symbol)
-    closed_opposite = False
     if pos is not None and price is not None:
         reason = _barrier_reason(pos, price)
         if reason is None and _duration_expired(pos, clock):
@@ -436,16 +485,23 @@ def _auto_one(
         if reason:
             broker.close(str(pos["id"]), price=price, reason=reason, timestamp=when)
             events.append(f"{symbol} close {reason}")
-            closed_opposite = reason == "opposite"
             pos = None
-    flipped = symbol in seen and seen.get(symbol) != live
-    want_open = pos is None and allowed and bool(live) and (flipped or closed_opposite)
+    # A cross is a new eligible side versus the last allowed reading.
+    # The first reading is stored and not filled. The same side staying
+    # eligible — including a small confidence tick — does not open again.
+    known = symbol in seen
+    crossed = known and bool(eligible) and seen.get(symbol) != eligible
+    want_open = pos is None and allowed and bool(eligible) and crossed
     pending_fill = want_open and price is None
     rate_blocked = False
+    if live and not allowed:
+        blocks.append("gated")
+    elif live and allowed and not eligible and pos is None:
+        blocks.append("below")
     if want_open and price is not None:
         cap = int(broker.read_auto()["max_opens_per_hour"])
         if _auto_opens_in_window(broker, clock) >= cap:
-            # Leave ``seen`` unchanged so the flip retries when the hour frees a slot.
+            # Leave ``seen`` unchanged so the cross retries when the hour frees a slot.
             rate_blocked = True
             events.append(f"{symbol} skip rate")
         else:
@@ -454,15 +510,15 @@ def _auto_one(
                 row,
                 cfg,
                 suggestion,
-                side=str(live),
+                side=eligible,
                 price=price,
                 entry_bar=entry_bar,
                 when=when,
             )
-            events.append(f"{symbol} open {live}")
-    # A flip we could not fill stays unseen so the next cadence can retry.
+            events.append(f"{symbol} open {eligible}")
+    # A cross we could not fill stays unseen so the next cadence can retry.
     if allowed and not pending_fill and not rate_blocked:
-        seen[symbol] = live or ""
+        seen[symbol] = eligible
     return events
 
 
@@ -474,13 +530,17 @@ def run_auto_paper(
 ) -> dict[str, Any]:
     """Open/close paper trades from the current brief. No-op when auto is paused.
 
-    First sight of a BUY/SELL is recorded and not filled. A later change into
-    BUY or SELL (or an opposite close) is the flip that trades.
+    The first allowed reading of a pair is recorded and not filled. An auto
+    open then requires a cross: confidence reaches ``min_confidence`` on a
+    clear BUY or SELL, or the eligible side changes. A later tick of the same
+    eligible side does not open again. After a close, the same eligible side
+    stays quiet until it becomes ineligible and crosses once more.
 
-    Auto opens share one rolling 60-minute budget (``max_opens_per_hour``).
-    Stops, targets, duration, and opposite closes still run at the cap.
-    The follow-up open waits. Manual orders are outside this budget.
-    Per-pair caps are not implemented.
+    Auto opens share one rolling 60-minute budget (``max_opens_per_hour``)
+    and one confidence minimum. Stops, targets, duration, and opposite closes
+    still run at the cap and below the confidence minimum. The follow-up open
+    waits until the new side is eligible and under the cap. Manual orders are
+    outside this budget. Per-pair caps are not implemented.
     """
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
@@ -488,38 +548,72 @@ def run_auto_paper(
         broker = _paper(cfg)
         broker.reload()
         auto = broker.read_auto()
-        if not auto["enabled"]:
-            return {"events": [], "errors": [], "auto_enabled": False}
-        seen = dict(auto["seen"])
-        original = dict(seen)
+        min_confidence = int(auto["min_confidence"])
         if rows is None:
             rows = _watch_rows(cfg)
+        if not auto["enabled"]:
+            blocks: list[str] = []
+            errors: list[dict[str, str]] = []
+            for row in rows:
+                pair = str(getattr(row, "pair", "") or "")
+                try:
+                    _auto_one(
+                        broker,
+                        row,
+                        cfg,
+                        now,
+                        {},
+                        min_confidence=min_confidence,
+                        blocks=blocks,
+                        trade=False,
+                    )
+                except Exception as exc:
+                    errors.append({"pair": pair.upper(), "error": str(exc)})
+            return {"events": [], "errors": errors, "auto_enabled": False, "blocks": blocks}
+        seen = dict(auto["seen"])
+        original = dict(seen)
         events: list[str] = []
-        errors: list[dict[str, str]] = []
+        errors = []
+        blocks = []
         for row in rows:
             pair = str(getattr(row, "pair", "") or "")
             try:
-                events.extend(_auto_one(broker, row, cfg, now, seen))
+                events.extend(
+                    _auto_one(
+                        broker,
+                        row,
+                        cfg,
+                        now,
+                        seen,
+                        min_confidence=min_confidence,
+                        blocks=blocks,
+                    )
+                )
             except Exception as exc:
                 errors.append({"pair": pair.upper(), "error": str(exc)})
         if seen != original:
             broker.write_auto(seen=seen)
-        return {"events": events, "errors": errors, "auto_enabled": True}
+        return {"events": events, "errors": errors, "auto_enabled": True, "blocks": blocks}
 
 
 def set_auto_settings(
     *,
     enabled: bool | None = None,
     max_opens_per_hour: int | None = None,
+    min_confidence: int | None = None,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Persist the pause switch and/or the shared hourly auto-open cap."""
+    """Persist the pause switch, the shared hourly cap, and the confidence minimum."""
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
     with _PAPER_LOCK:
         broker = _paper(cfg)
         broker.reload()
-        return broker.write_auto(enabled=enabled, max_opens_per_hour=max_opens_per_hour)
+        return broker.write_auto(
+            enabled=enabled,
+            max_opens_per_hour=max_opens_per_hour,
+            min_confidence=min_confidence,
+        )
 
 
 def set_auto_enabled(enabled: bool, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -605,13 +699,14 @@ def portfolio_payload(
     *,
     sync: bool = True,
     now: datetime | None = None,
+    rows: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Open positions and recent closed paper trades. Optional auto step first."""
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
     auto_run: dict[str, Any] = {"events": [], "errors": [], "auto_enabled": True}
     if sync:
-        auto_run = run_auto_paper(cfg, now=now)
+        auto_run = run_auto_paper(cfg, rows=rows, now=now)
     clock = _as_utc(now)
     with _PAPER_LOCK:
         broker = _paper(cfg)
@@ -634,18 +729,27 @@ def portfolio_payload(
         ]
         opens_this_hour = _auto_opens_in_window(broker, clock)
         cap = int(auto["max_opens_per_hour"])
+        min_confidence = int(auto["min_confidence"])
     try:
         refresh = int(desk.load_wl(cfg).refresh_seconds)
     except Exception:
         refresh = int((cfg.get("board") or {}).get("realtime_seconds") or 60)
     rate_limited = opens_this_hour >= cap
+    rate_status = f"Rate-limited: {opens_this_hour}/{cap} opens this hour" if rate_limited else None
     return {
         "timezone": timezone_name(cfg),
         "auto_enabled": bool(auto["enabled"]),
         "max_opens_per_hour": cap,
+        "min_confidence": min_confidence,
         "opens_this_hour": opens_this_hour,
         "rate_limited": rate_limited,
-        "rate_status": (f"Rate-limited: {opens_this_hour}/{cap} opens this hour" if rate_limited else None),
+        "rate_status": rate_status,
+        "block_status": _block_status(
+            enabled=bool(auto["enabled"]),
+            rate_status=rate_status,
+            blocks=list(auto_run.get("blocks") or []),
+            min_confidence=min_confidence,
+        ),
         "refresh_seconds": max(60, refresh),
         "generated_at_dhaka": fmt_display(clock, cfg, seconds=True),
         "open": open_rows,

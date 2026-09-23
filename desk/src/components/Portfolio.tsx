@@ -77,12 +77,20 @@ export function PortfolioPanel() {
   const [reloadKey, setReloadKey] = useState(0);
   const [capDraft, setCapDraft] = useState("3");
   const [capFocused, setCapFocused] = useState(false);
+  const [confDraft, setConfDraft] = useState(65);
+  const [confDragging, setConfDragging] = useState(false);
   const capFromFeed = feed?.max_opens_per_hour;
+  const confFromFeed = feed?.min_confidence;
 
   useEffect(() => {
     if (capFocused || busy || capFromFeed == null) return;
     setCapDraft(String(capFromFeed));
   }, [capFromFeed, capFocused, busy]);
+
+  useEffect(() => {
+    if (confDragging || busy || confFromFeed == null) return;
+    setConfDraft(confFromFeed);
+  }, [confFromFeed, confDragging, busy]);
 
   useEffect(() => {
     let cancel = false;
@@ -135,6 +143,26 @@ export function PortfolioPanel() {
     }
   }
 
+  async function commitConf(value: number) {
+    const current = feed?.min_confidence ?? 65;
+    if (!Number.isInteger(value) || value < 50 || value > 90) {
+      setConfDraft(current);
+      return;
+    }
+    if (value === current) return;
+    setBusy(true);
+    try {
+      const next = await api.setAutoPaper({ min_confidence: value });
+      setFeed(next);
+      setError(null);
+    } catch (err) {
+      setConfDraft(current);
+      setError(err instanceof Error ? err.message : "Could not update minimum confidence");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function commitCap() {
     const nextCap = parseCap(capDraft);
     const current = feed?.max_opens_per_hour ?? 3;
@@ -175,6 +203,34 @@ export function PortfolioPanel() {
           />
           Auto paper
         </label>
+        <label className="auto-conf">
+          Min confidence
+          <input
+            type="range"
+            min={50}
+            max={90}
+            step={1}
+            aria-label="Minimum confidence"
+            aria-valuemin={50}
+            aria-valuemax={90}
+            aria-valuenow={confDraft}
+            aria-valuetext={`${confDraft} percent`}
+            value={confDraft}
+            disabled={busy || !feed}
+            onPointerDown={() => setConfDragging(true)}
+            onChange={(e) => setConfDraft(Number(e.target.value))}
+            onPointerUp={(e) => {
+              setConfDragging(false);
+              void commitConf(Number(e.currentTarget.value));
+            }}
+            onKeyUp={(e) => void commitConf(Number(e.currentTarget.value))}
+            onBlur={(e) => {
+              setConfDragging(false);
+              void commitConf(Number(e.currentTarget.value));
+            }}
+          />
+          <span className="pct">{confDraft}%</span>
+        </label>
         <label className="auto-rate">
           Max opens / hour
           <input
@@ -203,15 +259,15 @@ export function PortfolioPanel() {
       </header>
       <p className="port-note">
         {autoOn
-          ? "Auto opens when a watched brief flips to BUY or SELL (not the first reading). Closes on stop, target, duration, or the opposite signal. Fills use the cached last close."
+          ? "Auto opens when confidence crosses the minimum on a clear BUY or SELL (not the first reading, and not again while that side stays eligible). After a close, a new cross can open again. Closes on stop, target, duration, or the opposite signal. Fills use the cached last close."
           : "Auto is paused. Open paper trades stay in this book until you close them from the signal brief. Pausing stops every auto open and close."}
         {" "}
-        The hourly cap is one shared budget for every pair and applies to auto opens only. Per-pair caps can come later.
+        The hourly cap and the confidence minimum are shared across every pair. Auto opens only. Per-pair caps can come later.
         {feed?.generated_at_dhaka ? ` Updated ${feed.generated_at_dhaka}.` : ""}
       </p>
-      {feed?.rate_status ? (
+      {feed?.block_status ? (
         <p className="port-rate" role="status">
-          {feed.rate_status}
+          {feed.block_status}
         </p>
       ) : null}
       {error ? <p className="port-error">{error}</p> : null}

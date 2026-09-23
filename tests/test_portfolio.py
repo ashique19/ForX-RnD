@@ -31,7 +31,7 @@ def _cfg(store: Path) -> dict:
     }
 
 
-def _row(signal: str = "BUY", *, validity: str = "OK", confidence: float | None = 0.64) -> BoardRow:
+def _row(signal: str = "BUY", *, validity: str = "OK", confidence: float | None = 0.70) -> BoardRow:
     return BoardRow(
         pair="EURUSD",
         timeframe="1h",
@@ -73,7 +73,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, store: Path, suggestion: dict, clo
 def _suggest(**over: object) -> dict:
     base = {
         "signal": "BUY",
-        "confidence": 0.64,
+        "confidence": 0.70,
         "stop": 1.09,
         "target": 1.12,
         "horizon_bars": 8,
@@ -102,7 +102,7 @@ def test_first_sight_does_not_open_and_a_flip_does(tmp_path: Path, monkeypatch: 
     assert book["open"] == []
     assert book["auto_enabled"] is True
 
-    opened = run_auto_paper(cfg, rows=[_row("HOLD", confidence=0.64)], now=T0 + timedelta(minutes=1))
+    opened = run_auto_paper(cfg, rows=[_row("HOLD", confidence=0.70)], now=T0 + timedelta(minutes=1))
     assert opened["events"] == []
     opened = run_auto_paper(cfg, rows=[_row()], now=T0 + timedelta(minutes=2))
     assert opened["events"] == ["EURUSD open BUY"]
@@ -112,8 +112,8 @@ def test_first_sight_does_not_open_and_a_flip_does(tmp_path: Path, monkeypatch: 
     assert row["pair"] == "EURUSD"
     assert row["status"] == "open"
     assert row["trigger"] == "BUY"
-    assert row["confidence"] == pytest.approx(0.64)
-    assert row["confidence_text"] == "64%"
+    assert row["confidence"] == pytest.approx(0.70)
+    assert row["confidence_text"] == "70%"
     assert row["entry_price"] == pytest.approx(1.10)
     assert row["exit_price"] is None
     assert row["exit_price_text"] == "—"
@@ -128,15 +128,29 @@ def test_first_sight_does_not_open_and_a_flip_does(tmp_path: Path, monkeypatch: 
     assert row["duration"]
 
 
-def test_missing_confidence_is_an_em_dash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_missing_confidence_does_not_auto_open_and_a_manual_fill_stays_blank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     store = tmp_path / "paper.json"
     _install(monkeypatch, store, _suggest(confidence=None), 1.10)
     cfg = _cfg(store)
     run_auto_paper(cfg, rows=[_row("HOLD", confidence=None)], now=T0)
-    run_auto_paper(cfg, rows=[_row(confidence=None)], now=T0 + timedelta(minutes=1))
-    row = portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=1))["open"][0]
-    assert row["confidence"] is None
-    assert row["confidence_text"] == "—"
+    blocked = run_auto_paper(cfg, rows=[_row(confidence=None)], now=T0 + timedelta(minutes=1))
+    assert blocked["events"] == []
+    assert "below" in blocked["blocks"]
+    book = portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=1))
+    assert book["open"] == []
+    assert book["min_confidence"] == 65
+
+    row = _row(confidence=None)
+    monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: row)
+    from api.paperdesk import paper_order
+
+    paper_order("EURUSD", "BUY", cfg=cfg)
+    filled = portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=2))["open"][0]
+    assert filled["source"] == "manual"
+    assert filled["confidence"] is None
+    assert filled["confidence_text"] == "—"
 
 
 def test_stale_and_pause_and_same_signal_do_not_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -185,7 +199,7 @@ def test_sl_tp_duration_and_opposite(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert sl["pnl_price"] == pytest.approx(-0.02)
     assert sl["pnl_text"].startswith("-")
     assert "R" in sl["pnl_text"]
-    assert sl["confidence_text"] == "64%"
+    assert sl["confidence_text"] == "70%"
     assert "Asia/Dhaka" in (sl["exit_time_dhaka"] or "")
 
     # Same BUY is not a new flip, so the stop-out does not immediately re-enter.
@@ -308,7 +322,17 @@ def test_http_portfolio_toggle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     body = paused.json()
     assert body["auto_enabled"] is False
     assert body["max_opens_per_hour"] == 0
+    assert body["min_confidence"] == 65
     assert body["rate_status"] == "Rate-limited: 0/0 opens this hour"
+    assert body["block_status"] == "Paused · Rate-limited: 0/0 opens this hour"
+
+    client.post("/portfolio/auto", json={"enabled": True, "max_opens_per_hour": 3})
+    tuned = client.post("/portfolio/auto", json={"min_confidence": 80})
+    assert tuned.status_code == 200
+    assert tuned.json()["min_confidence"] == 80
+    assert client.get("/portfolio", params={"sync": "false"}).json()["min_confidence"] == 80
+    assert client.post("/portfolio/auto", json={"min_confidence": 40}).status_code == 422
+    assert client.post("/portfolio/auto", json={"min_confidence": 95}).status_code == 422
 
 
 def _reenter(cfg: dict, when: datetime) -> dict:
@@ -432,3 +456,82 @@ def test_opposite_close_still_runs_when_the_hourly_cap_is_full(tmp_path: Path, m
     assert book["closed"][0]["outcome"] == "FLAT"
     assert book["opens_this_hour"] == 1
     assert book["rate_status"] == "Rate-limited: 1/1 opens this hour"
+
+
+def test_confidence_crosses_once_and_a_tick_does_not_reopen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+
+    first = run_auto_paper(cfg, rows=[_row(confidence=0.80)], now=T0)
+    assert first["events"] == []
+    tick = run_auto_paper(cfg, rows=[_row(confidence=0.82)], now=T0 + timedelta(minutes=1))
+    assert tick["events"] == []
+    assert portfolio_payload(cfg, sync=False)["open"] == []
+
+    dipped = run_auto_paper(cfg, rows=[_row(confidence=0.40)], now=T0 + timedelta(minutes=2))
+    assert dipped["events"] == []
+    assert "below" in dipped["blocks"]
+    status = portfolio_payload(
+        cfg, sync=True, rows=[_row(confidence=0.40)], now=T0 + timedelta(minutes=3)
+    )
+    assert status["open"] == []
+    assert status["block_status"] == "Below threshold (65%)"
+
+    opened = run_auto_paper(cfg, rows=[_row(confidence=0.80)], now=T0 + timedelta(minutes=4))
+    assert opened["events"] == ["EURUSD open BUY"]
+    again = run_auto_paper(cfg, rows=[_row(confidence=0.81)], now=T0 + timedelta(minutes=5))
+    assert again["events"] == []
+
+    _install(monkeypatch, store, _suggest(), 1.08)
+    assert run_auto_paper(cfg, rows=[_row(confidence=0.81)], now=T0 + timedelta(minutes=6))["events"] == [
+        "EURUSD close sl"
+    ]
+    held = run_auto_paper(cfg, rows=[_row(confidence=0.90)], now=T0 + timedelta(minutes=7))
+    assert held["events"] == []
+    _install(monkeypatch, store, _suggest(), 1.10)
+    run_auto_paper(cfg, rows=[_row(confidence=0.40)], now=T0 + timedelta(minutes=8))
+    reopened = run_auto_paper(cfg, rows=[_row(confidence=0.90)], now=T0 + timedelta(minutes=9))
+    assert reopened["events"] == ["EURUSD open BUY"]
+
+
+def test_side_flip_opens_and_a_weak_opposite_only_closes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+    run_auto_paper(cfg, rows=[_row("HOLD")], now=T0)
+    assert run_auto_paper(cfg, rows=[_row()], now=T0 + timedelta(seconds=1))["events"] == ["EURUSD open BUY"]
+
+    _install(monkeypatch, store, _suggest(signal="SELL"), 1.10)
+    flipped = run_auto_paper(cfg, rows=[_row("SELL", confidence=0.40)], now=T0 + timedelta(minutes=2))
+    assert flipped["events"] == ["EURUSD close opposite"]
+    assert portfolio_payload(cfg, sync=False)["open"] == []
+
+    run_auto_paper(cfg, rows=[_row("HOLD", confidence=0.40)], now=T0 + timedelta(minutes=3))
+    _install(monkeypatch, store, _suggest(), 1.10)
+    assert run_auto_paper(cfg, rows=[_row(confidence=0.80)], now=T0 + timedelta(minutes=4))["events"] == [
+        "EURUSD open BUY"
+    ]
+    _install(monkeypatch, store, _suggest(signal="SELL"), 1.11)
+    opp = run_auto_paper(cfg, rows=[_row("SELL", confidence=0.88)], now=T0 + timedelta(minutes=5))
+    assert opp["events"] == ["EURUSD close opposite", "EURUSD open SELL"]
+
+
+def test_stale_gate_blocks_the_cross(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+    run_auto_paper(cfg, rows=[_row("HOLD")], now=T0)
+    gated = run_auto_paper(cfg, rows=[_row(validity="STALE", confidence=0.90)], now=T0 + timedelta(minutes=1))
+    assert gated["events"] == []
+    assert "gated" in gated["blocks"]
+    book = portfolio_payload(
+        cfg,
+        sync=True,
+        rows=[_row(validity="STALE", confidence=0.90)],
+        now=T0 + timedelta(minutes=2),
+    )
+    assert book["open"] == []
+    assert book["block_status"] == "Gated"
+    opened = run_auto_paper(cfg, rows=[_row(confidence=0.90)], now=T0 + timedelta(minutes=3))
+    assert opened["events"] == ["EURUSD open BUY"]

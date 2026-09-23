@@ -381,9 +381,13 @@ export interface PortfolioFeed {
   auto_enabled: boolean;
   /** Shared auto-open budget for every pair. Per-pair caps are not in this feed. */
   max_opens_per_hour: number;
+  /** Shared minimum confidence (percent) for every pair. */
+  min_confidence: number;
   opens_this_hour: number;
   rate_limited: boolean;
   rate_status: string | null;
+  /** Paused, rate-limited, below threshold, or gated. Null when auto can open. */
+  block_status: string | null;
   refresh_seconds: number;
   generated_at_dhaka: string;
   open: PortfolioRow[];

@@ -1476,6 +1476,25 @@
       user-select: none;
     }
     .auto-toggle input { accent-color: var(--blue); cursor: pointer; }
+    .auto-conf {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .auto-conf input[type="range"] {
+      width: 88px;
+      accent-color: var(--blue);
+      cursor: pointer;
+    }
+    .auto-conf .pct {
+      min-width: 2.5rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-2);
+    }
+    .portfolio .panel-hd { flex-wrap: wrap; row-gap: 6px; }
     .auto-rate {
       display: inline-flex;
       align-items: center;

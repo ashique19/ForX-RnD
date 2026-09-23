@@ -107,6 +107,9 @@ def make_broker(cfg: dict[str, Any] | None = None, *, path: Path | None = None) 
 
 DEFAULT_OPENS_PER_HOUR = 3
 MAX_OPENS_PER_HOUR = 99
+DEFAULT_MIN_CONFIDENCE = 65
+MIN_CONFIDENCE_FLOOR = 50
+MIN_CONFIDENCE_CAP = 90
 
 
 def _clamp_opens_per_hour(value: object, default: int = DEFAULT_OPENS_PER_HOUR) -> int:
@@ -115,6 +118,14 @@ def _clamp_opens_per_hour(value: object, default: int = DEFAULT_OPENS_PER_HOUR) 
     except (TypeError, ValueError):
         return default
     return max(0, min(MAX_OPENS_PER_HOUR, n))
+
+
+def _clamp_min_confidence(value: object, default: int = DEFAULT_MIN_CONFIDENCE) -> int:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(MIN_CONFIDENCE_FLOOR, min(MIN_CONFIDENCE_CAP, n))
 
 
 def _now_label() -> str:
@@ -204,6 +215,8 @@ class PaperBroker(BrokerPort):
 
         ``max_opens_per_hour`` defaults to 3 when the journal has no setting.
         The cap is one shared budget for every pair.
+        ``min_confidence`` is a percent from 50 to 90 and defaults to 65.
+        It is also one shared setting for every pair.
         """
         auto = self._state.get("auto")
         if not isinstance(auto, dict):
@@ -215,6 +228,7 @@ class PaperBroker(BrokerPort):
             "enabled": bool(enabled),
             "seen": seen,
             "max_opens_per_hour": _clamp_opens_per_hour(auto.get("max_opens_per_hour", DEFAULT_OPENS_PER_HOUR)),
+            "min_confidence": _clamp_min_confidence(auto.get("min_confidence", DEFAULT_MIN_CONFIDENCE)),
         }
 
     def write_auto(
@@ -223,6 +237,7 @@ class PaperBroker(BrokerPort):
         enabled: bool | None = None,
         seen: dict[str, str] | None = None,
         max_opens_per_hour: int | None = None,
+        min_confidence: int | None = None,
     ) -> dict[str, Any]:
         """Persist auto flags without touching open or closed rows."""
         auto = self._state.get("auto")
@@ -234,6 +249,8 @@ class PaperBroker(BrokerPort):
             auto["seen"] = {str(k).upper(): "" if v is None else str(v) for k, v in seen.items()}
         if max_opens_per_hour is not None:
             auto["max_opens_per_hour"] = _clamp_opens_per_hour(max_opens_per_hour)
+        if min_confidence is not None:
+            auto["min_confidence"] = _clamp_min_confidence(min_confidence)
         self._state["auto"] = auto
         self._save()
         return self.read_auto()
