@@ -83,13 +83,13 @@ const OSC_SCALE = (): { priceRange: { minValue: number; maxValue: number } } => 
 });
 
 /** Divider between the price pane and RSI / MACD. Darker than the chart grid (#e4e7ec) so the split is obvious. */
-const PANE_SEPARATOR = "#475467";
-const PANE_SEPARATOR_HOVER = "#344054";
+const PANE_SEPARATOR = "#344054";
+const PANE_SEPARATOR_HOVER = "#1d2939";
 /**
  * Lightweight Charts draws the pane separator as a 1px table row (SeparatorHeight).
  * The desk stretches that row; color stays on layout.panes.separatorColor.
  */
-const PANE_SEPARATOR_PX = 4;
+const PANE_SEPARATOR_PX = 6;
 
 const OVERLAYS: {
   id: string;

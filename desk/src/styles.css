@@ -1307,7 +1307,7 @@
     /* Candlestick / RSI / MACD dividers. Color is layout.panes.separatorColor;
        Lightweight Charts only allocates a 1px row, so the band is widened here. */
     .chart-canvas table tr:has(> td[colspan="3"]) {
-      height: var(--pane-separator-width, 4px) !important;
+      height: var(--pane-separator-width, 6px) !important;
     }
     .chart-note {
       position: absolute;
