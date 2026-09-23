@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability } from "./api";
-import type { Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
+import type { AlertItem, Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
@@ -16,6 +16,23 @@ function sameBrief(cur: Brief | null, pair: string, tf: string): boolean {
 
 function sameOhlcv(cur: Ohlcv | null, pair: string, interval: string): boolean {
   return Boolean(cur && cur.pair === pair && cur.interval === interval);
+}
+
+/** Stable id for the alert strip. Live countdowns and prices do not count as a new set. */
+export function alertBannerKey(alerts: AlertItem[], error: string | null): string {
+  if (error) return `error\n${error}`;
+  if (!alerts.length) return "quiet";
+  return alerts
+    .map((item) => {
+      const message = item.message
+        .replace(/\b\d+d(?:\s+\d+h)?\b/gi, "T")
+        .replace(/\b\d+h(?:\s+\d+m)?\b/gi, "T")
+        .replace(/\b\d+m\b/gi, "T")
+        .replace(/\bwithin\s+\d+(?:\.\d+)?\s+pips\b/gi, "within N pips")
+        .replace(/\b\d+\.\d+\b/g, "N");
+      return `${item.kind}|${item.pair}|${message}`;
+    })
+    .join("\n");
 }
 
 function mergeBoardRow(board: Board | null, row: BoardRow): Board | null {
@@ -45,6 +62,7 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [auxOpen, setAuxOpen] = useState(false);
+  const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
   const rowsRef = useRef<BoardRow[]>([]);
   const retryLock = useRef(false);
   const attempt = useRef(0);
@@ -254,19 +272,27 @@ export function App() {
       : `Retrying in ${retryLeft} ${retryLeft === 1 ? "second" : "seconds"}…`;
 
   const alerts = board?.alerts ?? [];
+  const alertKey = alertBannerKey(alerts, error);
+  const alertDismissed = dismissedAlertKey !== null && dismissedAlertKey === alertKey;
+  const showAlert = !offline && !alertDismissed;
+  const showBanner = Boolean(offline) || showAlert;
   const alertClass = error ? "alerts bad" : alerts.length ? "alerts" : "alerts quiet";
   const alertText = error
     ? error
     : alerts.length
       ? alerts.slice(0, 3).map((item) => item.message).join("  ·  ")
       : "No active alerts";
+  const deskClass =
+    mode === "decision"
+      ? ["app", showBanner ? "has-alert" : "", noticeLeft > 0 ? "has-notice" : ""].filter(Boolean).join(" ")
+      : "app single";
 
   const levels = chartTf === "1d" ? brief?.daily : chartTf === "1h" ? brief?.hourly : null;
 
   return (
     <>
       <TopNav mode={mode} onMode={setMode} />
-      <main className={mode === "decision" ? (noticeLeft > 0 ? "app has-notice" : "app") : "app single"}>
+      <main className={deskClass}>
         {mode === "learnings" ? (
           <LearningsPanel />
         ) : mode !== "decision" ? (
@@ -282,12 +308,21 @@ export function App() {
                   Reconnect
                 </button>
               </div>
-            ) : (
+            ) : showAlert ? (
               <div className={alertClass} role="status">
                 <span className="tag">{error ? "API" : "Alert"}</span>
-                <span>{alertText}</span>
+                <span className="alert-msg">{alertText}</span>
+                <button
+                  className="btn sm icon alert-dismiss"
+                  type="button"
+                  aria-label="Dismiss alert"
+                  title="Dismiss alert"
+                  onClick={() => setDismissedAlertKey(alertKey)}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
               </div>
-            )}
+            ) : null}
             <div className={noticeLeft > 0 ? "notice-slot active" : "notice-slot"} role="status" aria-live="polite">
               {noticeLeft > 0 ? `Updated from cache · next network refresh in ${noticeLeft}s` : ""}
             </div>

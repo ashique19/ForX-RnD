@@ -148,18 +148,32 @@
       height: calc(100vh - var(--nav-h));
       min-height: 640px;
     }
-    /* Decision mode is two rows (alert, then cards). The cache-refresh
-       notice is a third row only while it has text — an empty slot must
-       not leave a dead band under the alert. */
-    .app:not(.single) .alerts { grid-column: 1 / -1; grid-row: 1; }
-    .app:not(.single) .left-col { grid-column: 1; grid-row: 2; }
-    .app:not(.single) .right-col { grid-column: 2; grid-row: 2; }
-    .app.has-notice {
+    /* Decision mode: the alert row exists only while a banner is shown.
+       The cache-refresh notice is its own row only while it has text.
+       A dismissed alert must not leave an empty band. */
+    .app:not(.single):not(.has-alert) {
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .app:not(.single):not(.has-alert) .left-col { grid-column: 1; grid-row: 1; }
+    .app:not(.single):not(.has-alert) .right-col { grid-column: 2; grid-row: 1; }
+    .app:not(.single).has-alert {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .app:not(.single).has-alert .alerts { grid-column: 1 / -1; grid-row: 1; }
+    .app:not(.single).has-alert .left-col { grid-column: 1; grid-row: 2; }
+    .app:not(.single).has-alert .right-col { grid-column: 2; grid-row: 2; }
+    .app.has-notice:not(.has-alert) {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .app.has-notice:not(.has-alert) .notice-slot { grid-column: 1 / -1; grid-row: 1; }
+    .app.has-notice:not(.has-alert) .left-col,
+    .app.has-notice:not(.has-alert) .right-col { grid-row: 2; }
+    .app.has-notice.has-alert {
       grid-template-rows: auto auto minmax(0, 1fr);
     }
-    .app.has-notice .notice-slot { grid-column: 1 / -1; grid-row: 2; }
-    .app.has-notice .left-col,
-    .app.has-notice .right-col { grid-row: 3; }
+    .app.has-notice.has-alert .notice-slot { grid-column: 1 / -1; grid-row: 2; }
+    .app.has-notice.has-alert .left-col,
+    .app.has-notice.has-alert .right-col { grid-row: 3; }
 
     /* —— Alerts strip —— */
     .alerts {
@@ -186,6 +200,21 @@
       border-radius: 4px;
     }
     .alerts .sep { color: #d0d5dd; }
+    .alerts .alert-msg { flex: 1; min-width: 0; }
+    .alerts .alert-dismiss {
+      margin-left: auto;
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      justify-content: center;
+      font-size: 15px;
+      line-height: 1;
+    }
+    .alerts .alert-dismiss:hover {
+      border-color: currentColor;
+      color: inherit;
+    }
 
     /* —— Panels —— */
     .panel {
