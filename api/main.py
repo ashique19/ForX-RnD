@@ -37,6 +37,8 @@ from api.deskdata import (
 from api.learnings import MAX_LIMIT, learnings_payload
 from api.paperdesk import PaperBlocked, paper_order
 from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
+from forex_lab.ui.model_build import model_build_status
+from forex_lab.ui.pipeline import run_retrain
 
 _ORIGINS = [
     "http://127.0.0.1:5173",
@@ -178,6 +180,37 @@ def create_app() -> FastAPI:
     @app.get("/learnings")
     def get_learnings(limit: int = Query(default=50, ge=1, le=MAX_LIMIT)) -> dict:
         return learnings_payload(limit=limit)
+
+    @app.get("/model/status/{pair}")
+    def get_model_status(pair: str) -> dict:
+        """Core AI joblib status for one pair. Does not train or retrain."""
+        try:
+            return model_build_status(pair)
+        except WatchlistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/model/retrain/{pair}")
+    def post_model_retrain(pair: str, dry_run: bool = Query(default=False)) -> dict:
+        """Explicit champion/challenger gate. Not called on a timer.
+
+        Walk-forward can take several minutes. Research only — not a live edge.
+        """
+        try:
+            symbol = normalize_pair(pair)
+        except WatchlistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        cfg = app_config()
+        rc, log = run_retrain(symbol, dry_run=dry_run, cfg=cfg)
+        text = str(log or "")
+        if len(text) > 4000:
+            text = text[-4000:]
+        return {
+            "ok": rc == 0,
+            "pair": symbol,
+            "dry_run": bool(dry_run),
+            "log": text,
+            "model_build": model_build_status(symbol, cfg),
+        }
 
     @app.get("/brief/{pair}")
     def get_brief(pair: str, tf: str | None = Query(default=None)) -> dict:
