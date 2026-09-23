@@ -259,6 +259,37 @@ def run_signals(pair: str, *, cfg: dict[str, Any] | None = None) -> tuple[int, s
     return _run_cmd(cmd_signals, args, cfg)
 
 
+def run_pipeline(
+    pair: str,
+    *,
+    cfg: dict[str, Any] | None = None,
+    fetch: bool = False,
+    period: str | None = None,
+    interval: str | None = None,
+    synthetic: bool = False,
+) -> tuple[int, str]:
+    """Train → backtest → generate signals. Optional Fetch first. Stops on first failure."""
+    chunks: list[str] = []
+    if fetch:
+        rc, log = run_fetch(
+            pair, period=period, interval=interval, synthetic=synthetic, cfg=cfg
+        )
+        chunks.append(f"=== Fetch {pair}  exit={rc} ===\n{log.strip()}")
+        if rc != 0:
+            return rc, "\n".join(chunks).strip()
+    steps = (
+        ("Train", lambda: run_train(pair, cfg=cfg)),
+        ("Backtest", lambda: run_backtest(pair, cfg=cfg)),
+        ("Signals", lambda: run_signals(pair, cfg=cfg)),
+    )
+    for name, fn in steps:
+        rc, log = fn()
+        chunks.append(f"=== {name} {pair}  exit={rc} ===\n{log.strip()}")
+        if rc != 0:
+            return rc, "\n".join(chunks).strip()
+    return 0, "\n".join(chunks).strip()
+
+
 def run_digest(
     *,
     which: str = "both",

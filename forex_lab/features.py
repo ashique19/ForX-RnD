@@ -55,6 +55,16 @@ def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
+def ema(s: pd.Series, window: int) -> pd.Series:
+    """Causal EMA (adjust=False). Shared by features and the desk chart."""
+    return _ema(s, int(window))
+
+
+def rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """Wilder RSI on a 0–100 scale. Model features store RSI/100."""
+    return _rsi(close, int(period))
+
+
 def true_range_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     """Wilder ATR; uses High/Low/Close up to the current bar only."""
     prev_close = df["Close"].shift(1)

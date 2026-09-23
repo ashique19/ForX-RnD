@@ -139,49 +139,114 @@ def test_streamlit_app_renders_sample_artifacts(monkeypatch):
     at = AppTest.from_file(str(app), default_timeout=60)
     at.run()
     assert not at.exception, f"Streamlit render failed: {at.exception}"
-    blobs = []
-    for attr in ("markdown", "warning", "caption", "text", "title", "subheader", "header"):
-        block = getattr(at, attr, None)
-        if block is None:
-            continue
-        for el in block:
-            val = getattr(el, "value", None) or getattr(el, "body", None)
-            if val:
-                blobs.append(str(val))
-    joined = "\n".join(blobs)
+
+    def _joined(app_test):
+        blobs = []
+        for attr in ("markdown", "warning", "caption", "text", "title", "subheader", "header"):
+            block = getattr(app_test, attr, None)
+            if block is None:
+                continue
+            for el in block:
+                val = getattr(el, "value", None) or getattr(el, "body", None)
+                if val:
+                    blobs.append(str(val))
+        return "\n".join(blobs)
+
+    def _click_nav(app_test, name):
+        btn = next(b for b in app_test.button if str(getattr(b, "label", "")) == name)
+        btn.click()
+        app_test.run()
+        assert not app_test.exception, f"{name} mode failed: {app_test.exception}"
+
+    joined = _joined(at)
     low = joined.lower()
-    assert "decision-support" in low or "research only" in low or "research label" in low
+    nav_labels = [str(getattr(b, "label", "")) for b in at.button]
+    for name in ("Decision", "Calendar", "Paper", "Lab", "Awareness"):
+        assert name in nav_labels, f"missing top-level nav {name}"
+
     assert "yfinance" in low or "broker" in low
-    assert "signal screen" in low
     assert "news context, not a trade instruction" in low or "news context" in low
-    assert "last bar" in low or "board last refreshed" in low or "validity" in low
-    assert "sparkline" in low or "spark" in low or "risk" in low or "candle" in low
+    assert "last bar" in low or "board last refreshed" in low or "last/mid-ish" in low
     assert "paper" in low
-    assert "practice desk" in low or "brokerport" in low or "broker.port" in low
-    assert "data health" in low or "awareness" in low
-    assert "event calendar" in low
-    assert "non-farm" in low or "nfp" in low
     assert "mtf" in low
-    assert "advisory" in low or "not an order" in low or "never auto-submitted" in low
     assert "last/mid-ish" in low or "mid-ish" in low
     assert "spread" in low
-    assert "session" in low
+    assert "session" in low or "fx-scan-sess" in joined
     assert "not broker bid/ask" in low or "not broker" in low
     assert "asia/dhaka" in low or "dhaka" in low
-    assert "alert sound" in low or "alerts" in low
+    assert "fx-nav-clock" in joined
     assert "not a live edge" in low or "paper right/wrong" in low
     assert "data●" in low or "next event" in low
     assert "disabled when" in low and "stale" in low
-    assert "detail" in low
     assert "workspace" in low
-    assert "scalp" in low or "swing" in low
-    assert "paper journal" in low or "brokerport" in low
-    assert "fx-masthead" in joined or "data-fx-theme" in joined or "--fx-buy" in joined
-    assert "fx-legend" in joined or "stale outranks" in low
+    assert "data-fx-theme" in joined or "--fx-buy" in joined
     assert "fx-scan" in joined or "fx-empty" in joined or "seconds to decide" in low
+    assert "signal screen" not in low
+    assert "disclaimer (research only" not in low
     buy_btns = [b for b in at.button if "BUY" in str(getattr(b, "label", "")).upper()]
     sell_btns = [b for b in at.button if "SELL" in str(getattr(b, "label", "")).upper()]
     assert buy_btns and sell_btns
+    labels = [str(getattr(b, "label", "")) for b in at.button]
+    assert "Add to watchlist" in labels
+    assert any(str(getattr(b, "label", "")) == "×" for b in at.button)
+    assert any(str(getattr(b, "label", "")) == "▸" for b in at.button)
+    assert "Manual update" not in labels
+    assert "Update selected" not in labels
+    selects = [str(getattr(s, "label", "")) for s in at.selectbox]
+    assert any("Add pair" in s for s in selects)
+    radios = [str(getattr(r, "label", "")) for r in getattr(at, "radio", [])]
+    assert any("Theme" in r for r in radios)
+    joined_aux = joined
+    assert "Nav / Workspace" in joined_aux or "lab TF" in joined_aux or "click a pair" in low
+
+    _click_nav(at, "Calendar")
+    cal = _joined(at).lower()
+    assert "event calendar" in cal
+    assert "non-farm" in cal or "nfp" in cal
+
+    _click_nav(at, "Paper")
+    paper = _joined(at).lower()
+    assert "paper" in paper
+    assert "practice" in paper or "brokerport" in paper
+
+    _click_nav(at, "Lab")
+    lab = _joined(at).lower()
+    assert "fetch" in lab
+    lab_labels = [str(getattr(b, "label", "")) for b in at.button]
+    assert "Run pipeline" in lab_labels
+    assert "train" in lab or "backtest" in lab or "Run pipeline" in lab_labels
+
+    _click_nav(at, "Awareness")
+    aw = _joined(at).lower()
+    assert "awareness" in aw
+    assert "data health" in aw or "stale" in aw or "source" in aw
+
+    _click_nav(at, "Decision")
+    buy_btns = [b for b in at.button if str(getattr(b, "label", "")).upper() in {"BUY", "SELL"}]
+    assert buy_btns
+
+
+def test_run_pipeline_order_stops_on_failure(monkeypatch):
+    from forex_lab.ui import pipeline as pl
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(pl, "run_fetch", lambda *a, **k: calls.append("fetch") or (0, "ok"))
+    monkeypatch.setattr(pl, "run_train", lambda *a, **k: calls.append("train") or (0, "ok"))
+    monkeypatch.setattr(pl, "run_backtest", lambda *a, **k: calls.append("backtest") or (1, "fail"))
+    monkeypatch.setattr(pl, "run_signals", lambda *a, **k: calls.append("signals") or (0, "ok"))
+
+    rc, log = pl.run_pipeline("EURUSD")
+    assert rc == 1
+    assert calls == ["train", "backtest"]
+    assert "Signals" not in log
+
+    calls.clear()
+    monkeypatch.setattr(pl, "run_backtest", lambda *a, **k: calls.append("backtest") or (0, "ok"))
+    rc, log = pl.run_pipeline("EURUSD", fetch=True)
+    assert rc == 0
+    assert calls == ["fetch", "train", "backtest", "signals"]
+    assert "Fetch" in log and "Train" in log and "Signals" in log
 
 
 def test_stale_row_disables_paper_buy_sell_buttons(monkeypatch):

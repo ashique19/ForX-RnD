@@ -11,6 +11,7 @@ from forex_lab.clock import (
     relabel,
     relabel_in_text,
     timezone_name,
+    timezone_short_tag,
     to_display,
 )
 
@@ -68,6 +69,15 @@ def test_relabel_in_text_converts_embedded_utc_and_skips_dhaka():
     iso = relabel_in_text("event 2026-09-21T10:00:00Z nearby")
     assert "2026-09-21 16:00" in iso
     assert "Asia/Dhaka" in iso
+
+
+def test_timezone_short_tag_is_bd_for_dhaka():
+    assert timezone_short_tag(None) == "BD"
+    assert timezone_short_tag({}) == "BD"
+    assert timezone_short_tag({"ui": {"timezone": "Asia/Dhaka"}}) == "BD"
+    london = timezone_short_tag({"ui": {"timezone": "Europe/London", "timezone_tag": "Europe/London"}})
+    assert london == "London"
+    assert timezone_short_tag({"ui": {"timezone_short": "DHK"}}) == "DHK"
 
 
 def test_clock_note_offset_follows_configured_zone():

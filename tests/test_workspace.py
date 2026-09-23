@@ -330,6 +330,15 @@ def test_streamlit_workspace_controls_render_without_touching_paper(monkeypatch)
     try:
         at.run()
         assert not at.exception, f"Streamlit render failed: {at.exception}"
+        toggle = next(
+            (b for b in at.button if str(getattr(b, "key", "") or "") == "chrome_toggle_decision_aux"),
+            None,
+        )
+        if toggle is None:
+            toggle = next(b for b in at.button if str(getattr(b, "label", "")) == "▸")
+        toggle.click()
+        at.run()
+        assert not at.exception, f"Expand chrome failed: {at.exception}"
         labels = [str(getattr(b, "label", "")) for b in at.button]
         assert "Apply" in labels
         assert "Reset" in labels

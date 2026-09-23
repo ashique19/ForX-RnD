@@ -1,4 +1,4 @@
-"""Dark dense terminal theme — presentation only."""
+"""Light (default) dense desk theme — presentation only."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,18 +39,19 @@ def _rgb(hex_color: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-def test_theme_config_is_dark_terminal():
+def test_theme_config_is_light_desk():
     cfg = (project_root() / ".streamlit" / "config.toml").read_text(encoding="utf-8")
-    assert 'base = "dark"' in cfg
+    assert 'base = "light"' in cfg
     assert "primaryColor" in cfg
     assert "#16c784" in cfg
     assert "toolbarMode" in cfg and "minimal" in cfg
     assert "backgroundColor" in cfg
-    assert "baseFontSize = 16" in cfg
-    assert "textColor = \"#f2f5f8\"" in cfg
+    assert "baseFontSize = 17" in cfg
+    assert 'textColor = "#0f172a"' in cfg
     assert "showWidgetBorder = true" in cfg
-    assert "borderColor = \"#4a5d73\"" in cfg
-    assert "secondaryBackgroundColor = \"#1c2734\"" in cfg
+    assert 'borderColor = "#cbd5e1"' in cfg
+    assert 'secondaryBackgroundColor = "#ffffff"' in cfg
+    assert 'backgroundColor = "#f4f6f8"' in cfg
 
 
 def test_buy_sell_hold_are_high_contrast():
@@ -69,17 +70,19 @@ def test_buy_sell_hold_are_high_contrast():
     assert "fx-masthead" in css
     assert "fx-empty" in css
     assert "fx-legend" in css
-    assert "fx-scan" in css
+    assert "--fx-scan" in css or "fx-scan" in css
+    assert "st-key-desk_nav" in css
     assert "flex-end" in css
     assert "st-key-paper_close" in css
     assert BUY == "#16c784" and SELL == "#ea3943"
 
 
 def test_muted_captions_and_labels_are_readable():
-    """Body 16px, captions 14px, secondary #c8d0db+ — not dark grey on dark."""
+    """Body 17px, captions 15px, slate muted on near-white — not washed-out grey."""
     from forex_lab.ui.health import awareness_table_html
     from forex_lab.ui.theme import (
         BG,
+        CARD,
         FONT_BODY,
         FONT_CAPTION,
         FONT_CELL,
@@ -88,32 +91,35 @@ def test_muted_captions_and_labels_are_readable():
         MUTED,
         NEUTRAL,
         TEXT,
+        apply_palette,
         validity_badge_html,
     )
 
-    assert FONT_BODY == "16px"
-    assert FONT_CAPTION == "14px"
-    assert FONT_LABEL == "14px"
-    assert FONT_CELL == "15px"
-    assert FONT_EXPANDER == "16px"
-    assert min(_rgb(MUTED)) >= 200
-    assert MUTED.lower() >= "#c8d0db"
-    assert _contrast(MUTED, BG) >= 10.0
-    assert _contrast(TEXT, BG) >= 12.0
-    assert _contrast(NEUTRAL, BG) >= 8.0
+    apply_palette("light")
+    assert FONT_BODY == "17px"
+    assert FONT_CAPTION == "15px"
+    assert FONT_LABEL == "15px"
+    assert FONT_CELL == "16px"
+    assert FONT_EXPANDER == "17px"
+    assert max(_rgb(MUTED)) <= 120
+    assert min(_rgb(MUTED)) >= 50
+    assert MUTED.lower() == "#475569"
+    assert _contrast(MUTED, BG) >= 4.5
+    assert _contrast(TEXT, BG) >= 10.0
+    assert _contrast(NEUTRAL, CARD) >= 4.5
     css = terminal_css()
     assert MUTED in css
     assert TEXT in css
     assert "--fx-muted" in css
     assert "stSidebar" in css
     assert "stTooltipContent" in css
-    assert "font-size: 16px" in css
-    assert "font-size: 14px" in css
+    assert "font-size: 17px" in css
+    assert "font-size: 15px" in css
     # Old too-small caption / widget-label rem sizes must not remain.
     assert "font-size: 0.70rem !important" not in css
     assert "font-size: 0.62rem !important" not in css
     stale = validity_badge_html("STALE", compact=True)
-    assert "14px" in stale
+    assert "15px" in stale
     table = awareness_table_html(
         [
             {
@@ -126,7 +132,7 @@ def test_muted_captions_and_labels_are_readable():
         ]
     )
     assert MUTED in table
-    assert "15px" in table
+    assert "16px" in table
     assert "data stale" in table
 
 
@@ -280,17 +286,26 @@ def test_stale_outranks_buy_sell_hold():
 
 
 def test_chrome_cards_borders_and_section_heads():
-    """Elevated cards, visible borders, masthead/nav, clickable drawer tabs."""
+    """Elevated cards, visible borders, masthead, and exclusive mode nav."""
     from forex_lab.ui.theme import (
         BG,
         BORDER,
         BORDER_STRONG,
         CARD,
+        DEFAULT_MODE,
+        DEFAULT_THEME,
+        DESK_MODES,
         ELEVATED,
+        apply_palette,
         card_html,
+        chrome_card_head_html,
+        chrome_state_key,
+        nav_clock_html,
         section_head_html,
         terminal_css,
     )
+
+    apply_palette("light")
 
     css = terminal_css()
     for needle in (
@@ -302,6 +317,19 @@ def test_chrome_cards_borders_and_section_heads():
         ".fx-card",
         ".fx-card-title",
         ".fx-masthead-top",
+        ".fx-nav",
+        ".fx-nav-clock",
+        ".fx-brief",
+        ".fx-brief-title",
+        ".fx-brief-byline",
+        ".fx-view-title",
+        ".fx-prose-title",
+        ".fx-advice-line",
+        ".fx-invalid",
+        "st-key-desk_nav",
+        "st-key-chrome_toggle",
+        "st-key-board_reload",
+        ".fx-chrome-head",
         '[data-testid="stTabs"]',
         '[data-testid="stVerticalBlockBorderWrapper"]',
         '[data-testid="stExpander"]',
@@ -325,14 +353,95 @@ def test_chrome_cards_borders_and_section_heads():
     head = section_head_html("Scan", "Board", note="pair row → detail drawer")
     assert "fx-section-kicker" in head and "Scan" in head
     assert "Board" in head and "pair row" in head
+    assert DESK_MODES == ("Decision", "Calendar", "Paper", "Lab", "Awareness")
+    assert DEFAULT_MODE == "Decision"
+    assert DEFAULT_THEME == "light"
+    assert chrome_state_key("decision_aux") == "chrome_open_decision_aux"
+    closed = chrome_card_head_html(
+        "Nav / Workspace / lab TF 1h · click a pair for the drawer",
+        expanded=False,
+    )
+    assert "fx-chrome-head" in closed and "closed" in closed
+    assert "Nav / Workspace" in closed
+    assert "click a pair" in closed
+    opened = chrome_card_head_html("Nav / Workspace", expanded=True)
+    assert "open" in opened
+    clock = nav_clock_html("2026-09-21 22:08:01", short_tag="BD", long_tag="Asia/Dhaka")
+    assert "fx-nav-clock" in clock
+    assert "2026-09-21 22:08:01" in clock
+    assert ">BD<" in clock
+    assert "Asia/Dhaka" in clock
     source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
     assert 'section_head_html("Scan", "Board"' in source
     assert 'section_head_html("Detail"' in source
-    assert 'section_head_html("Health", "Alerts, awareness, digest")' in source
+    assert "def render_decision_mode" in source
+    assert "def render_calendar_mode" in source
+    assert "def render_paper_mode" in source
+    assert "def render_lab_mode" in source
+    assert "def render_awareness_mode" in source
+    assert "desk_nav_" in source
+    assert 'if mode == "Decision"' in source
+    assert 'elif mode == "Calendar"' in source
+    assert 'elif mode == "Paper"' in source
+    assert 'elif mode == "Lab"' in source
+    # Dump-zone stack is gone: health/calendar/paper are not siblings under the board.
+    assert 'section_head_html("Health", "Alerts, awareness, digest")' not in source
+    assert 'section_head_html("More", "Calendar, paper, table")' not in source
     scan_at = source.find('section_head_html("Scan", "Board"')
     detail_at = source.find('section_head_html("Detail"')
-    health_at = source.find('section_head_html("Health", "Alerts, awareness, digest")')
-    assert 0 < scan_at < detail_at < health_at
-    # Duplicate scan board must not return after Health.
+    assert 0 < scan_at < detail_at
     assert source.count('section_head_html("Scan", "Board"') == 1
-    assert "fx-masthead-top" in source
+    assert "nav_clock_html" in source
+    assert "_render_mode_nav(cfg)" in source
+    assert "_nav_clock_fragment" in source
+    # Hero title card and disclaimer expander are gone — clock + theme live in the slim nav.
+    assert "_render_masthead" not in source
+    assert "SIGNAL SCREEN" not in source
+    assert "Disclaimer (research only" not in source
+    assert "fx-masthead" not in source
+    assert "fx-masthead-right" not in source
+    # Decision default — Calendar/Paper/Lab/Awareness are exclusive destinations.
+    assert "render_calendar_mode(cfg)" in source
+    assert source.find("render_decision_mode") < source.find("render_calendar_mode(cfg)")
+    css = terminal_css()
+    assert '[data-testid="stHeader"]' in css
+    assert "display: none" in css
+    assert "padding-top: 1.85rem" in css
+    assert ".fx-nav-gap" in css
+    assert "position: relative !important" in css
+    assert "build_signal_brief" in source
+    assert "Run pipeline" in source
+    assert "Add pair" in source
+    assert "desk_theme" in source
+    assert "_render_aux_chrome" in source
+    assert "chrome_toggle_" in source
+    assert "chrome_state_key" in source
+    assert "board_reload" in source
+    assert 'key="board_realtime"' in source
+    assert 'st.button(\n            "↻"' in source or '"↻"' in source
+    assert '"Manual update"' not in source
+    assert '"Update selected"' not in source
+    assert "_render_alert_strip" in source
+    assert source.find("_render_alert_strip") < source.find("_render_dense_header")
+    aux_at = source.find("_render_aux_chrome")
+    alert_at = source.find("_render_alert_strip")
+    assert 0 < aux_at < alert_at
+    assert "toggle" in source and "board_realtime" in source
+
+
+def test_apply_palette_roundtrip_light_default():
+    import forex_lab.ui.theme as theme
+
+    try:
+        assert theme.apply_palette("light") == "light"
+        assert theme.TEXT.lower() == theme.LIGHT["TEXT"].lower()
+        light_css = theme.terminal_css()
+        assert theme.LIGHT["BG"] in light_css
+        assert theme.apply_palette("dark") == "dark"
+        assert theme.MUTED.lower() == theme.DARK["MUTED"].lower()
+        dark_css = theme.terminal_css()
+        assert theme.DARK["BG"] in dark_css
+        assert theme.apply_palette("nope") == "light"
+        assert theme.TEXT.lower() == theme.LIGHT["TEXT"].lower()
+    finally:
+        theme.apply_palette("light")
