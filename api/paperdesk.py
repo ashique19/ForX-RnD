@@ -16,6 +16,15 @@ from forex_lab.clock import fmt_display, parse_ts, timezone_name
 from forex_lab.data import load_cached_ohlcv
 from forex_lab.freshness import INTERVAL_SECONDS
 from forex_lab.score import normalize_outcome
+from api.strategies import (
+    BRIEF,
+    STRATEGIES,
+    STRATEGY_IDS,
+    book_id,
+    normalize_champion,
+    strategy_name,
+    strategy_views,
+)
 from forex_lab.ui.board import (
     conf_label,
     paper_submit_allowed,
@@ -26,6 +35,7 @@ from forex_lab.ui.board import (
 _PAPER_LOCK = threading.RLock()
 _SECONDS_IN_STAMP = re.compile(r"\d{1,2}:\d{2}:\d{2}")
 _CLOSED_LIMIT = 40
+_COMPARE_WINDOW = timedelta(days=7)
 
 def _desk():
     from api import deskdata
@@ -75,10 +85,25 @@ def _position_json(pos: dict[str, Any] | None, cfg: dict[str, Any]) -> dict[str,
     }
 
 
+def _champion_id(broker: PaperBroker) -> str:
+    return normalize_champion(broker.read_auto().get("champion"))
+
+
+def current_champion(cfg: dict[str, Any] | None = None) -> str:
+    """Decision champion stored on the paper journal. Unknown values stay Brief."""
+    desk = _desk()
+    cfg = cfg if cfg is not None else desk.app_config()
+    broker = _broker(cfg)
+    if not isinstance(broker, PaperBroker):
+        return BRIEF
+    return _champion_id(broker)
+
+
 def paper_snapshot(pair: str, cfg: dict[str, Any], row: Any) -> dict[str, Any]:
     symbol = str(pair).upper()
     broker = _broker(cfg)
-    pos = position_for_pair(broker, symbol)
+    book = _champion_id(broker) if isinstance(broker, PaperBroker) else BRIEF
+    pos = position_for_pair(broker, symbol, book)
     allowed = paper_submit_allowed(getattr(row, "validity", None), row, cfg)
     reason = paper_submit_block_reason(getattr(row, "validity", None), row, cfg)
     if pos is not None:
@@ -122,8 +147,9 @@ def _paper_order_impl(
     row = desk.build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=False)
     broker = _broker(cfg)
     action = str(side or "").upper()
+    book = _champion_id(broker) if isinstance(broker, PaperBroker) else BRIEF
     if action == "CLOSE":
-        pos = position_for_pair(broker, symbol)
+        pos = position_for_pair(broker, symbol, book)
         if pos is None:
             raise BrokerError(f"no open paper position for {symbol}")
         price, _bar = _price_from_cache(symbol, cfg, iv, row)
@@ -170,8 +196,11 @@ def _paper_order_impl(
         horizon=int(cfg.get("horizon") or 8),
         note=f"validity={row.validity}",
         source="manual",
+        strategy_id=book,
+        strategy_name=strategy_name(book),
     )
-    _remember_signal(broker, symbol, action)
+    if isinstance(broker, PaperBroker):
+        _remember_signal(broker, symbol, action, book)
     snap = paper_snapshot(symbol, cfg, row)
     return {
         "ok": True,
@@ -189,10 +218,10 @@ def _paper(cfg: dict[str, Any]) -> PaperBroker:
     return broker
 
 
-def _remember_signal(broker: PaperBroker, pair: str, signal: str) -> None:
+def _remember_signal(broker: PaperBroker, pair: str, signal: str, strategy_id: str) -> None:
     auto = broker.read_auto()
-    seen = dict(auto["seen"])
-    seen[str(pair).upper()] = str(signal or "")
+    seen = {key: dict(value) for key, value in auto["seen"].items()}
+    seen.setdefault(str(pair).upper(), {})[strategy_id] = str(signal or "")
     broker.write_auto(seen=seen)
 
 
@@ -211,17 +240,19 @@ def _as_utc(now: datetime | None) -> datetime:
     return now.astimezone(timezone.utc)
 
 
-def _auto_opens_in_window(broker: PaperBroker, now: datetime) -> int:
-    """Auto opens whose entry time falls in the last 60 minutes.
+def _auto_opens_in_window(broker: PaperBroker, now: datetime, strategy_id: str) -> int:
+    """Auto opens for one strategy whose entry time falls in the last 60 minutes.
 
-    One shared budget for every pair. Manual fills are not counted.
-    A row with no parseable entry time does not count.
+    The UI number is the budget for each book, not a pile shared across books.
+    Manual fills are not counted. A row with no parseable entry time does not count.
     """
     cutoff = _as_utc(now) - timedelta(minutes=60)
     count = 0
     rows = list(broker.list_positions()) + list(broker.list_closed())
     for row in rows:
         if str(row.get("source") or "") != "auto":
+            continue
+        if book_id(row) != strategy_id:
             continue
         opened = parse_ts(row.get("entry_time"))
         if opened is None or opened < cutoff:
@@ -348,16 +379,21 @@ def _live_signal(suggestion: dict[str, Any]) -> str | None:
     return None
 
 
-def _confidence_pct(suggestion: dict[str, Any], row: Any) -> int | None:
+def _as_pct(raw: object) -> int | None:
     """Same percent the desk prints. 0–1 fractions become 0–100. Missing stays missing."""
+    value = _f(raw)
+    if value is None:
+        return None
+    if 0.0 <= value <= 1.0:
+        value = 100.0 * value
+    return int(round(value))
+
+
+def _confidence_pct(suggestion: dict[str, Any], row: Any) -> int | None:
     raw = _f(suggestion.get("confidence"))
     if raw is None:
         raw = _f(getattr(row, "confidence", None))
-    if raw is None:
-        return None
-    if 0.0 <= raw <= 1.0:
-        raw = 100.0 * raw
-    return int(round(raw))
+    return _as_pct(raw)
 
 
 def _eligible_side(live: str | None, pct: int | None, min_confidence: int) -> str:
@@ -403,6 +439,13 @@ def _watch_rows(cfg: dict[str, Any]) -> list[Any]:
     return desk.build_board_rows(wl, cfg, refresh_data=False, regenerate=False)
 
 
+def _book_event(symbol: str, text: str, strategy_id: str) -> str:
+    """Brief events stay unsuffixed so existing logs keep their wording."""
+    if strategy_id == BRIEF:
+        return f"{symbol} {text}"
+    return f"{symbol} {text} {strategy_id}"
+
+
 def _open_auto(
     broker: PaperBroker,
     row: Any,
@@ -413,6 +456,8 @@ def _open_auto(
     price: float,
     entry_bar: str,
     when: str,
+    strategy_id: str,
+    confidence: float | None,
 ) -> None:
     frame = load_cached_ohlcv(str(row.pair), cfg, str(row.timeframe or ""))
     sl, tp = paper_submit_risk_defaults(frame, cfg, side, str(getattr(row, "validity", "") or ""))
@@ -420,14 +465,12 @@ def _open_auto(
         sl = _f(suggestion.get("stop"))
     if tp is None and suggestion.get("signal") == side:
         tp = _f(suggestion.get("target"))
-    confidence = _f(suggestion.get("confidence"))
-    if confidence is None:
-        confidence = _f(getattr(row, "confidence", None))
     raw_h = suggestion.get("horizon_bars")
     try:
         horizon = int(raw_h) if raw_h else 0
     except (TypeError, ValueError):
         horizon = 0
+    name = strategy_name(strategy_id)
     qty = float((cfg.get("broker") or {}).get("default_size") or 1.0)
     broker.submit(
         side,
@@ -450,8 +493,38 @@ def _open_auto(
         horizon=horizon,
         timestamp=when,
         source="auto",
-        note="auto paper from brief",
+        strategy_id=strategy_id,
+        strategy_name=name,
+        note=f"auto paper from {name}",
     )
+
+
+def _champion_blocked(
+    broker: PaperBroker,
+    row: Any,
+    symbol: str,
+    views: list[dict[str, Any]],
+    *,
+    champion: str,
+    live: str | None,
+    allowed: bool,
+    min_confidence: int,
+) -> str | None:
+    """Pair gate, or the champion book sitting under the confidence minimum."""
+    directional = _directional_side(row, live)
+    if directional and not allowed:
+        return "gated"
+    champ = next((view for view in views if view["id"] == champion), None)
+    if champ is None or not allowed:
+        return None
+    if champion == BRIEF:
+        champ_dir = directional
+    else:
+        champ_dir = champ["signal"] if champ["signal"] in {"BUY", "SELL"} else None
+    eligible = _eligible_side(champ["signal"], _as_pct(champ["confidence"]), min_confidence)
+    if champ_dir and not eligible and position_for_pair(broker, symbol, champion) is None:
+        return "below"
+    return None
 
 
 def _auto_one(
@@ -459,8 +532,9 @@ def _auto_one(
     row: Any,
     cfg: dict[str, Any],
     now: datetime | None,
-    seen: dict[str, str],
+    seen: dict[str, dict[str, str]],
     *,
+    champion: str,
     min_confidence: int,
     blocks: list[str],
     trade: bool = True,
@@ -472,65 +546,85 @@ def _auto_one(
     frame = load_cached_ohlcv(symbol, cfg, interval)
     desk = _desk()
     suggestion = desk.suggestion_from_row(row, cfg, ohlcv=frame)
+    views = strategy_views(row, cfg, suggestion)
     price, entry_bar = _price_from_cache(symbol, cfg, interval, row)
     live = _live_signal(suggestion)
     allowed = paper_submit_allowed(getattr(row, "validity", None), row, cfg)
-    pct = _confidence_pct(suggestion, row)
-    eligible = _eligible_side(live, pct, min_confidence) if allowed else ""
-    directional = _directional_side(row, live)
     if not trade:
-        if directional and not allowed:
-            blocks.append("gated")
-        elif directional and allowed and not eligible and position_for_pair(broker, symbol) is None:
-            blocks.append("below")
+        blocked = _champion_blocked(
+            broker,
+            row,
+            symbol,
+            views,
+            champion=champion,
+            live=live,
+            allowed=allowed,
+            min_confidence=min_confidence,
+        )
+        if blocked:
+            blocks.append(blocked)
         return []
     when = _stamp(now)
     clock = _as_utc(now)
     events: list[str] = []
-    pos = position_for_pair(broker, symbol)
-    if pos is not None and price is not None:
-        reason = _barrier_reason(pos, price)
-        if reason is None and _duration_expired(pos, clock):
-            reason = "duration"
-        if reason is None and allowed and live and live != str(pos.get("side") or "").upper():
-            reason = "opposite"
-        if reason:
-            broker.close(str(pos["id"]), price=price, reason=reason, timestamp=when)
-            events.append(f"{symbol} close {reason}")
-            pos = None
-    # A cross is a new eligible side versus the last allowed reading.
-    # The first reading is stored and not filled. The same side staying
-    # eligible — including a small confidence tick — does not open again.
-    known = symbol in seen
-    crossed = known and bool(eligible) and seen.get(symbol) != eligible
-    want_open = pos is None and allowed and bool(eligible) and crossed
-    pending_fill = want_open and price is None
-    rate_blocked = False
-    if directional and not allowed:
-        blocks.append("gated")
-    elif directional and allowed and not eligible and pos is None:
-        blocks.append("below")
-    if want_open and price is not None:
-        cap = int(broker.read_auto()["max_opens_per_hour"])
-        if _auto_opens_in_window(broker, clock) >= cap:
-            # Leave ``seen`` unchanged so the cross retries when the hour frees a slot.
-            rate_blocked = True
-            events.append(f"{symbol} skip rate")
-        else:
-            _open_auto(
-                broker,
-                row,
-                cfg,
-                suggestion,
-                side=eligible,
-                price=price,
-                entry_bar=entry_bar,
-                when=when,
-            )
-            events.append(f"{symbol} open {eligible}")
-    # A cross we could not fill stays unseen so the next cadence can retry.
-    if allowed and not pending_fill and not rate_blocked:
-        seen[symbol] = eligible
+    pair_seen = seen.setdefault(symbol, {})
+    for view in views:
+        sid = str(view["id"])
+        pos = position_for_pair(broker, symbol, sid)
+        side_now = view["signal"] if view["signal"] in {"BUY", "SELL"} else None
+        if pos is not None and price is not None:
+            reason = _barrier_reason(pos, price)
+            if reason is None and _duration_expired(pos, clock):
+                reason = "duration"
+            if reason is None and allowed and side_now and side_now != str(pos.get("side") or "").upper():
+                reason = "opposite"
+            if reason:
+                broker.close(str(pos["id"]), price=price, reason=reason, timestamp=when)
+                events.append(_book_event(symbol, f"close {reason}", sid))
+                pos = None
+        # A cross is a new eligible side versus that book's last allowed reading.
+        # The first reading is stored and not filled. The same side staying
+        # eligible — including a small confidence tick — does not open again.
+        eligible = _eligible_side(side_now, _as_pct(view["confidence"]), min_confidence) if allowed else ""
+        known = sid in pair_seen
+        crossed = known and bool(eligible) and pair_seen.get(sid) != eligible
+        want_open = pos is None and allowed and bool(eligible) and crossed
+        pending_fill = want_open and price is None
+        rate_blocked = False
+        if want_open and price is not None:
+            cap = int(broker.read_auto()["max_opens_per_hour"])
+            if _auto_opens_in_window(broker, clock, sid) >= cap:
+                # Leave this book's memory unchanged so the cross retries when a slot frees.
+                rate_blocked = True
+                events.append(_book_event(symbol, "skip rate", sid))
+            else:
+                _open_auto(
+                    broker,
+                    row,
+                    cfg,
+                    suggestion,
+                    side=eligible,
+                    price=price,
+                    entry_bar=entry_bar,
+                    when=when,
+                    strategy_id=sid,
+                    confidence=_f(view["confidence"]),
+                )
+                events.append(_book_event(symbol, f"open {eligible}", sid))
+        if allowed and not pending_fill and not rate_blocked:
+            pair_seen[sid] = eligible
+    blocked = _champion_blocked(
+        broker,
+        row,
+        symbol,
+        views,
+        champion=champion,
+        live=live,
+        allowed=allowed,
+        min_confidence=min_confidence,
+    )
+    if blocked:
+        blocks.append(blocked)
     return events
 
 
@@ -540,19 +634,22 @@ def run_auto_paper(
     rows: list[Any] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Open/close paper trades from the current brief. No-op when auto is paused.
+    """Open/close paper trades for each strategy book. No-op when auto is paused.
 
-    The first allowed reading of a pair is recorded and not filled. An auto
-    open then requires a cross: confidence reaches ``min_confidence`` on a
-    clear BUY or SELL, or the eligible side changes. A later tick of the same
-    eligible side does not open again. After a close, the same eligible side
-    stays quiet until it becomes ineligible and crosses once more.
+    The first allowed reading of a pair, for that strategy, is recorded and
+    not filled. An auto open then requires a cross on that book: its
+    confidence reaches ``min_confidence`` on a clear BUY or SELL, or the
+    eligible side changes. A later tick of the same eligible side does not
+    open again. After a close, the same eligible side stays quiet until it
+    becomes ineligible and crosses once more.
 
-    Auto opens share one rolling 60-minute budget (``max_opens_per_hour``)
-    and one confidence minimum. Stops, targets, duration, and opposite closes
-    still run at the cap and below the confidence minimum. The follow-up open
-    waits until the new side is eligible and under the cap. Manual orders are
-    outside this budget. Per-pair caps are not implemented.
+    Each strategy has its own rolling 60-minute budget (the same
+    ``max_opens_per_hour`` number) and they share one confidence minimum.
+    Stops, targets, duration, and opposite closes still run at the cap and
+    below the confidence minimum. The follow-up open waits until the new
+    side is eligible and under that book's cap. Manual orders land on the
+    champion book and sit outside this budget. Per-pair caps are not
+    implemented. Promoting a champion does not clear this memory.
     """
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
@@ -561,6 +658,7 @@ def run_auto_paper(
         broker.reload()
         auto = broker.read_auto()
         min_confidence = int(auto["min_confidence"])
+        champion = normalize_champion(auto.get("champion"))
         if rows is None:
             rows = _watch_rows(cfg)
         if not auto["enabled"]:
@@ -575,6 +673,7 @@ def run_auto_paper(
                         cfg,
                         now,
                         {},
+                        champion=champion,
                         min_confidence=min_confidence,
                         blocks=blocks,
                         trade=False,
@@ -582,8 +681,8 @@ def run_auto_paper(
                 except Exception as exc:
                     errors.append({"pair": pair.upper(), "error": str(exc)})
             return {"events": [], "errors": errors, "auto_enabled": False, "blocks": blocks}
-        seen = dict(auto["seen"])
-        original = dict(seen)
+        seen = {key: dict(value) for key, value in auto["seen"].items()}
+        original = {key: dict(value) for key, value in seen.items()}
         events: list[str] = []
         errors = []
         blocks = []
@@ -597,6 +696,7 @@ def run_auto_paper(
                         cfg,
                         now,
                         seen,
+                        champion=champion,
                         min_confidence=min_confidence,
                         blocks=blocks,
                     )
@@ -613,18 +713,25 @@ def set_auto_settings(
     enabled: bool | None = None,
     max_opens_per_hour: int | None = None,
     min_confidence: int | None = None,
+    champion: str | None = None,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Persist the pause switch, the shared hourly cap, and the confidence minimum."""
+    """Persist pause, the per-book hourly cap, the confidence minimum, and the champion."""
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
     with _PAPER_LOCK:
         broker = _paper(cfg)
         broker.reload()
+        stored: str | None = None
+        if champion is not None:
+            stored = str(champion).strip().lower()
+            if stored not in STRATEGY_IDS:
+                raise ValueError("champion must be brief, consensus, or mtf")
         return broker.write_auto(
             enabled=enabled,
             max_opens_per_hour=max_opens_per_hour,
             min_confidence=min_confidence,
+            champion=stored,
         )
 
 
@@ -672,9 +779,12 @@ def _row_view(
     if outcome not in {"RIGHT", "WRONG", "FLAT"}:
         outcome = ""
     confidence = _f(row.get("confidence"))
+    sid = book_id(row)
     return {
         "id": row.get("id"),
         "pair": pair,
+        "strategy_id": sid,
+        "strategy_name": str(row.get("strategy_name") or strategy_name(sid)),
         "status": status,
         "trigger": side if side in {"BUY", "SELL"} else "",
         "confidence": confidence,
@@ -704,6 +814,67 @@ def _mark_for(pair: str, cfg: dict[str, Any], interval: str) -> float | None:
     if frame is None or frame.empty or "Close" not in frame.columns:
         return None
     return _f(frame["Close"].iloc[-1])
+
+
+def _window_r(row: dict[str, Any]) -> float | None:
+    side = str(row.get("side") or "").upper()
+    mark = _f(row.get("exit_price"))
+    return _r_multiple(side, _f(row.get("entry_price")), mark, _f(row.get("sl")))
+
+
+def _strategy_compare(broker: PaperBroker, now: datetime, auto: dict[str, Any]) -> list[dict[str, Any]]:
+    """Rolling closed stats per book. Open count is the book right now, not the window."""
+    champion = normalize_champion(auto.get("champion"))
+    cap = int(auto["max_opens_per_hour"])
+    cutoff = _as_utc(now) - _COMPARE_WINDOW
+    closed = list(broker.list_closed())
+    open_rows = list(broker.list_positions())
+    cards: list[dict[str, Any]] = []
+    for item in STRATEGIES:
+        sid = item["id"]
+        window: list[dict[str, Any]] = []
+        for row in closed:
+            if book_id(row) != sid:
+                continue
+            stamp = parse_ts(row.get("exit_time") or row.get("entry_time"))
+            if stamp is None or _as_utc(stamp) < cutoff:
+                continue
+            window.append(row)
+        wins = sum(1 for row in window if normalize_outcome(row) == "RIGHT")
+        losses = sum(1 for row in window if normalize_outcome(row) == "WRONG")
+        scored = wins + losses
+        if scored:
+            win_text = f"{int(round(100.0 * wins / scored))}%"
+        else:
+            win_text = "—"
+        rs = [value for value in (_window_r(row) for row in window) if value is not None]
+        if rs:
+            avg = sum(rs) / len(rs)
+            exp_value: float | None = round(avg, 4)
+            exp_text = f"{avg:+.2f}R"
+        else:
+            exp_value = None
+            exp_text = "—"
+        hour = _auto_opens_in_window(broker, now, sid)
+        limited = hour >= cap
+        cards.append(
+            {
+                "id": sid,
+                "name": item["name"],
+                "champion": sid == champion,
+                "open_count": sum(1 for row in open_rows if book_id(row) == sid),
+                "trade_count": len(window),
+                "win_rate_text": win_text,
+                "expectancy_r": exp_value,
+                "expectancy_text": exp_text,
+                "opens_this_hour": hour,
+                "rate_limited": limited,
+                "rate_status": (
+                    f"Rate-limited: {hour}/{cap} opens this hour" if limited else None
+                ),
+            }
+        )
+    return cards
 
 
 def portfolio_payload(
@@ -739,7 +910,9 @@ def portfolio_payload(
         closed_rows = [
             _row_view(row, cfg, now=clock, mark=None) for row in reversed(closed_src[-_CLOSED_LIMIT:])
         ]
-        opens_this_hour = _auto_opens_in_window(broker, clock)
+        champion = normalize_champion(auto.get("champion"))
+        strategies = _strategy_compare(broker, clock, auto)
+        opens_this_hour = _auto_opens_in_window(broker, clock, champion)
         cap = int(auto["max_opens_per_hour"])
         min_confidence = int(auto["min_confidence"])
     try:
@@ -753,6 +926,9 @@ def portfolio_payload(
         "auto_enabled": bool(auto["enabled"]),
         "max_opens_per_hour": cap,
         "min_confidence": min_confidence,
+        "champion": champion,
+        "compare_window": "7d",
+        "strategies": strategies,
         "opens_this_hour": opens_this_hour,
         "rate_limited": rate_limited,
         "rate_status": rate_status,

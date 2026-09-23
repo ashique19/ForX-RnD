@@ -37,6 +37,7 @@ from api.deskdata import (
 from api.learnings import MAX_LIMIT, learnings_payload
 from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_settings
 from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
+from api.strategies import STRATEGY_IDS
 from forex_lab.ui.model_build import model_build_status
 from forex_lab.ui.pipeline import run_retrain
 
@@ -108,6 +109,7 @@ class PaperAutoBody(BaseModel):
     enabled: bool | None = None
     max_opens_per_hour: int | None = Field(default=None, ge=0, le=MAX_OPENS_PER_HOUR)
     min_confidence: int | None = Field(default=None, ge=MIN_CONFIDENCE_FLOOR, le=MIN_CONFIDENCE_CAP)
+    champion: str | None = None
 
 
 def create_app() -> FastAPI:
@@ -274,13 +276,27 @@ def create_app() -> FastAPI:
 
     @app.post("/portfolio/auto")
     def post_portfolio_auto(body: PaperAutoBody) -> dict:
-        if body.enabled is None and body.max_opens_per_hour is None and body.min_confidence is None:
-            raise HTTPException(status_code=400, detail="enabled, max_opens_per_hour, or min_confidence is required")
-        set_auto_settings(
-            enabled=body.enabled,
-            max_opens_per_hour=body.max_opens_per_hour,
-            min_confidence=body.min_confidence,
-        )
+        if (
+            body.enabled is None
+            and body.max_opens_per_hour is None
+            and body.min_confidence is None
+            and body.champion is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="enabled, max_opens_per_hour, min_confidence, or champion is required",
+            )
+        if body.champion is not None and str(body.champion).strip().lower() not in STRATEGY_IDS:
+            raise HTTPException(status_code=400, detail="champion must be brief, consensus, or mtf")
+        try:
+            set_auto_settings(
+                enabled=body.enabled,
+                max_opens_per_hour=body.max_opens_per_hour,
+                min_confidence=body.min_confidence,
+                champion=body.champion,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         # Pausing freezes the book. A cap or confidence change still runs the auto step.
         return portfolio_payload(sync=body.enabled is not False)
 

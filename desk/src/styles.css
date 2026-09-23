@@ -1523,6 +1523,101 @@
       font-weight: 600;
       border-bottom: 1px solid #fedf89;
     }
+    .port-filters {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 8px 12px 0;
+    }
+    .port-filters button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-2);
+      border-radius: 999px;
+      padding: 2px 10px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .port-filters button.is-on {
+      background: var(--blue-bg);
+      color: var(--blue);
+      border-color: #b2ddff;
+    }
+    .compare {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px 12px 4px;
+    }
+    .compare-card {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      min-width: 0;
+    }
+    .compare-card.is-champion {
+      border-color: #b2ddff;
+      background: var(--blue-bg);
+    }
+    .compare-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .compare-hd strong {
+      font-size: 12.5px;
+    }
+    .compare-hd button {
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .compare-hd button:disabled {
+      cursor: default;
+      color: var(--blue);
+      background: var(--surface);
+      border-color: #b2ddff;
+    }
+    .compare-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 8px;
+      margin: 0;
+    }
+    .compare-stats div { min-width: 0; }
+    .compare-stats dt {
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .compare-stats dd {
+      margin: 0;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+    .compare-rate {
+      margin: 6px 0 0;
+      color: #b54708;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    @media (max-width: 860px) {
+      .compare { grid-template-columns: 1fr; }
+    }
     table.port .chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
     .placeholder .log {
       margin-top: 12px;

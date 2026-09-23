@@ -210,6 +210,13 @@ export interface Brief {
   calendar_note?: string | null;
   /** Core AI joblib for this pair. Separate from price STALE. */
   model_build?: ModelBuild | null;
+  champion?: {
+    id: string;
+    name: string;
+    signal: string | null;
+    confidence: number | null;
+    confidence_text: string;
+  };
 }
 
 export interface ModelChampion {
@@ -374,15 +381,37 @@ export interface PortfolioRow {
   outcome: string | null;
   exit_reason: string | null;
   source: string | null;
+  strategy_id?: string;
+  strategy_name?: string;
+}
+
+export interface PortfolioStrategy {
+  id: string;
+  name: string;
+  champion: boolean;
+  /** Open positions on this book right now. Not a windowed count. */
+  open_count: number;
+  /** Closed trades with a parseable time inside the rolling window. */
+  trade_count: number;
+  win_rate_text: string;
+  expectancy_text: string;
+  opens_this_hour: number;
+  rate_limited: boolean;
+  rate_status: string | null;
 }
 
 export interface PortfolioFeed {
   timezone: string;
   auto_enabled: boolean;
-  /** Shared auto-open budget for every pair. Per-pair caps are not in this feed. */
+  /** Per-strategy auto-open budget. The same number applies to each book. */
   max_opens_per_hour: number;
-  /** Shared minimum confidence (percent) for every pair. */
+  /** Shared minimum confidence (percent) for every strategy book. */
   min_confidence: number;
+  /** Decision champion. Manual promote only. */
+  champion?: string;
+  compare_window?: string;
+  strategies?: PortfolioStrategy[];
+  /** Champion book's auto opens in the rolling hour. */
   opens_this_hour: number;
   rate_limited: boolean;
   rate_status: string | null;

@@ -235,6 +235,8 @@ def _paper_items(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, A
     open_rows = [row for row in (raw.get("positions") or []) if isinstance(row, dict)]
     fallback = _mtime(path)
     seq = _Seq()
+    from api.strategies import book_id, strategy_name
+
     items: list[dict[str, Any]] = []
     latest: datetime | None = None
     for row in closed:
@@ -250,6 +252,8 @@ def _paper_items(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, A
         pair = str(row.get("pair") or "?").upper()
         side = str(row.get("side") or "").upper()
         title = f"{pair} {side} paper {outcome}".strip()
+        if row.get("strategy_id"):
+            title = f"{title} · {strategy_name(book_id(row))}"
         items.append(
             _stamp(
                 cfg=cfg,
@@ -278,8 +282,12 @@ def _paper_items(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, A
 
 
 def _paper_detail(row: Mapping[str, Any], outcome: str) -> str:
+    from api.strategies import book_id, strategy_name
+
     reason = str(row.get("exit_reason") or "").strip()
     bits = [f"Closed on {reason}" if reason else f"Closed {outcome}"]
+    if row.get("strategy_id"):
+        bits.append(f"strategy {strategy_name(book_id(row))}")
     session = str(row.get("session") or "").strip()
     if session and session.lower() != "n/a":
         bits.append(f"session {session}")

@@ -941,6 +941,30 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     }
 
 
+def apply_champion_headline(
+    pair: str,
+    tf: str,
+    view: dict[str, Any],
+    tone: str,
+    bias: str,
+    headline: str,
+    sub: str,
+) -> tuple[str, str, str, str]:
+    """Prefix the champion. Replace the model headline only when another book is champion."""
+    name = str(view.get("name") or "Brief")
+    conf = str(view.get("confidence_text") or "—")
+    prefix = f"Champion {name} · {conf}"
+    merged = f"{prefix} · {sub}" if sub else prefix
+    if str(view.get("id") or "brief") == "brief":
+        return tone, bias, headline, merged
+    signal = view.get("signal")
+    if signal == "BUY":
+        return "buy", "BUY bias", f"{pair} — bullish research bias on {tf} · {name}", merged
+    if signal == "SELL":
+        return "sell", "SELL bias", f"{pair} — bearish research bias on {tf} · {name}", merged
+    return "flat", "NO LIVE BIAS", f"{pair} — {name} has no live call on {tf}", merged
+
+
 def _headline(pair: str, primary: dict[str, Any]) -> tuple[str, str, str]:
     signal = primary.get("signal")
     validity = str(primary.get("validity") or "")
@@ -1008,6 +1032,14 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
     )
     _attach_event_stop([hourly, daily, primary], symbol, cards)
     tone, bias, headline = _headline(symbol, primary)
+    from api.paperdesk import current_champion
+    from api.strategies import champion_view
+
+    try:
+        champ_id = current_champion(cfg)
+    except Exception:
+        champ_id = "brief"
+    champ = champion_view(primary_row, cfg, primary, champ_id)
     parts = [lean_label(hourly_c if primary_iv != DAILY_INTERVAL else daily_c)]
     if primary.get("mtf") or getattr(primary_row, "mtf", None) is not None:
         mtf = getattr(primary_row, "mtf", None)
@@ -1026,6 +1058,15 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         else:
             parts.append(f"Next event {event['label']}")
     rationale = str(primary.get("rationale") or "").strip()
+    tone, bias, headline, sub = apply_champion_headline(
+        symbol,
+        tf_label(primary_iv),
+        champ,
+        tone,
+        bias,
+        headline,
+        " · ".join(p for p in parts if p),
+    )
     cal = calendar_context(bundle)
     calendar_note = cal["note"]
     if calendar_note is None and event is None and not bundle.error:
@@ -1039,7 +1080,14 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "bias_tone": tone,
         "confidence": primary.get("confidence"),
         "headline": headline,
-        "sub": " · ".join(p for p in parts if p),
+        "sub": sub,
+        "champion": {
+            "id": champ.get("id"),
+            "name": champ.get("name"),
+            "signal": champ.get("signal"),
+            "confidence": champ.get("confidence"),
+            "confidence_text": champ.get("confidence_text"),
+        },
         "rationale": rationale,
         "primary": primary,
         "hourly": hourly,

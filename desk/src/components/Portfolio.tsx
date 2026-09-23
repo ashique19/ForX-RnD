@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { PortfolioFeed, PortfolioRow } from "../types";
+import type { PortfolioFeed, PortfolioRow, PortfolioStrategy } from "../types";
 
 const MIN_REFRESH_MS = 60_000;
 
@@ -15,6 +15,7 @@ function TradeTable({ rows }: { rows: PortfolioRow[] }) {
       <thead>
         <tr>
           <th>Pair</th>
+          <th>Strategy</th>
           <th>Status</th>
           <th>Signal</th>
           <th>Trigger</th>
@@ -29,6 +30,7 @@ function TradeTable({ rows }: { rows: PortfolioRow[] }) {
         {rows.map((row) => (
           <tr key={row.id}>
             <td className="pair">{row.pair}</td>
+            <td>{dash(row.strategy_name || "Brief")}</td>
             <td>{row.status === "closed" ? "Closed" : "Open"}</td>
             <td title={row.confidence == null ? "No confidence on the fill" : undefined}>{dash(row.confidence_text)}</td>
             <td>
@@ -62,6 +64,46 @@ function TradeTable({ rows }: { rows: PortfolioRow[] }) {
   );
 }
 
+function StrategyCard({
+  item,
+  busy,
+  onPromote,
+}: {
+  item: PortfolioStrategy;
+  busy: boolean;
+  onPromote: (id: string) => void;
+}) {
+  return (
+    <article className={item.champion ? "compare-card is-champion" : "compare-card"}>
+      <div className="compare-hd">
+        <strong>{item.name}</strong>
+        <button type="button" disabled={busy || item.champion} onClick={() => onPromote(item.id)}>
+          {item.champion ? "Champion" : "Make champion"}
+        </button>
+      </div>
+      <dl className="compare-stats">
+        <div>
+          <dt>Win rate</dt>
+          <dd>{item.win_rate_text}</dd>
+        </div>
+        <div>
+          <dt>Avg R</dt>
+          <dd>{item.expectancy_text}</dd>
+        </div>
+        <div>
+          <dt>Trades · 7d</dt>
+          <dd>{item.trade_count}</dd>
+        </div>
+        <div>
+          <dt>Open now</dt>
+          <dd>{item.open_count}</dd>
+        </div>
+      </dl>
+      {item.rate_status ? <p className="compare-rate">{item.rate_status}</p> : null}
+    </article>
+  );
+}
+
 function parseCap(raw: string): number | null {
   const text = raw.trim();
   if (!/^\d+$/.test(text)) return null;
@@ -79,6 +121,7 @@ export function PortfolioPanel() {
   const [capFocused, setCapFocused] = useState(false);
   const [confDraft, setConfDraft] = useState(65);
   const [confDragging, setConfDragging] = useState(false);
+  const [strategyFilter, setStrategyFilter] = useState("all");
   const capFromFeed = feed?.max_opens_per_hour;
   const confFromFeed = feed?.min_confidence;
 
@@ -163,6 +206,20 @@ export function PortfolioPanel() {
     }
   }
 
+  async function promote(id: string) {
+    if (!id || id === feed?.champion) return;
+    setBusy(true);
+    try {
+      const next = await api.setAutoPaper({ champion: id });
+      setFeed(next);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not set the champion");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function commitCap() {
     const nextCap = parseCap(capDraft);
     const current = feed?.max_opens_per_hour ?? 3;
@@ -184,9 +241,12 @@ export function PortfolioPanel() {
     }
   }
 
-  const open = feed?.open ?? [];
-  const closed = feed?.closed ?? [];
+  const strategies = feed?.strategies ?? [];
+  const matches = (row: PortfolioRow) => strategyFilter === "all" || (row.strategy_id || "brief") === strategyFilter;
+  const open = (feed?.open ?? []).filter(matches);
+  const closed = (feed?.closed ?? []).filter(matches);
   const autoOn = feed?.auto_enabled !== false;
+  const filterName = strategies.find((item) => item.id === strategyFilter)?.name;
 
   return (
     <section className="panel portfolio" aria-label="Portfolio">
@@ -259,10 +319,10 @@ export function PortfolioPanel() {
       </header>
       <p className="port-note">
         {autoOn
-          ? "Auto opens when confidence crosses the minimum on a clear BUY or SELL (not the first reading, and not again while that side stays eligible). After a close, a new cross can open again. Closes on stop, target, duration, or the opposite signal. Fills use the cached last close."
-          : "Auto is paused. Open paper trades stay in this book until you close them from the signal brief. Pausing stops every auto open and close."}
+          ? "Each strategy opens when its own confidence crosses the minimum on a clear BUY or SELL (not the first reading, and not again while that side stays eligible). After a close, a new cross can open again. Closes on stop, target, duration, or that strategy's opposite signal. Fills use the cached last close."
+          : "Auto is paused. Open paper trades stay until you close the champion book from the signal brief. Pausing stops every auto open and close."}
         {" "}
-        The hourly cap and the confidence minimum are shared across every pair. Auto opens only. Per-pair caps can come later.
+        The hourly number is the cap for each strategy book. The confidence minimum is shared. The Decision headline follows the champion. Promoting a champion is manual; auto-promote can come later.
         {feed?.generated_at_dhaka ? ` Updated ${feed.generated_at_dhaka}.` : ""}
       </p>
       {feed?.block_status ? (
@@ -274,17 +334,45 @@ export function PortfolioPanel() {
       {feed?.auto_errors?.length ? (
         <p className="port-error">Auto skipped {feed.auto_errors.map((item) => item.pair).filter(Boolean).join(", ") || "a pair"}.</p>
       ) : null}
+      {strategies.length ? (
+        <div className="compare" aria-label="Strategy comparison, last 7 days">
+          {strategies.map((item) => (
+            <StrategyCard key={item.id} item={item} busy={busy || !feed} onPromote={(id) => void promote(id)} />
+          ))}
+        </div>
+      ) : null}
       <div className="port-body">
         {!feed && !error ? <p className="learn-empty">Loading portfolio…</p> : null}
         {feed ? (
           <>
+            <div className="port-filters" role="tablist" aria-label="Filter by strategy">
+              <button type="button" className={strategyFilter === "all" ? "is-on" : ""} onClick={() => setStrategyFilter("all")}>
+                All
+              </button>
+              {strategies.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={strategyFilter === item.id ? "is-on" : ""}
+                  onClick={() => setStrategyFilter(item.id)}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
             <h3>Open</h3>
-            {open.length ? <TradeTable rows={open} /> : <p className="port-empty">No open paper trades.</p>}
+            {open.length ? (
+              <TradeTable rows={open} />
+            ) : (
+              <p className="port-empty">{filterName ? `No open paper trades for ${filterName}.` : "No open paper trades."}</p>
+            )}
             <h3>Closed</h3>
             {closed.length ? (
               <TradeTable rows={closed} />
             ) : (
-              <p className="port-empty">No closed paper trades yet.</p>
+              <p className="port-empty">
+                {filterName ? `No closed paper trades for ${filterName}.` : "No closed paper trades yet."}
+              </p>
             )}
           </>
         ) : null}
