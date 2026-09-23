@@ -894,6 +894,7 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         "rationale": rationale,
         "atr_pips": None if atr_pips is None else round(float(atr_pips), 1),
         "raw_signal": None if not getattr(row, "raw_signal", None) else str(row.raw_signal),
+        "confidence": _num(getattr(row, "confidence", None)),
     }
 
 
@@ -992,6 +993,7 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "interval": primary_iv,
         "bias": bias,
         "bias_tone": tone,
+        "confidence": primary.get("confidence"),
         "headline": headline,
         "sub": " · ".join(p for p in parts if p),
         "rationale": rationale,

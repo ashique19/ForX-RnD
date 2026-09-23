@@ -149,6 +149,8 @@ export interface Suggestion {
   duration: string;
   scenario: string;
   rationale: string;
+  /** Model confidence for this suggestion. Probability in 0–1, or null when the row has none. */
+  confidence?: number | null;
   /** Tighter research SL from advise.py when an open paper position meets a high-impact window. */
   event_stop?: number | null;
   event_stop_text?: string;
@@ -160,6 +162,8 @@ export interface Brief {
   interval: string;
   bias: string;
   bias_tone: string;
+  /** Confidence of the primary suggestion that produced `bias`. Null when missing. */
+  confidence?: number | null;
   headline: string;
   sub: string;
   rationale: string;

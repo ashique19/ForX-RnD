@@ -627,6 +627,7 @@ def test_hold_brief_uses_research_barriers_when_price_exists():
     sug = suggestion_from_row(row, cfg, ohlcv=df)
     assert sug["signal"] is None
     assert sug["chip"] == "HOLD"
+    assert sug["confidence"] is None
     assert sug["now"] == pytest.approx(close)
     assert isinstance(sug["stop"], float) and sug["stop"] < close
     assert isinstance(sug["target"], float) and sug["target"] > close
@@ -664,6 +665,39 @@ def test_hold_brief_uses_research_barriers_when_price_exists():
     assert no_barriers["stop"] is None
     assert no_barriers["stop_text"] == "no barriers"
     assert no_barriers["target_text"] == "no barriers"
+
+
+def test_suggestion_passes_model_confidence_and_leaves_it_blank_when_missing():
+    """Collapsed brief title reads this field. Do not invent 0 when the row has none."""
+    from types import SimpleNamespace
+
+    from api.deskdata import suggestion_from_row
+    from forex_lab.data import generate_synthetic_ohlcv
+
+    df = generate_synthetic_ohlcv(bars=40, seed=2)
+    cfg = {"label_scheme": "forward_return", "horizon": 4}
+    base = dict(
+        pair="EURUSD",
+        timeframe="1h",
+        validity="OK",
+        buy_sell="SELL",
+        raw_signal="SELL",
+        close=float(df["Close"].iloc[-1]),
+        status="ready",
+        rationale="",
+        signal_details="",
+        risk=None,
+        quote=None,
+    )
+    priced = suggestion_from_row(SimpleNamespace(**base, confidence=0.7), cfg, ohlcv=df)
+    assert priced["signal"] == "SELL"
+    assert priced["confidence"] == pytest.approx(0.7)
+
+    blank = suggestion_from_row(SimpleNamespace(**base, confidence=None), cfg, ohlcv=df)
+    assert blank["confidence"] is None
+
+    absent = suggestion_from_row(SimpleNamespace(**base), cfg, ohlcv=df)
+    assert absent["confidence"] is None
 
 
 def test_failed_refresh_is_not_live_and_keeps_age(monkeypatch: pytest.MonkeyPatch):

@@ -401,6 +401,7 @@ export function App() {
               <SignalBrief
                 pair={brief?.pair ?? selected}
                 bias={brief?.bias ?? "—"}
+                confidence={brief?.confidence ?? null}
                 biasTone={brief?.bias_tone ?? "flat"}
                 headline={brief?.headline ?? `${selected} — loading`}
                 sub={brief?.sub ?? "Asia/Dhaka · research desk"}

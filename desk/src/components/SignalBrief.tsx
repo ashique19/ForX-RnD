@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { collapsedBriefTitle } from "../briefTitle";
 import { eventChip } from "../countdown";
 import type { AdviceCard, Consensus, NextEvent, PaperState, Suggestion } from "../types";
 
@@ -6,9 +7,12 @@ const BRIEF_EXPANDED_KEY = "forx.desk.signalBriefExpanded";
 
 function loadBriefExpanded(): boolean {
   try {
-    return localStorage.getItem(BRIEF_EXPANDED_KEY) !== "0";
+    const saved = localStorage.getItem(BRIEF_EXPANDED_KEY);
+    // No saved choice: open collapsed. "1" / "0" (and any other stored token) stay as saved.
+    if (saved == null) return false;
+    return saved !== "0";
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -219,6 +223,7 @@ function PaperActions({
 export function SignalBrief({
   pair,
   bias,
+  confidence = null,
   biasTone,
   headline,
   sub,
@@ -239,6 +244,8 @@ export function SignalBrief({
 }: {
   pair: string;
   bias: string;
+  /** Primary suggestion confidence (0–1 probability). Null when the model has none. */
+  confidence?: number | null;
   biasTone: string;
   headline: string;
   sub: string;
@@ -288,6 +295,7 @@ export function SignalBrief({
   };
   const collapsedNote = !expanded && (open || toast || orderError);
   const pairLabel = pair.trim();
+  const collapsedTitle = collapsedBriefTitle(pairLabel, bias, confidence);
   const caution = advice.find((card) => card.severity === "warn" || card.severity === "caution");
   const chip = nextEvent
     ? eventChip(nextEvent.currency, nextEvent.short_title || nextEvent.title, nextEvent.when, nextEvent.warn, nowMs)
@@ -295,7 +303,9 @@ export function SignalBrief({
   return (
     <section className={expanded ? "panel brief" : "panel brief is-collapsed"}>
       <div className="panel-hd">
-        <h2 className={expanded ? undefined : "brief-pair"}>{expanded ? "Signal brief" : pairLabel || "Signal brief"}</h2>
+        <h2 className={expanded ? undefined : "brief-pair"} title={expanded ? undefined : collapsedTitle}>
+          {expanded ? "Signal brief" : collapsedTitle}
+        </h2>
         {expanded ? (
           <span className="meta">{pairLabel ? `${pairLabel} · selected` : "selected"}</span>
         ) : (

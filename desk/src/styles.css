@@ -388,6 +388,7 @@
       font-weight: 700;
       letter-spacing: -0.02em;
       color: var(--text);
+      white-space: nowrap;
     }
     .panel-toggle .chev {
       width: 14px;
