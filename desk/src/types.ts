@@ -94,6 +94,8 @@ export interface ForecastRow {
   url?: string;
   entry?: number | null;
   fetched_at?: string | null;
+  last_ok_at?: string | null;
+  last_ok_at_dhaka?: string | null;
   tier?: string;
 }
 
@@ -106,6 +108,7 @@ export interface ConsensusCounts {
 export interface ConsensusAggregate {
   counts: ConsensusCounts;
   ok: number;
+  listed?: number;
   missing: number;
   errors: number;
   skipped: number;
@@ -121,6 +124,7 @@ export interface RangeRow {
   window: string | null;
   status: string;
   reason: string;
+  last_ok_at_dhaka?: string | null;
 }
 
 export interface Consensus {

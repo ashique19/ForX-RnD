@@ -74,14 +74,9 @@ def gap_s() -> float:
 
 
 def _blocked_reason(status: int, body: str, err: str) -> str | None:
-    sample = body[:1500] if body else ""
-    if status in {401, 403, 429} or "Just a moment" in sample or "cf-browser-verification" in sample:
-        return "blocked by bot check"
-    if status == 0:
-        return err or "network error"
-    if status != 200 or not body:
-        return err or f"HTTP {status or 'fail'}"
-    return None
+    from api.consensus_fetch import failure_reason
+
+    return failure_reason(status, body, err)
 
 
 def _failed(name: str, reason: str, stamp: str, *, url: str = "", with_range: bool = False) -> dict[str, Any]:
@@ -243,7 +238,7 @@ def fetch_stocktwits(pair: str, now: datetime | None = None) -> dict[str, Any]:
     status, body, err = cached_http_get(url, timeout=12)
     blocked = _blocked_reason(status, body, err)
     if blocked or status == 404:
-        reason = "symbol not on StockTwits" if status == 404 else (blocked or "request failed")
+        reason = "pair not listed" if status == 404 else (blocked or "request failed")
         state = "MISSING" if status == 404 else "ERROR"
         return _both(name, None, state, reason, url, stamp)
     try:
@@ -354,7 +349,7 @@ def fetch_fxssi(pair: str, now: datetime | None = None) -> dict[str, Any]:
     signals = parse_fxssi_signals(body)
     direction = signals.get(forms["pair"])
     if direction is None:
-        return _both(name, None, "MISSING", "pair not on the current-ratio board", url, stamp)
+        return _both(name, None, "MISSING", "pair not listed", url, stamp)
     reason = "current-ratio signal (not timeframe-specific)"
     return _both(name, direction, "OK", reason, url, stamp)
 
@@ -423,7 +418,7 @@ def fetch_mataf(pair: str, now: datetime | None = None) -> dict[str, Any]:
     table = parse_mataf_pivots(body)
     levels = table.get(forms["pair"])
     if not levels:
-        why = "pair not on the pivot table"
+        why = "pair not listed"
         block = _both(name, None, "MISSING", why, url, stamp, with_range=True, range_status="MISSING", range_reason=why)
         for hz in block:
             block[hz]["forecaster"]["status"] = "RANGE"
@@ -707,6 +702,7 @@ def aggregate_consensus(forecasters: list[dict[str, Any]], ranges: list[dict[str
     return {
         "counts": counts,
         "ok": buys + sells + neutrals,
+        "listed": len(forecasters),
         "missing": missing,
         "errors": errors,
         "skipped": skipped,

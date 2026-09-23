@@ -1019,20 +1019,23 @@ def _render_other_forecasters(pair: str, cfg: dict) -> None:
                 levels = f"{float(span['low']):.{digits}f}–{float(span['high']):.{digits}f} · {span.get('count')} published"
             else:
                 levels = "no published range"
+            listed = int(agg.get("listed") or len(snap.get("forecasters") or []))
+            ok_n = int(agg.get("ok") or 0)
             st.markdown(
-                f"**{label}** · Buy {counts.get('Buy', 0)} · Sell {counts.get('Sell', 0)} · "
+                f"**{label}** · {ok_n}/{listed} OK · Buy {counts.get('Buy', 0)} · Sell {counts.get('Sell', 0)} · "
                 f"Neutral {counts.get('Neutral', 0)} · {top}{agree}"
             )
-            st.caption(f"{levels} · {age} · {agg.get('errors', 0)} errors · {agg.get('missing', 0)} missing · {agg.get('skipped', 0)} skipped")
-            lines = []
-            for row in snap.get("forecasters") or []:
-                status = str(row.get("status") or "")
-                shown = row.get("direction") if status == "OK" else status.lower()
-                why = str(row.get("reason") or "").strip()
-                extra = f" — {why}" if why and status != "OK" else ""
-                lines.append(f"{row.get('source')}: {shown}{extra}")
-            if lines:
-                st.caption(" · ".join(lines[:8]) + (" …" if len(lines) > 8 else ""))
+            st.caption(f"{levels} · {age}")
+            failures = [row for row in (snap.get("forecasters") or []) if str(row.get("status") or "") != "OK"]
+            if not failures:
+                st.caption("Every listed source returned a side.")
+            else:
+                bits = []
+                for row in failures:
+                    why = str(row.get("reason") or "").strip() or "empty parse"
+                    last = row.get("last_ok_at_dhaka") or "no prior success"
+                    bits.append(f"{row.get('source')}: {row.get('status')} — {why} · last OK {last}")
+                st.caption(" · ".join(bits))
 
 
 def _render_detail_drawer(

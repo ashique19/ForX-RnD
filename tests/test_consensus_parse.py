@@ -78,4 +78,4 @@ def test_investing_and_fxstreet_status_from_fake_http(monkeypatch):
     fx = fetch_fxstreet("EURUSD")
     assert fx["hourly"]["forecaster"]["status"] == "ERROR"
     assert fx["hourly"]["forecaster"]["direction"] is None
-    assert "blocked" in fx["hourly"]["forecaster"]["reason"]
+    assert fx["hourly"]["forecaster"]["reason"] == "HTTP 403"

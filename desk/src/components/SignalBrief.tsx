@@ -69,8 +69,16 @@ function ageLabel(consensus: Consensus): string {
   return `${rel} · ${consensus.fetched_at_dhaka}${stale}${pending}`;
 }
 
-function sourceTitle(row: { reason?: string; url?: string; fetched_at?: string | null }): string {
-  return [row.reason, row.fetched_at, row.url].filter(Boolean).join(" · ");
+function sourceTitle(row: { reason?: string; url?: string; fetched_at?: string | null; last_ok_at_dhaka?: string | null }): string {
+  return [row.reason, row.last_ok_at_dhaka ? `last OK ${row.last_ok_at_dhaka}` : "", row.fetched_at, row.url]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function failureDetail(row: { reason?: string; last_ok_at_dhaka?: string | null }): string {
+  const why = row.reason?.trim() || "empty parse";
+  const last = row.last_ok_at_dhaka ? `last OK ${row.last_ok_at_dhaka}` : "no prior success";
+  return `${why} · ${last}`;
 }
 
 function rangeText(row: Consensus["ranges"][number], pair: string): string {
@@ -104,18 +112,14 @@ function topText(consensus: Consensus): string {
 
 function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: string }) {
   const counts = consensus.aggregate?.counts ?? { Buy: 0, Sell: 0, Neutral: 0 };
-  const errors = consensus.aggregate?.errors ?? 0;
-  const missing = consensus.aggregate?.missing ?? 0;
-  const skipped = consensus.aggregate?.skipped ?? 0;
-  const trouble = [
-    errors ? `${errors} error${errors === 1 ? "" : "s"}` : "",
-    missing ? `${missing} missing` : "",
-    skipped ? `${skipped} skipped` : "",
-  ].filter(Boolean);
+  const listed = consensus.aggregate?.listed ?? consensus.forecasters.length;
+  const ok = consensus.aggregate?.ok ?? 0;
+  const failures = consensus.forecasters.filter((row) => row.status !== "OK");
   return (
     <div className="consensus">
       <div className="section-lbl">Other forecasters</div>
       <div className="consensus-sum">
+        <span className="consensus-score">{ok}/{listed} OK</span>
         <span className="count buy">Buy {counts.Buy}</span>
         <span className="count sell">Sell {counts.Sell}</span>
         <span className="count neutral">Neutral {counts.Neutral}</span>
@@ -123,7 +127,25 @@ function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: strin
       </div>
       <div className="consensus-meta">{spanText(consensus, pair)}</div>
       <div className="consensus-meta">{ageLabel(consensus)}</div>
-      {trouble.length ? <div className="consensus-meta">{trouble.join(" · ")}</div> : null}
+      <details className="consensus-sources">
+        <summary>Failures ({failures.length})</summary>
+        {failures.length === 0 ? (
+          <div className="consensus-meta">Every listed source returned a side.</div>
+        ) : (
+          <div className="forecasters">
+            {failures.map((row) => (
+              <div className="fc-row" key={row.source}>
+                <span className="site">
+                  {row.source}
+                  {row.tier ? <span className="tier"> {row.tier}</span> : null}
+                </span>
+                <span className={dirClass(row.direction, row.status)}>{row.status}</span>
+                <span className="why">{failureDetail(row)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
       <details className="consensus-sources">
         <summary>Sources ({consensus.forecasters.length})</summary>
         <div className="forecasters">
@@ -136,7 +158,7 @@ function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: strin
               <span className={dirClass(row.direction, row.status)} title={sourceTitle(row) || undefined}>
                 {sourceLabel(row.status, row.direction)}
               </span>
-              {row.status !== "OK" && row.reason ? <span className="why">{row.reason}</span> : null}
+              {row.status !== "OK" ? <span className="why">{failureDetail(row)}</span> : null}
             </div>
           ))}
         </div>
@@ -146,7 +168,7 @@ function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: strin
             <div className="rg-row" key={row.source}>
               <span className="site">{row.source}</span>
               <span className="rng" title={row.reason || undefined}>{rangeText(row, pair)}</span>
-              {row.status !== "OK" && row.reason ? <span className="why">{row.reason}</span> : null}
+              {row.status !== "OK" ? <span className="why">{failureDetail(row)}</span> : null}
             </div>
           ))}
         </div>

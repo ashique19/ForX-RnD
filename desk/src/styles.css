@@ -597,6 +597,11 @@
       align-items: baseline;
       font-size: 12px;
     }
+    .consensus-sum .consensus-score {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
     .consensus-sum .count { font-weight: 600; font-variant-numeric: tabular-nums; }
     .consensus-sum .count.buy { color: var(--green); }
     .consensus-sum .count.sell { color: var(--red); }

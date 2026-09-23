@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from api.consensus import ensure_consensus, read_consensus, reset_consensus_state
+from api.consensus import carry_last_success, ensure_consensus, read_consensus, reset_consensus_state
+from api.consensus_fetch import failure_reason
 from api.consensus_registry import (
     aggregate_consensus,
     pair_forms,
@@ -19,6 +20,71 @@ from api.consensus_registry import (
     stocktwits_lean,
 )
 from forex_lab.ui.watchlist import WatchlistError
+
+
+def test_failure_reason_is_short_and_specific():
+    assert failure_reason(403, "<html>Just a moment</html>", "") == "HTTP 403"
+    assert failure_reason(429, "", "") == "rate limited"
+    assert failure_reason(0, "", "The read operation timed out") == "timeout"
+    assert failure_reason(200, "", "") == "empty parse"
+    assert failure_reason(200, "<html>ok</html>", "") is None
+    assert failure_reason(404, "", "") == "HTTP 404"
+
+
+def test_failed_source_keeps_last_success_and_never_blank_missing():
+    import json
+
+    previous = {
+        "hourly": {
+            "fetched_at": "2026-09-23T06:00:00Z",
+            "forecasters": [
+                {
+                    "source": "FXEmpire",
+                    "direction": "Buy",
+                    "status": "OK",
+                    "reason": "",
+                    "fetched_at": "2026-09-23T06:00:00Z",
+                }
+            ],
+            "ranges": [],
+        }
+    }
+    fetched = {
+        "hourly": {
+            "fetched_at": "2026-09-23T12:00:00Z",
+            "forecasters": [
+                {
+                    "source": "FXEmpire",
+                    "direction": None,
+                    "status": "ERROR",
+                    "reason": "HTTP 403",
+                    "fetched_at": "2026-09-23T12:00:00Z",
+                },
+                {"source": "DailyForex", "direction": None, "status": "MISSING", "reason": "", "fetched_at": "2026-09-23T12:00:00Z"},
+            ],
+            "ranges": [],
+        },
+        "daily": {"fetched_at": "2026-09-23T12:00:00Z", "forecasters": [], "ranges": []},
+    }
+    carry_last_success(previous, fetched)
+    assert fetched["hourly"]["forecasters"][0]["last_ok_at"] == "2026-09-23T06:00:00Z"
+    assert fetched["hourly"]["forecasters"][1]["last_ok_at"] is None
+    clock = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    snap = read_consensus("EURUSD", "hourly", cache={"EURUSD": fetched}, now=clock)
+    by_src = {row["source"]: row for row in snap["forecasters"]}
+    assert by_src["FXEmpire"]["status"] == "ERROR"
+    assert by_src["FXEmpire"]["reason"] == "HTTP 403"
+    assert by_src["FXEmpire"]["direction"] is None
+    assert "Asia/Dhaka" in by_src["FXEmpire"]["last_ok_at_dhaka"]
+    assert by_src["DailyForex"]["reason"] == "empty parse"
+    assert by_src["DailyForex"]["last_ok_at_dhaka"] is None
+    assert snap["aggregate"]["listed"] >= 14
+    assert snap["aggregate"]["ok"] <= snap["aggregate"]["listed"]
+    blank = [row for row in snap["forecasters"] if row["status"] != "OK" and not str(row["reason"]).strip()]
+    assert blank == []
+    empty = read_consensus("GBPUSD", "hourly", cache={}, now=clock)
+    assert "Asia/Dhaka" not in json.dumps(empty)
+    assert all(str(row["reason"]).strip() for row in empty["forecasters"])
 
 
 def test_pair_forms_collapse_usdjpy_spellings():
@@ -59,6 +125,8 @@ def test_aggregate_agreement_and_no_invented_span():
     ]
     agg = aggregate_consensus(forecasters, ranges)
     assert agg["counts"] == {"Buy": 3, "Sell": 1, "Neutral": 1}
+    assert agg["ok"] == 5
+    assert agg["listed"] == 9
     assert agg["top_side"] == "Buy"
     assert agg["confidence"] == pytest.approx(0.75)
     assert agg["missing"] == 1

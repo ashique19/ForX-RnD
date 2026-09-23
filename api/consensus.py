@@ -231,13 +231,31 @@ def read_consensus(
             continue
         row = fc_rows.get(spec.name) or {}
         forecasters.append(
-            _forecaster_view(spec.name, row, have_block=have_block, empty_reason=reason, tier=spec.tier)
+            _forecaster_view(
+                spec.name,
+                row,
+                have_block=have_block,
+                empty_reason=reason,
+                tier=spec.tier,
+                cfg=cfg,
+                fetched_fallback=(block or {}).get("fetched_at"),
+            )
         )
 
     ranges: list[dict[str, Any]] = []
     for spec in range_sources():
         row = rg_rows.get(spec.name) or {}
-        ranges.append(_range_view(spec.name, row, have_block=have_block, empty_reason=reason, tier=spec.tier))
+        ranges.append(
+            _range_view(
+                spec.name,
+                row,
+                have_block=have_block,
+                empty_reason=reason,
+                tier=spec.tier,
+                cfg=cfg,
+                fetched_fallback=(block or {}).get("fetched_at"),
+            )
+        )
 
     ok_dirs = sum(1 for row in forecasters if row["status"] == "OK")
     ok_ranges = sum(1 for row in ranges if row["status"] == "OK")
@@ -269,15 +287,45 @@ def read_consensus(
     }
 
 
+def _public_reason(status: str, raw: object) -> str:
+    """Non-OK rows always carry a reason. A blank MISSING is an empty parse."""
+    text = " ".join(str(raw or "").split())
+    if status == "OK":
+        return text
+    if text:
+        return text
+    return {"ERROR": "fetch failed", "SKIPPED": "not requested", "RANGE": "range only"}.get(status, "empty parse")
+
+
+def _last_ok_fields(
+    status: str,
+    row: dict[str, Any],
+    fetched: object,
+    cfg: dict[str, Any] | None,
+    *,
+    fallback: object = None,
+) -> tuple[str | None, str | None]:
+    stamp = row.get("last_ok_at")
+    if status == "OK" and not stamp:
+        stamp = fetched or fallback
+    parsed = _parse_fetched_at(stamp)
+    if parsed is None:
+        return None, None
+    iso = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return iso, fmt_display(parsed, cfg, seconds=False)
+
+
 def _skipped_view(spec: SourceSpec) -> dict[str, Any]:
     return {
         "source": spec.name,
         "direction": None,
         "status": "SKIPPED",
-        "reason": spec.skip_reason,
+        "reason": _public_reason("SKIPPED", spec.skip_reason),
         "url": "",
         "entry": None,
         "fetched_at": None,
+        "last_ok_at": None,
+        "last_ok_at_dhaka": None,
         "tier": spec.tier,
     }
 
@@ -289,6 +337,8 @@ def _forecaster_view(
     have_block: bool,
     empty_reason: str,
     tier: str,
+    cfg: dict[str, Any] | None = None,
+    fetched_fallback: object = None,
 ) -> dict[str, Any]:
     explicit = str(row.get("status") or "").upper()
     direction = _direction(row.get("direction") or row.get("bias"))
@@ -306,9 +356,11 @@ def _forecaster_view(
     elif direction and explicit in {"", "OK"}:
         status, why = "OK", str(row.get("reason") or "")
     elif explicit == "MISSING":
-        status, why, direction = "MISSING", str(row.get("reason") or "empty parse"), None
+        status, why, direction = "MISSING", str(row.get("reason") or ""), None
     else:
         status, why, direction = "MISSING", "direction missing or not Buy/Sell/Neutral", None
+    why = _public_reason(status, why)
+    last_ok_at, last_ok_dhaka = _last_ok_fields(status, row, fetched, cfg, fallback=fetched_fallback)
     return {
         "source": name,
         "direction": direction,
@@ -317,6 +369,8 @@ def _forecaster_view(
         "url": url,
         "entry": entry if status == "OK" else None,
         "fetched_at": None if not have_block else (str(fetched) if fetched else None),
+        "last_ok_at": last_ok_at,
+        "last_ok_at_dhaka": last_ok_dhaka,
         "tier": tier,
     }
 
@@ -328,6 +382,8 @@ def _range_view(
     have_block: bool,
     empty_reason: str,
     tier: str,
+    cfg: dict[str, Any] | None = None,
+    fetched_fallback: object = None,
 ) -> dict[str, Any]:
     explicit = str(row.get("status") or "").upper()
     low = _num(row.get("low"))
@@ -341,10 +397,14 @@ def _range_view(
     elif valid and explicit in {"", "OK"}:
         status, why = "OK", ""
     elif explicit == "MISSING":
-        status, why, low, high = "MISSING", str(row.get("reason") or "range missing or invalid"), None, None
+        status, why, low, high = "MISSING", str(row.get("reason") or ""), None, None
         window = None
     else:
         status, why, low, high, window = "MISSING", "range missing or invalid", None, None, None
+    why = _public_reason(status, why)
+    _last_ok_at, last_ok_dhaka = _last_ok_fields(
+        status, row, row.get("fetched_at"), cfg, fallback=fetched_fallback
+    )
     return {
         "source": name,
         "low": low,
@@ -352,6 +412,7 @@ def _range_view(
         "window": window,
         "status": status,
         "reason": why,
+        "last_ok_at_dhaka": last_ok_dhaka,
         "tier": tier,
     }
 
@@ -396,6 +457,40 @@ def _error_payload(stamp: str) -> dict[str, Any]:
     return fetched
 
 
+def _prior_ok_stamp(prior: dict[str, Any] | None) -> str | None:
+    if not isinstance(prior, dict):
+        return None
+    if str(prior.get("status") or "").upper() == "OK" and prior.get("fetched_at"):
+        return str(prior.get("fetched_at"))
+    if prior.get("last_ok_at"):
+        return str(prior.get("last_ok_at"))
+    return None
+
+
+def _apply_last_ok(row: dict[str, Any], prior: dict[str, Any] | None) -> None:
+    status = str(row.get("status") or "").upper()
+    if status == "OK" and row.get("fetched_at"):
+        row["last_ok_at"] = str(row.get("fetched_at"))
+        return
+    row["last_ok_at"] = _prior_ok_stamp(prior)
+
+
+def carry_last_success(previous: dict[str, Any] | None, fetched: dict[str, Any]) -> None:
+    """Keep each source's last OK time when a later fetch fails. Does not keep the old side."""
+    prev = previous if isinstance(previous, dict) else {}
+    for hz in HORIZONS:
+        old_node = prev.get(hz) if isinstance(prev.get(hz), dict) else {}
+        new_node = fetched.get(hz) if isinstance(fetched.get(hz), dict) else {}
+        old_fc = _index_by_source(old_node.get("forecasters"))
+        for row in new_node.get("forecasters") or []:
+            if isinstance(row, dict):
+                _apply_last_ok(row, old_fc.get(str(row.get("source") or "")))
+        old_rg = _index_by_source(old_node.get("ranges"))
+        for row in new_node.get("ranges") or []:
+            if isinstance(row, dict):
+                _apply_last_ok(row, old_rg.get(str(row.get("source") or "")))
+
+
 def _refresh_one(pair_u: str) -> None:
     clock = _utc_now(None)
     stamp = clock.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -407,6 +502,7 @@ def _refresh_one(pair_u: str) -> None:
         fetched = _error_payload(stamp)
     with _fetch_lock:
         payload = load_cache()
+        carry_last_success(payload.get(pair_u) if isinstance(payload.get(pair_u), dict) else None, fetched)
         payload[pair_u] = fetched
         save_cache(payload)
 
