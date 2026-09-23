@@ -4,7 +4,7 @@ import type { Mode } from "../types";
 const MODES: { id: Mode; label: string }[] = [
   { id: "decision", label: "Decision" },
   { id: "calendar", label: "Calendar" },
-  { id: "paper", label: "Paper" },
+  { id: "paper", label: "Portfolio" },
   { id: "lab", label: "Lab" },
   { id: "awareness", label: "Awareness" },
   { id: "learnings", label: "Learnings" },

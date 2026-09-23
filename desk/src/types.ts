@@ -353,6 +353,40 @@ export interface LearningFeedInfo {
   error?: string;
 }
 
+export interface PortfolioRow {
+  id: string;
+  pair: string;
+  status: "open" | "closed" | string;
+  trigger: string;
+  confidence: number | null;
+  confidence_text: string;
+  entry_price: number | null;
+  entry_price_text: string;
+  entry_time_dhaka: string | null;
+  exit_price: number | null;
+  exit_price_text: string;
+  exit_time_dhaka: string | null;
+  duration: string;
+  pnl_price: number | null;
+  pnl_text: string;
+  pnl_r: number | null;
+  pnl_basis: "mark" | "realized" | null;
+  outcome: string | null;
+  exit_reason: string | null;
+  source: string | null;
+}
+
+export interface PortfolioFeed {
+  timezone: string;
+  auto_enabled: boolean;
+  refresh_seconds: number;
+  generated_at_dhaka: string;
+  open: PortfolioRow[];
+  closed: PortfolioRow[];
+  auto_events?: string[];
+  auto_errors?: { pair: string; error: string }[];
+}
+
 export interface LearningsFeed {
   timezone: string;
   generated_at: string;

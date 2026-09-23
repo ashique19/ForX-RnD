@@ -712,6 +712,14 @@ def board_payload(
         _push(alert.kind, alert.message, alert.pair)
 
     cal = calendar_context(bundle)
+    try:
+        from api.paperdesk import run_auto_paper
+
+        # Same cadence as the board poll — not a separate loop.
+        run_auto_paper(cfg, rows=rows, now=now)
+    except Exception:
+        # A paper-journal failure must not blank the decision board.
+        pass
     return {
         "timezone": timezone_name(cfg),
         "timezone_tag": timezone_tag(cfg),

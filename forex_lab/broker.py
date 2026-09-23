@@ -187,6 +187,34 @@ class PaperBroker(BrokerPort):
     def reload(self) -> None:
         self._state = self._load()
 
+    def read_auto(self) -> dict[str, Any]:
+        """Paper-only auto switch. Missing key means enabled — old journals stay on."""
+        auto = self._state.get("auto")
+        if not isinstance(auto, dict):
+            auto = {}
+        seen_raw = auto.get("seen") if isinstance(auto.get("seen"), dict) else {}
+        seen = {str(k).upper(): "" if v is None else str(v) for k, v in seen_raw.items()}
+        enabled = auto.get("enabled", True)
+        return {"enabled": bool(enabled), "seen": seen}
+
+    def write_auto(
+        self,
+        *,
+        enabled: bool | None = None,
+        seen: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Persist auto flags without touching open or closed rows."""
+        auto = self._state.get("auto")
+        if not isinstance(auto, dict):
+            auto = {}
+        if enabled is not None:
+            auto["enabled"] = bool(enabled)
+        if seen is not None:
+            auto["seen"] = {str(k).upper(): "" if v is None else str(v) for k, v in seen.items()}
+        self._state["auto"] = auto
+        self._save()
+        return self.read_auto()
+
     def submit(
         self,
         side: str,
@@ -217,6 +245,15 @@ class PaperBroker(BrokerPort):
         pid = _new_id("pos")
         fid = _new_id("fill")
         spread = _spread_frac(pair_u, self.cfg, px)
+        raw_horizon = meta.get("horizon", None)
+        if raw_horizon is None:
+            horizon = int(self.cfg.get("horizon") or 8)
+        else:
+            try:
+                horizon = int(raw_horizon)
+            except (TypeError, ValueError):
+                horizon = int(self.cfg.get("horizon") or 8)
+        source = str(meta.get("source") or "manual")
         pos = {
             "id": pid,
             "pair": pair_u,
@@ -239,7 +276,8 @@ class PaperBroker(BrokerPort):
             "rationale": str(meta.get("rationale") or "")[:400],
             "drivers": str(meta.get("drivers") or "")[:300],
             "entry_bar_time": str(meta.get("entry_bar_time") or ""),
-            "horizon": int(meta.get("horizon") or self.cfg.get("horizon") or 8),
+            "horizon": horizon,
+            "source": source,
             "spread_frac": spread,
             "unrealized": -spread * qty,
             "session": session_name(meta.get("entry_bar_time") or now, self.cfg),
@@ -259,6 +297,9 @@ class PaperBroker(BrokerPort):
             "time": now,
             "kind": "open",
             "backend": "paper",
+            "confidence": meta.get("confidence"),
+            "model_signal": str(meta.get("model_signal") or ""),
+            "source": source,
         }
         self._state["positions"].append(pos)
         self._state["fills"].append(fill)
@@ -310,6 +351,9 @@ class PaperBroker(BrokerPort):
             "kind": "close",
             "reason": reason,
             "backend": "paper",
+            "confidence": pos.get("confidence"),
+            "model_signal": str(pos.get("model_signal") or ""),
+            "source": str(pos.get("source") or ""),
         }
         closed = dict(pos)
         closed.update(

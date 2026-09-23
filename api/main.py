@@ -35,7 +35,7 @@ from api.deskdata import (
     watchlist_json,
 )
 from api.learnings import MAX_LIMIT, learnings_payload
-from api.paperdesk import PaperBlocked, paper_order
+from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_enabled
 from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
 from forex_lab.ui.model_build import model_build_status
 from forex_lab.ui.pipeline import run_retrain
@@ -102,6 +102,10 @@ class ReplayTrainBody(BaseModel):
     @classmethod
     def single_pair(cls, value: object) -> str:
         return _one_active_pair(value)
+
+
+class PaperAutoBody(BaseModel):
+    enabled: bool
 
 
 def create_app() -> FastAPI:
@@ -261,6 +265,15 @@ def create_app() -> FastAPI:
             cached = payload.get("row")
             payload = {**payload, "board": {"rows": [cached], "from_cache": True}}
         return JSONResponse(status_code=200, content=payload)
+
+    @app.get("/portfolio")
+    def get_portfolio(sync: bool = Query(default=True)) -> dict:
+        return portfolio_payload(sync=sync)
+
+    @app.post("/portfolio/auto")
+    def post_portfolio_auto(body: PaperAutoBody) -> dict:
+        set_auto_enabled(body.enabled)
+        return portfolio_payload(sync=bool(body.enabled))
 
     @app.post("/paper/order")
     def post_paper_order(body: PaperOrderBody) -> dict:

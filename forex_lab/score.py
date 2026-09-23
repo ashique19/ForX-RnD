@@ -101,16 +101,17 @@ def outcome_from_exit(
 ) -> str:
     """Map an exit reason to RIGHT / WRONG / PENDING / FLAT.
 
-    Horizon timeout is scored from the signed move at the last bar (after
-    the paper spread). Not enough bars stay PENDING. Manual close is FLAT
-    (user flattened — not a lookback of the original thesis).
+    Horizon timeout and brief-duration expiry are scored from the signed
+    move at the exit (after the paper spread). Not enough information stays
+    PENDING. Manual close and an opposite-signal flatten are FLAT — the
+    original thesis was not held to its barrier.
     """
     r = str(reason or "").lower()
     if r == "tp":
         return "RIGHT"
     if r in {"sl", "sl_conflict"}:
         return "WRONG"
-    if r == "timeout":
+    if r in {"timeout", "duration"}:
         if entry is None or exit_px is None:
             return "PENDING"
         try:
@@ -118,7 +119,7 @@ def outcome_from_exit(
         except (TypeError, ValueError):
             return "PENDING"
         return "RIGHT" if ret > 0 else "WRONG"
-    if r in {"manual", "flat"}:
+    if r in {"manual", "flat", "opposite"}:
         return "FLAT"
     return "PENDING"
 

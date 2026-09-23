@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, RefreshBatch, ReplayJob, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, PortfolioFeed, RefreshBatch, ReplayJob, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -264,4 +264,10 @@ export const api = {
     const q = params.toString();
     return request<CalendarFeed>(`/calendar${q ? `?${q}` : ""}`, { cache: "no-store" });
   },
+  portfolio: () => request<PortfolioFeed>("/portfolio", { cache: "no-store" }),
+  setAutoPaper: (enabled: boolean) =>
+    request<PortfolioFeed>("/portfolio/auto", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
 };

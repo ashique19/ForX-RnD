@@ -2,11 +2,7 @@ import { useState } from "react";
 import type { Mode } from "../types";
 import { api } from "../api";
 
-const COPY: Record<Exclude<Mode, "decision" | "learnings" | "calendar">, { title: string; body: string }> = {
-  paper: {
-    title: "Paper",
-    body: "Paper Buy/Sell stays on the Streamlit desk and the local PaperBroker. This screen does not submit orders.",
-  },
+const COPY: Record<Exclude<Mode, "decision" | "learnings" | "calendar" | "paper">, { title: string; body: string }> = {
   lab: {
     title: "Lab",
     body: "Run pipeline trains, then backtests, then generates signals. It does not run on the Decision data timer. Update now on Decision only refreshes watchlist prices. Streamlit on port 8501 is still the full Lab until cutover.",
@@ -17,7 +13,7 @@ const COPY: Record<Exclude<Mode, "decision" | "learnings" | "calendar">, { title
   },
 };
 
-export function Placeholder({ mode, pair }: { mode: Exclude<Mode, "decision" | "learnings" | "calendar">; pair: string }) {
+export function Placeholder({ mode, pair }: { mode: Exclude<Mode, "decision" | "learnings" | "calendar" | "paper">; pair: string }) {
   const copy = COPY[mode];
   const [fetchBars, setFetchBars] = useState(false);
   const [log, setLog] = useState("");

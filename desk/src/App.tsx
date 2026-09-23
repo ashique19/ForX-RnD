@@ -18,6 +18,7 @@ import { CalendarPanel } from "./components/CalendarPanel";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
 import { Placeholder } from "./components/Placeholder";
+import { PortfolioPanel } from "./components/Portfolio";
 import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
 import { ReplayTrainButton } from "./components/ReplayTrain";
@@ -387,6 +388,8 @@ export function App() {
           <LearningsPanel />
         ) : mode === "calendar" ? (
           <CalendarPanel selected={selected} />
+        ) : mode === "paper" ? (
+          <PortfolioPanel />
         ) : mode !== "decision" ? (
           <Placeholder mode={mode} pair={selected} />
         ) : (
