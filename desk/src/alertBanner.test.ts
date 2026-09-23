@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { alertClauses, formatAlertBanner } from "./alertBanner.ts";
+import { alertClauses, flipBadges, formatAlertBanner } from "./alertBanner.ts";
 import type { AlertItem } from "./types.ts";
 
 function flip(pair: string, from: string, to: string): AlertItem {
@@ -9,7 +9,7 @@ function flip(pair: string, from: string, to: string): AlertItem {
 
 test("same-pair flips collapse to one clause", () => {
   const alerts = [flip("EURUSD", "SELL", "HOLD"), flip("EURUSD", "BUY", "SELL"), flip("EURUSD", "SELL", "BUY")];
-  assert.equal(formatAlertBanner(alerts), "EURUSD: SELL→HOLD, BUY→SELL, SELL→BUY");
+  assert.equal(formatAlertBanner(alerts), "SELL→BUY → BUY→SELL → EURUSD: SELL→HOLD");
   assert.deepEqual(alertClauses(alerts), [
     { type: "flips", pair: "EURUSD", changes: ["SELL→HOLD", "BUY→SELL", "SELL→BUY"] },
   ]);
@@ -40,7 +40,7 @@ test("only the first three alerts are shown", () => {
     flip("GBPUSD", "SELL", "BUY"),
     flip("USDJPY", "HOLD", "BUY"),
   ];
-  assert.equal(formatAlertBanner(alerts), "EURUSD: SELL→HOLD, BUY→SELL · GBPUSD SELL→BUY");
+  assert.equal(formatAlertBanner(alerts), "BUY→SELL → EURUSD: SELL→HOLD · GBPUSD SELL→BUY");
 });
 
 test("ascii arrows and extra spaces still group", () => {
@@ -48,7 +48,32 @@ test("ascii arrows and extra spaces still group", () => {
     { kind: "flip", pair: "USDJPY", message: "  USDJPY   HOLD  ->   SELL  " },
     { kind: "flip", pair: "USDJPY", message: "USDJPY SELL -> BUY" },
   ];
-  assert.equal(formatAlertBanner(alerts), "USDJPY: HOLD→SELL, SELL→BUY");
+  assert.equal(formatAlertBanner(alerts), "SELL→BUY → USDJPY: HOLD→SELL");
+});
+
+test("badges read oldest to newest, with the pair only on the latest pill", () => {
+  const [grouped] = alertClauses([
+    flip("EURUSD", "SELL", "HOLD"),
+    flip("EURUSD", "BUY", "SELL"),
+    flip("EURUSD", "SELL", "BUY"),
+  ]);
+  assert.equal(grouped.type, "flips");
+  if (grouped.type !== "flips") return;
+  assert.deepEqual(
+    grouped.changes,
+    ["SELL→HOLD", "BUY→SELL", "SELL→BUY"],
+    "ingest order stays newest first",
+  );
+  assert.deepEqual(flipBadges(grouped), [
+    { pair: null, change: "SELL→BUY", latest: false },
+    { pair: null, change: "BUY→SELL", latest: false },
+    { pair: "EURUSD", change: "SELL→HOLD", latest: true },
+  ]);
+
+  const [single] = alertClauses([flip("GBPUSD", "BUY", "SELL")]);
+  assert.equal(single.type, "flips");
+  if (single.type !== "flips") return;
+  assert.deepEqual(flipBadges(single), [{ pair: "GBPUSD", change: "BUY→SELL", latest: true }]);
 });
 
 test("empty and non-flip strips are unchanged", () => {

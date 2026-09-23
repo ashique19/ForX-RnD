@@ -1,19 +1,20 @@
-import { alertClauses, formatAlertBanner, type AlertClause } from "../alertBanner";
+import { Fragment } from "react";
+import { alertClauses, flipBadges, formatAlertBanner, type AlertClause } from "../alertBanner";
 import type { AlertItem } from "../types";
 
 function FlipClause({ clause }: { clause: Extract<AlertClause, { type: "flips" }> }) {
-  const grouped = clause.changes.length > 1;
-  const pairLabel = grouped ? `${clause.pair}: ` : `${clause.pair} `;
+  const badges = flipBadges(clause);
   return (
     <span className="alert-clause">
-      <span className="alert-pair">{pairLabel}</span>
-      <span className="alert-flips">
-        {clause.changes.map((change, index) => (
-          <span className="alert-flip" key={`${change}-${index}`}>
-            {index < clause.changes.length - 1 ? `${change}, ` : change}
+      {badges.map((badge, index) => (
+        <Fragment key={`${badge.change}-${index}`}>
+          {index > 0 ? <span className="alert-flip-dir">→</span> : null}
+          <span className={badge.latest ? "alert-flip-badge alert-flip-badge--latest" : "alert-flip-badge"}>
+            {badge.pair ? <span className="alert-flip-pair">{badge.pair}:</span> : null}
+            <span className="alert-flip-change">{badge.pair ? `\u00A0${badge.change}` : badge.change}</span>
           </span>
-        ))}
-      </span>
+        </Fragment>
+      ))}
     </span>
   );
 }
