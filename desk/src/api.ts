@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, LearningsFeed, Ohlcv, PaperState, RefreshBatch, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, Ohlcv, PaperState, RefreshBatch, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -241,4 +241,12 @@ export const api = {
     ),
   learnings: (limit = 50) =>
     request<LearningsFeed>(`/learnings?limit=${limit}`, { cache: "no-store" }),
+  /** Cached weekly feed. ``force`` retries the live JSON; the auto timer must not set it. */
+  calendar: (pairs?: string[], force = false) => {
+    const params = new URLSearchParams();
+    if (pairs && pairs.length) params.set("pairs", pairs.join(","));
+    if (force) params.set("force", "true");
+    const q = params.toString();
+    return request<CalendarFeed>(`/calendar${q ? `?${q}` : ""}`, { cache: "no-store" });
+  },
 };

@@ -149,6 +149,9 @@ export interface Suggestion {
   duration: string;
   scenario: string;
   rationale: string;
+  /** Tighter research SL from advise.py when an open paper position meets a high-impact window. */
+  event_stop?: number | null;
+  event_stop_text?: string;
 }
 
 export interface Brief {
@@ -164,6 +167,72 @@ export interface Brief {
   daily: Suggestion;
   consensus: { hourly: Consensus; daily: Consensus };
   paper?: PaperState;
+  next_event?: NextEvent | null;
+  advice?: AdviceCard[];
+  calendar_error?: string | null;
+  calendar_stale?: boolean;
+  calendar_note?: string | null;
+}
+
+export interface NextEvent {
+  title: string;
+  short_title: string;
+  currency: string;
+  impact: string;
+  when: string;
+  when_dhaka: string | null;
+  countdown: string;
+  label: string;
+  window: string;
+  warn: boolean;
+  highlight: boolean;
+  forecast: string;
+  previous: string;
+}
+
+export interface AdviceCard {
+  action: string;
+  title: string;
+  detail: string;
+  window: string;
+  severity: string;
+  event_title: string | null;
+  event_when: string | null;
+  countdown: string | null;
+  currencies: string | null;
+  suggested_sl: number | null;
+  suggested_sl_text: string;
+}
+
+export interface CalendarEventRow {
+  title: string;
+  currency: string;
+  impact: string;
+  when: string;
+  when_dhaka: string | null;
+  countdown: string;
+  forecast: string;
+  previous: string;
+  highlight: boolean;
+  pairs: string[];
+  window: string;
+  warn: boolean;
+}
+
+export interface CalendarFeed {
+  timezone: string;
+  fetched_at: string | null;
+  fetched_at_dhaka: string | null;
+  source: string;
+  source_url: string;
+  stale_cache: boolean;
+  error: string | null;
+  notes: string[];
+  note: string | null;
+  cache_ttl_s: number;
+  count: number;
+  pairs: string[];
+  events: CalendarEventRow[];
 }
 
 export interface Bar {

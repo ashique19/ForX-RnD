@@ -26,6 +26,7 @@ from api.deskdata import (
     assets_payload,
     board_payload,
     build_brief,
+    calendar_payload,
     mutate_watchlist,
     ohlcv_payload,
     refresh_one,
@@ -116,6 +117,27 @@ def create_app() -> FastAPI:
     @app.get("/board")
     def get_board() -> dict:
         return board_payload()
+
+    @app.get("/calendar")
+    def get_calendar(
+        pairs: str | None = Query(default=None),
+        force: bool = Query(default=False),
+    ) -> dict:
+        """Weekly high-impact calendar. Cached; ``force`` retries the live feed."""
+        wanted: list[str] | None = None
+        if pairs:
+            wanted = []
+            for token in pairs.split(","):
+                text = token.strip()
+                if not text:
+                    continue
+                try:
+                    symbol = normalize_pair(text)
+                except WatchlistError:
+                    continue
+                if symbol not in wanted:
+                    wanted.append(symbol)
+        return calendar_payload(pairs=wanted, force=force)
 
     @app.get("/learnings")
     def get_learnings(limit: int = Query(default=50, ge=1, le=MAX_LIMIT)) -> dict:

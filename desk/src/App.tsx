@@ -13,6 +13,7 @@ import {
   type StripProblem,
 } from "./freshness";
 import type { AlertItem, Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
+import { CalendarPanel } from "./components/CalendarPanel";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
 import { Placeholder } from "./components/Placeholder";
@@ -340,6 +341,8 @@ export function App() {
       <main className={deskClass}>
         {mode === "learnings" ? (
           <LearningsPanel />
+        ) : mode === "calendar" ? (
+          <CalendarPanel selected={selected} />
         ) : mode !== "decision" ? (
           <Placeholder mode={mode} pair={selected} />
         ) : (
@@ -422,6 +425,11 @@ export function App() {
                 paper={brief?.paper ?? null}
                 toast={paperToast}
                 chartInterval={chartTf}
+                nextEvent={brief?.next_event ?? null}
+                calendarNote={brief?.calendar_note ?? null}
+                calendarStale={Boolean(brief?.calendar_stale)}
+                advice={brief?.advice ?? []}
+                briefReady={brief != null}
                 onRefresh={() => void refreshData(true)}
                 onOrder={async (side, size) => {
                   const result = await api.paperOrder(selected, side, size, rowTf);
