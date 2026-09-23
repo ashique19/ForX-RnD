@@ -535,6 +535,16 @@
     .chip.buy { background: var(--green-bg); color: #027a48; }
     .chip.sell { background: var(--red-bg); color: #b42318; }
     .tf-card-bd { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .gap-reason {
+      margin: 0;
+      padding: 6px 8px;
+      background: var(--red-bg);
+      color: #b42318;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .brief-gap { margin: 0 12px 8px; }
 
     .levels {
       display: grid;
@@ -914,6 +924,7 @@
     .desk-bar {
       display: flex;
       align-items: stretch;
+      flex-wrap: wrap;
       gap: 8px;
       min-width: 0;
     }
@@ -942,6 +953,127 @@
       flex: 1 1 auto;
       min-width: 0;
     }
+    .desk-bar .replay-launch {
+      flex: 0 0 auto;
+      align-self: stretch;
+      padding: 0 14px;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+    .desk-bar .replay-launch:hover:not(:disabled) {
+      border-color: var(--border-strong);
+      background: var(--surface-2);
+    }
+    .desk-bar .replay-launch .replay-active {
+      margin-left: 8px;
+      font-weight: 650;
+      color: var(--muted);
+    }
+    .desk-bar .replay-launch.has-fail {
+      border-color: #b42318;
+    }
+    .replay-launch-error {
+      flex: 1 0 100%;
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #b42318;
+    }
+    .active-tag {
+      margin-left: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--blue, #175cd3);
+    }
+    .replay-card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+      padding: 14px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: calc(100vh - 72px);
+      overflow: auto;
+    }
+    .replay-hd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .replay-hd h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+    }
+    .replay-hd .spacer { flex: 1; }
+    .replay-note, .replay-gap {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .replay-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .replay-fields label, .replay-pair {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .replay-fields input, .replay-pair strong {
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .replay-fields input {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: var(--surface);
+    }
+    .replay-progress {
+      height: 6px;
+      border-radius: 99px;
+      background: var(--surface-2);
+      overflow: hidden;
+    }
+    .replay-progress > span {
+      display: block;
+      height: 100%;
+      background: var(--blue);
+    }
+    .replay-msg { margin: 0; font-size: 12px; color: var(--text-2); }
+    .replay-msg.bad { color: #b42318; }
+    .replay-chart {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+    }
+    .replay-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .replay-links a { font-size: 12px; }
+    .modal-dialog.replay-dialog { width: min(480px, 100%); }
     .freshness {
       grid-column: 1 / -1;
       min-height: 36px;

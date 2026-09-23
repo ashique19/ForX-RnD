@@ -206,13 +206,23 @@ def test_brief_does_not_invent_daily_or_live_call_when_stale(client: TestClient)
     assert "Fetch" in body["daily"]["stop_text"]
     assert body["daily"]["duration"] != "—"
     assert body["daily"]["chip"] == "MISSING"
-    assert "Fetch" in body["daily"]["scenario"]
+    assert body["daily"]["status"] == "need_fetch"
+    daily_reason = str(body["daily"].get("validity_reason") or "")
+    assert daily_reason
+    assert daily_reason.startswith("Daily — failed")
+    assert "no OHLCV cache" in daily_reason
+    assert body["daily"]["scenario"]
+    assert "Daily — failed" in body["daily"]["scenario"]
     hourly = body["hourly"]
     assert hourly["validity"] in {VALIDITY_OK, VALIDITY_STALE, "CLOSED", VALIDITY_MISSING}
     if hourly["validity"] in {VALIDITY_STALE, VALIDITY_MISSING}:
         assert hourly["signal"] is None
         assert hourly["chip"] in {"STALE", "MISSING"}
-        assert "not a live call" in hourly["scenario"] or "Fetch/Train" in hourly["scenario"]
+        assert (
+            "not a live call" in hourly["scenario"]
+            or "Fetch/Train" in hourly["scenario"]
+            or "failed:" in hourly["scenario"]
+        )
     if hourly.get("now") is not None and hourly["validity"] != VALIDITY_MISSING:
         assert isinstance(hourly["stop"], float)
         assert isinstance(hourly["target"], float)
@@ -297,12 +307,17 @@ def test_refresh_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _fake_row)
+    monkeypatch.setattr(
+        "forex_lab.data.resample_daily_cache_from_hourly",
+        lambda *_a, **_k: (None, "resample skipped"),
+    )
     first = client.post("/refresh/EURUSD", params={"interval": "1h"})
     assert first.status_code == 200
     assert first.json()["ok"] is True
     assert first.json()["fetch_failed"] is True
-    assert calls["n"] == 1
-    assert yf_calls["n"] == 1
+    assert first.json()["ensured"] == ["1h", "1d"]
+    assert calls["n"] == 2
+    assert yf_calls["n"] == 2
     second = client.post("/refresh/EURUSD", params={"interval": "1h"})
     assert second.status_code == 200
     body = second.json()
@@ -310,8 +325,8 @@ def test_refresh_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyP
     assert body["rate_limited"] is True
     assert body["retry_after_s"] > 0
     assert body["board"]["from_cache"] is True
-    assert calls["refresh"] == [False, False]
-    assert yf_calls["n"] == 1
+    assert calls["refresh"] == [False, False, False, False]
+    assert yf_calls["n"] == 2
 
 
 def _board_row(pair: str, *_a, **_k):
@@ -448,6 +463,38 @@ def test_refresh_watchlist_defaults_to_saved_pairs(
     assert res.status_code == 200
     assert seen == [("EURUSD", "1h"), ("USDJPY", "1d")]
     assert [item["pair"] for item in res.json()["results"]] == ["EURUSD", "USDJPY"]
+
+
+def test_refresh_active_fetches_1h_and_1d_only_for_that_pair(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Heavy H1+D1 fill is the Active subject. Other watchlist intervals stay single."""
+    seen: list[tuple[str, str]] = []
+
+    def _yf(pair, _cfg, interval="1h", **_k):
+        seen.append((pair, interval))
+        return object(), "yfinance"
+
+    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
+    res = client.post(
+        "/refresh",
+        json={
+            "pairs": [
+                {"pair": "GBPUSD", "interval": "1h"},
+                {"pair": "USDJPY", "interval": "4h"},
+            ],
+            "active": "EURUSD",
+        },
+    )
+    assert res.status_code == 200
+    assert ("GBPUSD", "1h") in seen
+    assert ("USDJPY", "4h") in seen
+    assert ("GBPUSD", "1d") not in seen
+    assert ("USDJPY", "1d") not in seen
+    assert ("EURUSD", "1h") in seen
+    assert ("EURUSD", "1d") in seen
+    assert seen.index(("EURUSD", "1h")) < seen.index(("EURUSD", "1d"))
 
 
 def test_pipeline_stops_on_train_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
@@ -663,6 +710,17 @@ def test_hold_brief_uses_research_barriers_when_price_exists():
     assert gap["target"] is None
     assert gap["stop_text"] == "need Fetch"
     assert gap["duration"] == "need Fetch"
+    assert gap["validity_reason"].startswith("Daily — failed")
+    assert "no OHLCV cache" in gap["validity_reason"]
+    assert gap["scenario"]
+    assert "Daily — failed" in gap["scenario"]
+    remembered = suggestion_from_row(
+        SimpleNamespace(**{**missing.__dict__, "last_fetch_at": "2026-09-22 16:04:00 Asia/Dhaka"}),
+        cfg,
+        ohlcv=None,
+    )
+    assert "Last OK 2026-09-22 16:04:00 Asia/Dhaka" in remembered["validity_reason"]
+    assert "Last OK 2026-09-22 16:04:00 Asia/Dhaka" in remembered["scenario"]
 
     untrained = SimpleNamespace(**{**missing.__dict__, "status": "need_train", "validity": "OK"})
     train = suggestion_from_row(untrained, cfg, ohlcv=None)

@@ -169,6 +169,9 @@ export interface Suggestion {
   chip: string;
   tone: string;
   validity: string;
+  /** Explicit failure such as `Daily — failed: no OHLCV cache`. Empty when the horizon is usable. */
+  validity_reason?: string;
+  status?: string;
   now: number | null;
   now_text: string;
   stop: number | null;
@@ -340,4 +343,32 @@ export interface LearningsFeed {
   latest_at_dhaka: string | null;
   items: LearningItem[];
   feeds: LearningFeedInfo[];
+}
+
+export interface ReplayReportLinks {
+  csv: string;
+  xlsx: string;
+  equity_png: string;
+  report_md: string;
+}
+
+export interface ReplayJob {
+  job_id: string;
+  kind: string;
+  status: string;
+  phase: string;
+  pair: string;
+  interval: string;
+  fraction: number | null;
+  message: string | null;
+  as_of_dhaka: string | null;
+  error: string | null;
+  /** download | decode | insufficient_bars | train | error, set when status is error. */
+  reason?: string | null;
+  calendar_note: string | null;
+  promotion_line: string | null;
+  source: string | null;
+  bid_ask: boolean | null;
+  rows: number | null;
+  report: ReplayReportLinks | null;
 }

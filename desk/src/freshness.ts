@@ -73,8 +73,12 @@ export function collectTargets(
     out.push({ pair: symbol, interval: iv });
   };
   for (const row of rows) add(row.pair, row.interval);
+  // Active subject only: H1 then D1 (plus the open chart / row timeframe).
+  // Other watchlist rows stay on their own interval.
+  add(selected, "1h");
   add(selected, chartTf);
   add(selected, rowTf);
+  add(selected, "1d");
   return out;
 }
 

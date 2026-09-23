@@ -1,4 +1,4 @@
-"""CLI: python -m forex_lab <fetch|train|backtest|signals|digest|retrain>."""
+"""CLI: python -m forex_lab <fetch|train|backtest|signals|digest|retrain|history|replay>."""
 from __future__ import annotations
 
 import argparse
@@ -125,6 +125,91 @@ def cmd_retrain(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     return 0
 
 
+def cmd_history(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    """Pull Dukascopy (or HistData) OHLC into data/history. Does not write synthetic prices."""
+    from forex_lab.history import HistoryError, explain_failure, pull_history
+
+    def _progress(payload: dict[str, Any]) -> None:
+        msg = payload.get("message")
+        if msg:
+            safe_print(f"[history] {msg}")
+
+    try:
+        result = pull_history(
+            str(args.pair).upper(),
+            cfg,
+            interval=getattr(args, "interval", None) or "1h",
+            start=getattr(args, "start", None),
+            end=getattr(args, "end", None),
+            source=getattr(args, "source", None),
+            progress=_progress,
+        )
+    except HistoryError as exc:
+        _reason, text = explain_failure(exc)
+        safe_print(f"[history] failed: {text}")
+        return 1
+    safe_print(
+        f"[history] {result['pair']} {result['interval']}: {result['rows']} bars "
+        f"from {result['source']} -> {result['path']}"
+    )
+    return 0
+
+
+def cmd_replay(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    """Walk-forward replay train + scoreboard. Paper books only."""
+    from forex_lab.history import HistoryError, explain_failure, history_status, load_history, load_meta, pull_history
+    from forex_lab.replay import ReplayError, run_replay
+
+    pair = str(args.pair).upper()
+    interval = getattr(args, "interval", None) or "1h"
+    if getattr(args, "model", None):
+        model = dict(cfg.get("model") or {})
+        model["type"] = str(args.model)
+        cfg = {**cfg, "model": model}
+    if getattr(args, "slippage_pips", None) is not None:
+        replay = dict(cfg.get("replay") or {})
+        replay["slippage_pips"] = float(args.slippage_pips)
+        cfg = {**cfg, "replay": replay}
+
+    def _progress(payload: dict[str, Any]) -> None:
+        msg = payload.get("message")
+        if msg:
+            safe_print(f"[replay] {msg}")
+
+    try:
+        if not bool(getattr(args, "no_pull", False)):
+            info = history_status(pair, interval, cfg, getattr(args, "start", None), getattr(args, "end", None))
+            if info.get("stale"):
+                pull_history(
+                    pair,
+                    cfg,
+                    interval=interval,
+                    start=getattr(args, "start", None),
+                    end=getattr(args, "end", None),
+                    source=getattr(args, "source", None),
+                    progress=_progress,
+                )
+        frame = load_history(pair, cfg, interval, start=getattr(args, "start", None), end=getattr(args, "end", None))
+        meta = load_meta(pair, interval, cfg)
+        result = run_replay(
+            frame,
+            cfg,
+            pair,
+            interval=interval,
+            source=str(meta.get("source") or "cache"),
+            progress=_progress,
+        )
+    except (HistoryError, ReplayError) as exc:
+        _reason, text = explain_failure(exc)
+        safe_print(f"[replay] failed: {text}")
+        return 1
+    safe_print(f"[replay] {result.get('promotion_line')}")
+    files = result.get("files") or {}
+    safe_print(f"[replay] scoreboard {files.get('csv')}")
+    safe_print(f"[replay] equity {files.get('equity_png')}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m forex_lab",
@@ -175,6 +260,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     r.add_argument("--json", action="store_true", help="Print JSON instead of text")
 
+    h = sub.add_parser(
+        "history",
+        help="Pull one pair of Dukascopy tick->OHLC (HistData fallback) into data/history (gitignored)",
+        description="One pair. Does not download the rest of the watchlist.",
+    )
+    _add_common(h)
+    h.add_argument("--interval", default="1h", help="15m | 1h | 4h | 1d")
+    h.add_argument("--start", default="2015-01-01", help="UTC start (default 2015-01-01)")
+    h.add_argument("--end", default=None, help="UTC end (default last closed hour)")
+    h.add_argument("--source", default="auto", choices=["auto", "dukascopy", "histdata"])
+
+    rp = sub.add_parser(
+        "replay",
+        help="Walk-forward replay for one pair (paper only, does not touch the live journal)",
+        description="One Active pair. Does not train the rest of the watchlist.",
+    )
+    _add_common(rp)
+    rp.add_argument("--interval", default="1h", help="15m | 1h | 4h | 1d")
+    rp.add_argument("--start", default="2015-01-01", help="UTC start (default 2015-01-01)")
+    rp.add_argument("--end", default=None, help="UTC end (default last closed hour)")
+    rp.add_argument("--source", default="auto", choices=["auto", "dukascopy", "histdata"])
+    rp.add_argument("--no-pull", action="store_true", help="Use the cache only; do not download")
+    rp.add_argument("--model", default=None, help="Champion model: xgboost | logistic")
+    rp.add_argument("--slippage-pips", dest="slippage_pips", type=float, default=None)
+
     return p
 
 
@@ -195,6 +305,8 @@ def main(argv: list[str] | None = None) -> int:
         "signals": cmd_signals,
         "digest": cmd_digest,
         "retrain": cmd_retrain,
+        "history": cmd_history,
+        "replay": cmd_replay,
     }
     try:
         return int(cmds[args.command](args, cfg))

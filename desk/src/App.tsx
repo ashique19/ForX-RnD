@@ -19,6 +19,7 @@ import { LearningsPanel } from "./components/Learnings";
 import { Placeholder } from "./components/Placeholder";
 import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
+import { ReplayTrainButton } from "./components/ReplayTrain";
 import { WatchlistModal } from "./components/Watchlist";
 
 function sameBrief(cur: Brief | null, pair: string, tf: string): boolean {
@@ -237,7 +238,7 @@ export function App() {
       const targets = boardReady.current
         ? collectTargets(rowsRef.current, selectedRef.current, chartTfRef.current, rowTfRef.current)
         : null;
-      const result = await api.refreshWatchlist(targets);
+      const result = await api.refreshWatchlist(targets, selectedRef.current);
       if (!result || !Array.isArray(result.results)) {
         throw new Error("Decision API returned an unexpected refresh.");
       }
@@ -378,6 +379,7 @@ export function App() {
                 lastFetchDhaka={newest?.text ?? null}
                 onUpdate={() => void refreshData(true)}
               />
+              <ReplayTrainButton pair={selected} interval={rowTf} />
             </div>
             {offline ? (
               <div className="alerts bad api-down">

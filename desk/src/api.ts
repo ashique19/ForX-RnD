@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, Ohlcv, PaperState, RefreshBatch, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, Ohlcv, PaperState, RefreshBatch, ReplayJob, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -224,10 +224,13 @@ export const api = {
       { method: "POST" },
     ),
   /** Watchlist OHLCV only. ``null`` asks the API for every saved pair. Does not run the pipeline. */
-  refreshWatchlist: (pairs: { pair: string; interval: string }[] | null) =>
+  refreshWatchlist: (pairs: { pair: string; interval: string }[] | null, active?: string | null) =>
     request<RefreshBatch>("/refresh", {
       method: "POST",
-      body: JSON.stringify(pairs == null ? {} : { pairs }),
+      body: JSON.stringify({
+        ...(pairs == null ? {} : { pairs }),
+        ...(active ? { active } : {}),
+      }),
     }),
   paperOrder: (pair: string, side: string, size?: number, interval?: string) =>
     request<{ ok: boolean; message: string; paper: PaperState }>("/paper/order", {
@@ -242,6 +245,11 @@ export const api = {
   learnings: (limit = 50) =>
     request<LearningsFeed>(`/learnings?limit=${limit}`, { cache: "no-store" }),
   /** Cached weekly feed. ``force`` retries the live JSON; the auto timer must not set it. */
+  historyPull: (body: { pair: string; interval?: string; start?: string; end?: string | null }) =>
+    request<ReplayJob>("/history/pull", { method: "POST", body: JSON.stringify(body) }),
+  replayTrain: (body: { pair: string; interval?: string; start?: string; end?: string | null; pull?: boolean }) =>
+    request<ReplayJob>("/replay/train", { method: "POST", body: JSON.stringify(body) }),
+  replayJob: (jobId: string) => request<ReplayJob>(`/replay/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" }),
   calendar: (pairs?: string[], force = false) => {
     const params = new URLSearchParams();
     if (pairs && pairs.length) params.set("pairs", pairs.join(","));

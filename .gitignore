@@ -7,6 +7,8 @@ __pycache__/
 dist/
 build/
 .install_write_probe
+# how a cache was filled: yfinance or resampled_from_1h (not a price file)
+data/*.source
 # extra-pair caches; EURUSD_1h.csv is the committed demo set
 data/GBPUSD_*.csv
 data/USDJPY_*.csv
@@ -17,6 +19,9 @@ data/calendar_cache.json
 data/fred_cache/
 data/paper_broker.json
 data/paper_broker.json.tmp
+# Dukascopy/HistData cache and replay scoreboards (download; do not commit)
+data/history/
+data/replay/
 data/alert_state.json
 data/digest_latest.json
 data/champion/

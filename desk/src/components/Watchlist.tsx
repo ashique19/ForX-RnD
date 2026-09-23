@@ -247,6 +247,7 @@ function WatchlistPanel({
                   className={row.pair === selected ? "selected" : undefined}
                   tabIndex={0}
                   aria-current={row.pair === selected ? "true" : undefined}
+                  aria-label={row.pair === selected ? `Active ${row.pair}` : row.pair}
                   onClick={() => onSelect(row)}
                   onKeyDown={(event) => {
                     if (event.target !== event.currentTarget) return;

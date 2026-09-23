@@ -1073,7 +1073,13 @@ def _render_detail_drawer(
         if row.validity == VALIDITY_STALE:
             st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
         elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {"ready", "stale"}:
-            st.warning(row.signal_details or row.validity_reason or NEED_FETCH_TRAIN)
+            reason = str(row.validity_reason or "").strip()
+            detail = str(row.signal_details or "").strip()
+            if "failed:" in reason:
+                shown = reason if not detail or detail in reason else f"{reason} ({detail})"
+            else:
+                shown = detail or reason or NEED_FETCH_TRAIN
+            st.warning(shown)
         _render_other_forecasters(row.pair, cfg)
         tabs = st.tabs(["Chart", "SHAP", "News", "Risk", "Rationale"])
         with tabs[0]:
@@ -2144,16 +2150,35 @@ def render() -> None:
         )
         pair = st.selectbox("Pair", options=pairs, index=0, help="From config/default.yaml")
         status = artifact_status(pair, cfg)
+        h1_status = artifact_status(pair, cfg, interval="1h")
+        d1_status = artifact_status(pair, cfg, interval="1d")
+
+        def _cache_line(label: str, art: dict) -> str:
+            if art.get("data_exists"):
+                bars = art.get("n_bars")
+                return f"{label}: yes" + (f" ({bars} bars)" if bars is not None else "")
+            return f"{label}: missing"
+
         with st.expander("Fetch / Train / Backtest", expanded=False):
             st.caption(f"Project: `{project_root()}`")
             st.markdown(
-                f"- Data: {'yes' if status['data_exists'] else 'missing'}"
-                + (f" ({status['n_bars']} bars)" if status["n_bars"] is not None else "")
-                + f"\n- Model: {'yes' if status['model_exists'] else 'missing'}"
-                + f"\n- Signals CSV: {'yes' if status['signals_exist'] else 'missing'}"
-                + f"\n- Metrics JSON: {'yes' if status['metrics_exist'] else 'missing'}"
+                f"- {_cache_line('H1', h1_status)}\n"
+                f"- {_cache_line('D1', d1_status)}\n"
+                f"- Model: {'yes' if status['model_exists'] else 'missing'}\n"
+                f"- Signals CSV: {'yes' if status['signals_exist'] else 'missing'}\n"
+                f"- Metrics JSON: {'yes' if status['metrics_exist'] else 'missing'}"
             )
+            if not d1_status.get("data_exists"):
+                st.caption(
+                    "Daily — failed: no OHLCV cache. "
+                    "Fetch downloads 1d for this pair, or aggregates it from H1 when the provider has no daily bars."
+                )
             st.subheader("Fetch")
+            st.caption(
+                "Saves H1 and D1 for this pair. Real 1d is downloaded first. "
+                "If the provider has no daily bars, D1 is aggregated from the H1 cache. "
+                "Synthetic mode writes only the interval below and does not build the other one."
+            )
             with st.form("fetch_form"):
                 period = st.text_input("Period", value=default_period, help="yfinance period, e.g. 2y")
                 interval = st.selectbox(

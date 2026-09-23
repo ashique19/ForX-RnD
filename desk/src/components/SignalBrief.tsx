@@ -21,6 +21,21 @@ function shownText(text: string | null | undefined): string {
   return value || "—";
 }
 
+/** Why a horizon is not a live level. Empty when the suggestion is usable. */
+function failureReason(suggestion: Suggestion | null | undefined): string {
+  if (!suggestion) return "";
+  const text = (suggestion.validity_reason || suggestion.scenario || "").trim();
+  if (!text) return "";
+  const failed =
+    suggestion.chip === "MISSING" ||
+    suggestion.validity === "MISSING" ||
+    suggestion.validity === "ERROR" ||
+    suggestion.status === "need_fetch";
+  if (failed) return text;
+  if (suggestion.status === "need_train" && /not copied|failed:/i.test(text)) return text;
+  return "";
+}
+
 /** Levels that match the chart's 1h/1d lines. Other chart TFs fall back to hourly. */
 function focusSuggestion(
   hourly: Suggestion | null,
@@ -178,36 +193,39 @@ function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: strin
 }
 
 function Card({ title, suggestion, consensus, pair }: { title: string; suggestion: Suggestion; consensus: Consensus; pair: string }) {
+  const reason = failureReason(suggestion);
+  const scenario = (suggestion.scenario || "").trim();
   return (
     <article className="tf-card">
       <div className="tf-card-hd">
         <h3>{title}</h3>
-        <span className={`chip ${suggestion.tone}`}>{suggestion.chip}</span>
+        <span className={`chip ${suggestion.tone}`} title={reason || undefined}>{suggestion.chip}</span>
       </div>
       <div className="tf-card-bd">
         <div className="levels">
           <div className="lvl">
             <div className="lbl">Now at</div>
-            <div className="val">{suggestion.now_text}</div>
+            <div className="val" title={suggestion.now == null ? reason || undefined : undefined}>{suggestion.now_text}</div>
           </div>
           <div className="lvl">
             <div className="lbl">Stop</div>
-            <div className={suggestion.stop != null ? "val stop" : "val"}>{suggestion.stop_text}</div>
+            <div className={suggestion.stop != null ? "val stop" : "val"} title={suggestion.stop == null ? reason || undefined : undefined}>{suggestion.stop_text}</div>
           </div>
           <div className="lvl">
             <div className="lbl">Target</div>
-            <div className={suggestion.target != null ? "val tgt" : "val"}>{suggestion.target_text}</div>
+            <div className={suggestion.target != null ? "val tgt" : "val"} title={suggestion.target == null ? reason || undefined : undefined}>{suggestion.target_text}</div>
           </div>
           <div className="lvl">
             <div className="lbl">Duration</div>
-            <div className="val">{suggestion.duration}</div>
+            <div className="val" title={reason || undefined}>{suggestion.duration}</div>
           </div>
         </div>
+        {reason ? <div className="gap-reason" role="status">{reason}</div> : null}
         <ConsensusPanel consensus={consensus} pair={pair} />
         {suggestion.event_stop_text ? (
           <div className="lvl-note">Event SL {suggestion.event_stop_text} — tighter research stop, not a new order</div>
         ) : null}
-        <div className="scenario">{suggestion.scenario}</div>
+        {scenario && scenario !== reason ? <div className="scenario">{scenario}</div> : null}
         {suggestion.rationale && <div className="rationale">{suggestion.rationale}</div>}
       </div>
     </article>
@@ -224,24 +242,25 @@ function Chevron({ open }: { open: boolean }) {
 
 function BriefMetrics({ suggestion, chartInterval }: { suggestion: Suggestion | null; chartInterval: string }) {
   const showHorizon = Boolean(suggestion?.tf && suggestion.interval !== chartInterval);
+  const reason = failureReason(suggestion);
   return (
     <div className="brief-metrics" aria-label="Key levels">
       {showHorizon ? <span className="tf-pill">{suggestion?.tf}</span> : null}
       <span className="brief-metric">
         <span className="lbl">Now at</span>
-        <span className="val">{shownText(suggestion?.now_text)}</span>
+        <span className="val" title={suggestion?.now == null ? reason || undefined : undefined}>{shownText(suggestion?.now_text)}</span>
       </span>
       <span className="brief-metric">
         <span className="lbl">Stop</span>
-        <span className={suggestion?.stop != null ? "val stop" : "val"}>{shownText(suggestion?.stop_text)}</span>
+        <span className={suggestion?.stop != null ? "val stop" : "val"} title={suggestion?.stop == null ? reason || undefined : undefined}>{shownText(suggestion?.stop_text)}</span>
       </span>
       <span className="brief-metric">
         <span className="lbl">Target</span>
-        <span className={suggestion?.target != null ? "val tgt" : "val"}>{shownText(suggestion?.target_text)}</span>
+        <span className={suggestion?.target != null ? "val tgt" : "val"} title={suggestion?.target == null ? reason || undefined : undefined}>{shownText(suggestion?.target_text)}</span>
       </span>
       <span className="brief-metric">
         <span className="lbl">Duration</span>
-        <span className="val">{shownText(suggestion?.duration)}</span>
+        <span className="val" title={reason || undefined}>{shownText(suggestion?.duration)}</span>
       </span>
     </div>
   );
@@ -374,6 +393,7 @@ export function SignalBrief({
   const open = paper?.position ?? null;
   const canOpen = Boolean(paper?.allowed) && !open && !busy;
   const focus = focusSuggestion(hourly, daily, chartInterval);
+  const collapsedReason = !expanded ? failureReason(focus) : "";
   const submit = (side: "BUY" | "SELL" | "CLOSE") => {
     setOrderError("");
     const fallback = side === "CLOSE" ? "Paper close failed" : "Paper order failed";
@@ -426,6 +446,7 @@ export function SignalBrief({
           <Chevron open={expanded} />
         </button>
       </div>
+      {collapsedReason ? <div className="gap-reason brief-gap" role="status">{collapsedReason}</div> : null}
       <div className={nextEvent?.warn || calendarStale ? "next-event is-warn" : "next-event"} role="status">
         <span className="lbl">Next event</span>
         {!briefReady ? (
