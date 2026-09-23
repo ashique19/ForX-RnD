@@ -353,14 +353,25 @@
 
     /* —— Signal brief —— */
     .brief .panel-body { padding: 12px; overflow: auto; }
-    .bias-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+    .bias-block {
+      container-type: inline-size;
+      container-name: bias;
       margin-bottom: 12px;
       padding-bottom: 12px;
       border-bottom: 1px solid var(--border);
     }
+    .bias-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      column-gap: 12px;
+      row-gap: 2px;
+      align-items: center;
+    }
+    .bias-row .bias-tag { grid-column: 1; grid-row: 1; }
+    .bias-row .bias-headline { grid-column: 2; grid-row: 1; }
+    .bias-row .paper-row { grid-column: 3; grid-row: 1; }
+    .bias-row .bias-sub { grid-column: 2; grid-row: 2; margin-top: 0; }
+    .bias-row .paper-status { grid-column: 1 / -1; grid-row: 3; margin-top: 6px; }
     .bias-tag {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 4px 10px;
@@ -811,7 +822,28 @@
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
-      margin: 0 0 12px;
+      justify-content: flex-end;
+      margin: 0;
+      max-width: 100%;
+    }
+    .paper-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      align-items: center;
+    }
+    @container bias (max-width: 36rem) {
+      .bias-row {
+        grid-template-columns: auto minmax(0, 1fr);
+        row-gap: 8px;
+      }
+      .bias-row .bias-sub { grid-column: 2; grid-row: 2; }
+      .bias-row .paper-row {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        justify-content: flex-start;
+      }
+      .bias-row .paper-status { grid-row: 4; }
     }
     .btn.paper-buy {
       background: var(--green-bg);
