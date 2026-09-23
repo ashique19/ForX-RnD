@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, Ohlcv, PaperState, RefreshBatch, ReplayJob, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, RefreshBatch, ReplayJob, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -240,6 +240,13 @@ export const api = {
   pipeline: (pair: string, fetchBars: boolean) =>
     request<{ ok: boolean; failed: string | null; steps: { step: string; ok: boolean; log: string }[] }>(
       `/pipeline/${encodeURIComponent(pair)}?fetch=${fetchBars ? "true" : "false"}`,
+      { method: "POST" },
+    ),
+  modelStatus: (pair: string) => request<ModelBuild>(`/model/status/${encodeURIComponent(pair)}`),
+  /** Explicit walk-forward gate. The desk must not call this on a timer. */
+  retrainGate: (pair: string) =>
+    request<{ ok: boolean; pair: string; dry_run: boolean; log: string; model_build: ModelBuild }>(
+      `/model/retrain/${encodeURIComponent(pair)}`,
       { method: "POST" },
     ),
   learnings: (limit = 50) =>

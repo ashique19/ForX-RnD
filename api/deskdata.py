@@ -33,6 +33,7 @@ from forex_lab.data import (
     try_yfinance_refresh,
 )
 from forex_lab.features import true_range_atr
+from forex_lab.ui.model_build import model_build_status
 from forex_lab.freshness import (
     DEFAULT_STALE_BARS,
     VALIDITY_CLOSED,
@@ -1021,6 +1022,7 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
     calendar_note = cal["note"]
     if calendar_note is None and event is None and not bundle.error:
         calendar_note = "No high-impact event for this pair in the window."
+    model_build = model_build_status(symbol, cfg, now=clock)
     return {
         "pair": symbol,
         "tf": tf_label(primary_iv),
@@ -1041,6 +1043,7 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "calendar_error": bundle.error,
         "calendar_stale": bool(bundle.stale_cache),
         "calendar_note": calendar_note,
+        "model_build": model_build,
     }
 
 

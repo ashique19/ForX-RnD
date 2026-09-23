@@ -791,3 +791,33 @@ def test_failed_refresh_is_not_live_and_keeps_age(monkeypatch: pytest.MonkeyPatc
     assert out["row"]["session"]["text"] == "NY"
     assert out["row"]["age"] not in {"", "—"}
     assert "refresh failed" in out["row"]["validity_reason"]
+
+
+def test_model_status_missing_joblib_needs_train(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    def boom(*_a, **_k):
+        raise AssertionError("model status must not run the retrain gate")
+
+    monkeypatch.setattr("api.main.run_retrain", boom)
+    res = client.get("/model/status/GBPUSD")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["pair"] == "GBPUSD"
+    assert body["model_type"] == "xgboost"
+    assert body["status"] == "need Train"
+    assert body["joblib_mtime_dhaka"] is None
+    assert body["age_hours"] is None
+    reason = body["reason"]
+    assert isinstance(reason, str) and reason.strip()
+    assert "joblib" in reason.lower()
+    assert "Train" in reason
+    assert "STALE" not in body["status"]
+
+    brief = client.get("/brief/GBPUSD")
+    assert brief.status_code == 200
+    folded = brief.json()["model_build"]
+    assert folded["status"] == "need Train"
+    assert folded["reason"].strip()
+    assert "joblib" in folded["reason"].lower()
+
+    bad = client.get("/model/status/EUR")
+    assert bad.status_code == 400
