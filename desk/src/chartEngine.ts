@@ -82,6 +82,15 @@ const OSC_SCALE = (): { priceRange: { minValue: number; maxValue: number } } => 
   priceRange: { minValue: 0, maxValue: 100 },
 });
 
+/** Divider between the price pane and RSI / MACD. Darker than the chart grid (#e4e7ec) so the split is obvious. */
+const PANE_SEPARATOR = "#475467";
+const PANE_SEPARATOR_HOVER = "#344054";
+/**
+ * Lightweight Charts draws the pane separator as a 1px table row (SeparatorHeight).
+ * The desk stretches that row; color stays on layout.panes.separatorColor.
+ */
+const PANE_SEPARATOR_PX = 4;
+
 const OVERLAYS: {
   id: string;
   toggle: ToggleKey;
@@ -128,6 +137,8 @@ export class DeskChart {
   private tagFrame = 0;
 
   constructor(el: HTMLElement) {
+    el.style.setProperty("--pane-separator", PANE_SEPARATOR);
+    el.style.setProperty("--pane-separator-width", `${PANE_SEPARATOR_PX}px`);
     this.chart = createChart(el, {
       autoSize: true,
       layout: {
@@ -137,8 +148,8 @@ export class DeskChart {
         fontSize: 11,
         panes: {
           enableResize: true,
-          separatorColor: "#e4e7ec",
-          separatorHoverColor: "#d0d5dd",
+          separatorColor: PANE_SEPARATOR,
+          separatorHoverColor: PANE_SEPARATOR_HOVER,
         },
       },
       grid: {

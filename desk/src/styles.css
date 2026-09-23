@@ -1304,6 +1304,11 @@
     }
     .add-pop input { width: 92px; text-transform: uppercase; }
     .chart-canvas { flex: 1; min-height: 320px; position: relative; }
+    /* Candlestick / RSI / MACD dividers. Color is layout.panes.separatorColor;
+       Lightweight Charts only allocates a 1px row, so the band is widened here. */
+    .chart-canvas table tr:has(> td[colspan="3"]) {
+      height: var(--pane-separator-width, 4px) !important;
+    }
     .chart-note {
       position: absolute;
       top: 8px;
