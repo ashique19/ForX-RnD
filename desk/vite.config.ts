@@ -42,6 +42,7 @@ export default defineConfig({
       "/calendar": apiProxy(),
       "/history": apiProxy(),
       "/replay": apiProxy(),
+      "/model": apiProxy(),
     },
   },
 });

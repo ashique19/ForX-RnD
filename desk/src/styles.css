@@ -1047,6 +1047,91 @@
       color: #b42318;
     }
     .freshness.bad .fresh-next { color: #b42318; font-weight: 600; }
+    .model-build {
+      flex: 1 1 100%;
+      min-height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--text-2);
+      font-variant-numeric: tabular-nums;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      min-width: 0;
+    }
+    .model-build .tag {
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      color: var(--text-2);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .model-build.ok .tag {
+      background: var(--green-bg);
+      border-color: var(--green-border);
+      color: #027a48;
+    }
+    .model-build.warn {
+      background: var(--amber-bg);
+      border-color: #fedf89;
+    }
+    .model-build.warn .tag {
+      background: #fff;
+      border-color: #fec84b;
+      color: #b54708;
+    }
+    .model-build.bad {
+      background: var(--red-bg);
+      border-color: var(--red-border);
+    }
+    .model-build.bad .tag {
+      background: #fff;
+      border-color: var(--red-border);
+      color: #b42318;
+    }
+    .model-build .model-type { font-weight: 700; color: var(--text); flex-shrink: 0; }
+    .model-build .model-when { color: var(--text); flex-shrink: 0; white-space: nowrap; }
+    .model-build .sep { color: var(--faint); flex-shrink: 0; }
+    .model-build .model-status {
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .model-build .model-status.ok { color: #027a48; }
+    .model-build .model-status.warn { color: #b54708; }
+    .model-build .model-status.bad { color: #b42318; }
+    .model-build .model-status.pending { color: var(--muted); }
+    .model-build .reason {
+      flex: 1 1 160px;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-2);
+    }
+    .model-build .champ {
+      flex: 0 1 280px;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+    .model-build .btn { flex-shrink: 0; margin-left: auto; }
+    @media (max-width: 860px) {
+      .model-build { flex-wrap: wrap; }
+      .model-build .reason { flex-basis: 100%; white-space: normal; }
+    }
     .paper-row {
       display: flex;
       flex-wrap: wrap;

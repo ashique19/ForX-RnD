@@ -179,6 +179,27 @@ export interface Brief {
   calendar_error?: string | null;
   calendar_stale?: boolean;
   calendar_note?: string | null;
+  /** Core AI joblib for this pair. Separate from price STALE. */
+  model_build?: ModelBuild | null;
+}
+
+export interface ModelChampion {
+  verdict?: string | null;
+  promoted_at_dhaka?: string | null;
+  summary?: string | null;
+  challenger_verdict?: string | null;
+  challenger_state?: string | null;
+  honest_note?: string | null;
+}
+
+export interface ModelBuild {
+  pair: string;
+  model_type: string;
+  status: string;
+  reason: string;
+  joblib_mtime_dhaka: string | null;
+  age_hours: number | null;
+  champion?: ModelChampion | null;
 }
 
 export interface NextEvent {

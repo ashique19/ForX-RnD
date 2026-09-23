@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type UnreachableKind } from "./api";
 import { FreshnessStrip } from "./components/FreshnessStrip";
+import { ModelBuildStrip } from "./components/ModelBuildStrip";
 import {
   AUTO_REFRESH_FUDGE_MS,
   classifyBatch,
@@ -93,6 +94,8 @@ export function App() {
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [retrainBusy, setRetrainBusy] = useState(false);
+  const [gateNote, setGateNote] = useState<string | null>(null);
   const watchlistButtonRef = useRef<HTMLButtonElement>(null);
   const [lastOkMs, setLastOkMs] = useState<number | null>(null);
   const [nextAt, setNextAt] = useState<number | null>(null);
@@ -336,7 +339,38 @@ export function App() {
   const deskClass =
     mode === "decision" ? ["app", showBanner ? "has-alert" : ""].filter(Boolean).join(" ") : "app single";
 
+  useEffect(() => {
+    setGateNote(null);
+  }, [selected]);
+
   const levels = chartTf === "1d" ? brief?.daily : chartTf === "1h" ? brief?.hourly : null;
+  const modelBuild = brief && brief.pair === selected ? brief.model_build ?? null : null;
+
+  const runRetrainGate = useCallback(() => {
+    const pair = selectedRef.current;
+    if (!pair || retrainBusy) return;
+    setRetrainBusy(true);
+    setGateNote(null);
+    void api
+      .retrainGate(pair)
+      .then((result) => {
+        if (selectedRef.current !== pair) return;
+        if (result?.model_build) {
+          setBrief((cur) => (cur && cur.pair === pair ? { ...cur, model_build: result.model_build } : cur));
+        }
+        if (!result?.ok) {
+          const line = (result?.log || "Retrain gate failed.").trim().split("\n").find(Boolean) || "Retrain gate failed.";
+          setGateNote(line.slice(0, 160));
+        }
+      })
+      .catch((err: unknown) => {
+        if (selectedRef.current !== pair) return;
+        setGateNote(err instanceof Error ? err.message : "Retrain gate failed.");
+      })
+      .finally(() => {
+        setRetrainBusy(false);
+      });
+  }, [retrainBusy]);
 
   return (
     <>
@@ -372,6 +406,13 @@ export function App() {
                 onUpdate={() => void refreshData(true)}
               />
               <ReplayTrainButton pair={selected} interval={rowTf} />
+              <ModelBuildStrip
+                pair={selected}
+                build={modelBuild}
+                busy={retrainBusy}
+                gateNote={gateNote}
+                onRetrain={runRetrainGate}
+              />
             </div>
             {offline ? (
               <div className="alerts bad api-down">
