@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type UnreachableKind } from "./api";
+import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability } from "./api";
 import type { Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
@@ -36,7 +36,7 @@ export function App() {
   const [realtime, setRealtime] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState<string | null>(null);
-  const [offlineKind, setOfflineKind] = useState<UnreachableKind>("api");
+  const [offlineKind, setOfflineKind] = useState<"api" | "desk" | "network">("api");
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [noticeUntil, setNoticeUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -55,8 +55,9 @@ export function App() {
 
   const loadBoard = useCallback(async () => {
     const next = await api.board();
-    setBoard(next);
-    setSelected((cur) => (next.rows.some((row) => row.pair === cur) ? cur : next.rows[0]?.pair ?? ""));
+    const rows = Array.isArray(next?.rows) ? next.rows : [];
+    setBoard(next && Array.isArray(next.rows) ? next : null);
+    setSelected((cur) => (rows.some((row) => row.pair === cur) ? cur : rows[0]?.pair ?? cur));
     setError(null);
     return next;
   }, []);
