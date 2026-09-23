@@ -2,11 +2,7 @@ import { useState } from "react";
 import type { Mode } from "../types";
 import { api } from "../api";
 
-const COPY: Record<Exclude<Mode, "decision" | "learnings">, { title: string; body: string }> = {
-  calendar: {
-    title: "Calendar",
-    body: "High-impact event calendar stays on the Streamlit desk for this phase. Decision does not invent a countdown feed.",
-  },
+const COPY: Record<Exclude<Mode, "decision" | "learnings" | "calendar">, { title: string; body: string }> = {
   paper: {
     title: "Paper",
     body: "Paper Buy/Sell stays on the Streamlit desk and the local PaperBroker. This screen does not submit orders.",
@@ -21,7 +17,7 @@ const COPY: Record<Exclude<Mode, "decision" | "learnings">, { title: string; bod
   },
 };
 
-export function Placeholder({ mode, pair }: { mode: Exclude<Mode, "decision" | "learnings">; pair: string }) {
+export function Placeholder({ mode, pair }: { mode: Exclude<Mode, "decision" | "learnings" | "calendar">; pair: string }) {
   const copy = COPY[mode];
   const [fetchBars, setFetchBars] = useState(false);
   const [log, setLog] = useState("");

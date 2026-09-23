@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Consensus, PaperState, Suggestion } from "../types";
+import { eventChip } from "../countdown";
+import type { AdviceCard, Consensus, NextEvent, PaperState, Suggestion } from "../types";
 
 const BRIEF_EXPANDED_KEY = "forx.desk.signalBriefExpanded";
 
@@ -111,6 +112,9 @@ function Card({ title, suggestion, consensus, pair }: { title: string; suggestio
             ))}
           </div>
         </div>
+        {suggestion.event_stop_text ? (
+          <div className="lvl-note">Event SL {suggestion.event_stop_text} — tighter research stop, not a new order</div>
+        ) : null}
         <div className="scenario">{suggestion.scenario}</div>
         {suggestion.rationale && <div className="rationale">{suggestion.rationale}</div>}
       </div>
@@ -224,6 +228,11 @@ export function SignalBrief({
   paper,
   toast,
   chartInterval = "1h",
+  nextEvent = null,
+  calendarNote = null,
+  calendarStale = false,
+  advice = [],
+  briefReady = false,
   onRefresh,
   onOrder,
   busy,
@@ -239,6 +248,11 @@ export function SignalBrief({
   paper: PaperState | null;
   toast: string | null;
   chartInterval?: string;
+  nextEvent?: NextEvent | null;
+  calendarNote?: string | null;
+  calendarStale?: boolean;
+  advice?: AdviceCard[];
+  briefReady?: boolean;
   onRefresh: () => void;
   onOrder: (side: "BUY" | "SELL" | "CLOSE", size: number) => Promise<void>;
   busy: boolean;
@@ -246,6 +260,7 @@ export function SignalBrief({
   const [size, setSize] = useState(paper?.default_size ?? 1);
   const [orderError, setOrderError] = useState("");
   const [expanded, setExpanded] = useState(loadBriefExpanded);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (paper?.default_size) setSize(paper.default_size);
   }, [paper?.default_size, pair]);
@@ -256,6 +271,11 @@ export function SignalBrief({
       /* private mode or blocked storage */
     }
   }, [expanded]);
+  useEffect(() => {
+    if (!nextEvent?.when) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [nextEvent?.when]);
   const open = paper?.position ?? null;
   const canOpen = Boolean(paper?.allowed) && !open && !busy;
   const focus = focusSuggestion(hourly, daily, chartInterval);
@@ -268,6 +288,10 @@ export function SignalBrief({
   };
   const collapsedNote = !expanded && (open || toast || orderError);
   const pairLabel = pair.trim();
+  const caution = advice.find((card) => card.severity === "warn" || card.severity === "caution");
+  const chip = nextEvent
+    ? eventChip(nextEvent.currency, nextEvent.short_title || nextEvent.title, nextEvent.when, nextEvent.warn, nowMs)
+    : "";
   return (
     <section className={expanded ? "panel brief" : "panel brief is-collapsed"}>
       <div className="panel-hd">
@@ -304,6 +328,22 @@ export function SignalBrief({
           <Chevron open={expanded} />
         </button>
       </div>
+      <div className={nextEvent?.warn || calendarStale ? "next-event is-warn" : "next-event"} role="status">
+        <span className="lbl">Next event</span>
+        {!briefReady ? (
+          <span className="quiet">Loading calendar…</span>
+        ) : nextEvent ? (
+          <>
+            <span className={nextEvent.warn ? "chip warn" : "chip"}>{chip}</span>
+            <span className="when">{nextEvent.when_dhaka || "time n/a"}</span>
+            <span className="impact">{nextEvent.impact}</span>
+            {caution ? <span className="action">{caution.title}</span> : null}
+            {calendarStale ? <span className="stale">stale cache</span> : null}
+          </>
+        ) : (
+          <span className="quiet">{calendarNote || "No high-impact event for this pair in the window."}</span>
+        )}
+      </div>
       {collapsedNote && (
         <div className="brief-collapsed-note">
           {open && (
@@ -316,6 +356,15 @@ export function SignalBrief({
         </div>
       )}
       <div className="panel-body" id="signal-brief-details" hidden={!expanded}>
+        {advice.length > 0 && (
+          <div className="advice-list">
+            {advice.map((card) => (
+              <p className={`advice ${card.severity}`} key={`${card.action}-${card.window}`}>
+                <strong>{card.title}</strong> {card.detail}
+              </p>
+            ))}
+          </div>
+        )}
         <div className="bias-block">
           <div className="bias-row">
             <span className={`bias-tag ${biasTone}`}>{bias}</span>

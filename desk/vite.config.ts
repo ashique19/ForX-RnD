@@ -39,6 +39,7 @@ export default defineConfig({
       "/paper": apiProxy(),
       "/assets": apiProxy(),
       "/learnings": apiProxy(),
+      "/calendar": apiProxy(),
     },
   },
 });

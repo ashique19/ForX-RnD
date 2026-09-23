@@ -1061,7 +1061,8 @@
       .mode { padding: 5px 8px; }
     }
     .app.single { grid-template-columns: 1fr; }
-    .app.single:has(.learnings) { grid-template-rows: minmax(0, 1fr); }
+    .app.single:has(.learnings),
+    .app.single:has(.calendar-panel) { grid-template-rows: minmax(0, 1fr); }
     .placeholder { padding: 28px 24px; }
     .placeholder h2 { font-size: 16px; margin-bottom: 6px; }
     .placeholder p { color: var(--muted); max-width: 560px; margin-bottom: 14px; }
@@ -1172,3 +1173,155 @@
     .right-col > .brief.is-collapsed { flex: 0 0 auto; }
     .right-col > .chart { flex: 1 1 62%; min-height: 420px; }
     table.wl tbody tr { cursor: pointer; }
+
+    /* —— Next event on the Decision brief —— */
+    .next-event {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 12px;
+      min-height: 32px;
+    }
+    .next-event.is-warn { background: var(--amber-bg); }
+    .next-event .lbl {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .next-event .chip {
+      font-weight: 700;
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 1px 8px;
+    }
+    .next-event .chip.warn {
+      color: #b54708;
+      background: #fff;
+      border-color: #fedf89;
+    }
+    .next-event .when,
+    .next-event .impact,
+    .next-event .quiet {
+      color: var(--text-2);
+    }
+    .next-event .when { font-variant-numeric: tabular-nums; }
+    .next-event .action {
+      font-weight: 600;
+      color: #b54708;
+    }
+    .next-event .stale {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #b54708;
+    }
+    .advice-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .advice {
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-2);
+    }
+    .advice.warn { background: var(--red-bg); border-color: var(--red-border); color: #912018; }
+    .advice.caution { background: var(--amber-bg); border-color: #fedf89; color: #93370d; }
+    .advice strong { font-weight: 700; }
+    .lvl-note {
+      margin-top: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #b54708;
+    }
+
+    /* —— Calendar tab —— */
+    .calendar-panel { height: 100%; }
+    .cal-banner {
+      padding: 8px 12px;
+      background: var(--amber-bg);
+      color: #93370d;
+      border-bottom: 1px solid #fedf89;
+      font-size: 12px;
+    }
+    .cal-list {
+      flex: 1;
+      overflow: auto;
+      background: var(--bg);
+      min-height: 0;
+    }
+    .cal-row {
+      display: grid;
+      grid-template-columns: 108px minmax(150px, 190px) 52px 72px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .cal-note {
+      padding: 8px 12px;
+      color: var(--text-2);
+      font-size: 12px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .cal-row.is-warn { background: #fffdf5; box-shadow: inset 3px 0 0 #f79009; }
+    .cal-row.is-hit { box-shadow: inset 3px 0 0 var(--blue); }
+    .cal-row.is-selected { background: var(--blue-bg); }
+    .cal-row.is-warn.is-selected { background: #fffaeb; }
+    .cal-cd {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    .cal-when { color: var(--text-2); font-variant-numeric: tabular-nums; font-size: 12px; }
+    .cal-ccy { font-weight: 700; letter-spacing: 0.03em; }
+    .cal-impact {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #b42318;
+    }
+    .cal-title { min-width: 0; font-weight: 600; }
+    .cal-fig { margin-top: 2px; color: var(--muted); font-weight: 400; font-size: 11px; }
+    .cal-tag {
+      margin-left: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #b54708;
+    }
+    .cal-pairs { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .cal-empty {
+      color: var(--muted);
+      max-width: 560px;
+      padding: 28px 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .cal-foot {
+      flex-shrink: 0;
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+      background: var(--surface-2);
+    }
+    @media (max-width: 860px) {
+      .cal-row { grid-template-columns: 96px 1fr auto; }
+      .cal-when, .cal-impact { display: none; }
+    }

@@ -11,6 +11,17 @@ from typing import Any
 
 import pandas as pd
 
+from forex_lab.advise import suggest_actions
+from forex_lab.calendar import (
+    CalendarBundle,
+    countdown_label,
+    event_affects_pair,
+    event_window,
+    fetch_calendar,
+    next_event_for_pair,
+    next_event_label,
+    short_event_title,
+)
 from forex_lab.chart_indicators import chart_indicators_aligned, chart_price_digits, empty_indicators
 from forex_lab.clock import fmt_display, parse_ts, timezone_name, timezone_tag
 from forex_lab.config_loader import load_config, pip_size_for_pair
@@ -32,7 +43,7 @@ from forex_lab.freshness import (
 )
 from forex_lab.session import classify_session, session_windows
 from forex_lab.ui.alerts import process_watch, visible_alerts
-from forex_lab.ui.board import _barrier_levels, build_board_row, build_board_rows
+from forex_lab.ui.board import _barrier_levels, attach_next_event, build_board_row, build_board_rows
 from forex_lab.ui.quote import quote_digits
 from forex_lab.ui.watchlist import (
     KNOWN_INTERVALS,
@@ -282,6 +293,8 @@ def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | Non
         "details": str(getattr(row, "signal_details", "") or ""),
         "mtf": None if mtf is None else str(getattr(mtf, "status", "") or ""),
         "mtf_note": None if mtf is None else str(getattr(mtf, "note", "") or ""),
+        "next_event": str(getattr(row, "next_event", "") or "") or "—",
+        "next_event_warn": bool(getattr(row, "next_event_warn", False)),
         "stop": _stop_price(row),
         "atr": _num(getattr(getattr(row, "risk", None), "atr", None)),
         "horizon_bars": None
@@ -429,6 +442,222 @@ def standing_validity_message(row: Any) -> str | None:
     return base
 
 
+def _event_minutes(cfg: dict[str, Any] | None) -> tuple[int, int, int]:
+    block = dict((cfg or {}).get("advice") or {})
+    cal = dict((cfg or {}).get("calendar") or {})
+    before = int(block.get("before_minutes") or cal.get("before_minutes") or 60)
+    during = int(block.get("during_minutes") or cal.get("during_minutes") or 15)
+    after = int(block.get("after_minutes") or cal.get("after_minutes") or 30)
+    return before, during, after
+
+
+def load_calendar(cfg: dict[str, Any] | None = None, *, force: bool = False) -> CalendarBundle:
+    """Cached weekly feed. Fail-soft: a dead fetch reuses ``data/calendar_cache.json``."""
+    cfg = cfg if cfg is not None else app_config()
+    probe = dict(cfg)
+    override = os.environ.get("FORX_CALENDAR_CACHE")
+    if override:
+        cal = dict(probe.get("calendar") or {})
+        cal["cache_file"] = override
+        probe["calendar"] = cal
+    try:
+        return fetch_calendar(probe, force=force)
+    except Exception as exc:
+        return CalendarBundle(
+            error=f"calendar unavailable ({type(exc).__name__})",
+            notes=["Calendar unavailable."],
+        )
+
+
+def _watch_pairs(cfg: dict[str, Any]) -> list[str]:
+    try:
+        wl = load_wl(cfg)
+    except Exception:
+        return []
+    out: list[str] = []
+    for item in wl.pairs:
+        symbol = str(getattr(item, "pair", "") or "").upper()
+        if symbol and symbol not in out:
+            out.append(symbol)
+    return out
+
+
+def _clock(now: datetime | None) -> datetime:
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    return clock.astimezone(timezone.utc)
+
+
+def _display_stamp(value: object, cfg: dict[str, Any]) -> str | None:
+    if value is None or str(value).strip() == "":
+        return None
+    shown = fmt_display(value, cfg, seconds=False)
+    if shown == "n/a":
+        return str(value)
+    return shown
+
+
+def next_event_payload(
+    pair: str,
+    events: list[Any],
+    cfg: dict[str, Any],
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Soonest high-impact print for this pair. None when the feed has no match."""
+    clock = _clock(now)
+    event = next_event_for_pair(events, pair, clock)
+    if event is None:
+        return None
+    before, during, after = _event_minutes(cfg)
+    window = event_window(
+        event, clock, before_minutes=before, during_minutes=during, after_minutes=after
+    )
+    warn = window in {"before", "during"}
+    when = event.when_dt()
+    return {
+        "title": event.title,
+        "short_title": short_event_title(event.title),
+        "currency": event.currency,
+        "impact": event.impact,
+        "when": event.when,
+        "when_dhaka": _display_stamp(when, cfg),
+        "countdown": countdown_label(when, clock),
+        "label": next_event_label(event, clock, warn=warn),
+        "window": window,
+        "warn": warn,
+        "highlight": bool(event.highlight),
+        "forecast": event.forecast or "",
+        "previous": event.previous or "",
+    }
+
+
+def _event_json(
+    event: Any,
+    cfg: dict[str, Any],
+    now: datetime,
+    pairs: list[str],
+) -> dict[str, Any]:
+    before, during, after = _event_minutes(cfg)
+    window = event_window(
+        event, now, before_minutes=before, during_minutes=during, after_minutes=after
+    )
+    when = event.when_dt()
+    hit = [p for p in pairs if event_affects_pair(event, p)]
+    return {
+        "title": event.title,
+        "currency": event.currency,
+        "impact": event.impact,
+        "when": event.when,
+        "when_dhaka": _display_stamp(when, cfg),
+        "countdown": countdown_label(when, now),
+        "forecast": event.forecast or "",
+        "previous": event.previous or "",
+        "highlight": bool(event.highlight),
+        "pairs": hit,
+        "window": window,
+        "warn": window in {"before", "during"},
+    }
+
+
+def calendar_context(bundle: CalendarBundle) -> dict[str, Any]:
+    note = None
+    if bundle.stale_cache:
+        note = next((str(n) for n in bundle.notes if n), None) or (
+            "Using stale local cache — live calendar fetch failed."
+        )
+    elif bundle.error and not bundle.events:
+        note = str(bundle.error)
+    return {
+        "error": bundle.error,
+        "stale_cache": bool(bundle.stale_cache),
+        "note": note,
+        "notes": [str(n) for n in bundle.notes if n],
+        "count": len(bundle.events),
+        "fetched_at": bundle.fetched_at,
+        "source": bundle.source,
+    }
+
+
+def calendar_payload(
+    cfg: dict[str, Any] | None = None,
+    *,
+    pairs: list[str] | None = None,
+    force: bool = False,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """High-impact events for the desk. Cache TTL applies unless ``force``."""
+    cfg = cfg if cfg is not None else app_config()
+    bundle = load_calendar(cfg, force=force)
+    clock = _clock(now)
+    wanted = list(pairs) if pairs is not None else _watch_pairs(cfg)
+    events = [_event_json(event, cfg, clock, wanted) for event in bundle.events]
+    ttl = int((cfg.get("calendar") or {}).get("cache_ttl_s") or 1800)
+    ctx = calendar_context(bundle)
+    return {
+        "timezone": timezone_name(cfg),
+        "fetched_at": bundle.fetched_at,
+        "fetched_at_dhaka": _display_stamp(bundle.fetched_at, cfg) if bundle.fetched_at else None,
+        "source": bundle.source,
+        "source_url": bundle.source_url,
+        "stale_cache": bool(bundle.stale_cache),
+        "error": bundle.error,
+        "notes": ctx["notes"],
+        "note": ctx["note"],
+        "cache_ttl_s": ttl,
+        "count": len(events),
+        "pairs": wanted,
+        "events": events,
+    }
+
+
+def _annotate_suggestion(suggestion: dict[str, Any], event: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep model stop/target numbers. Say when a nearby release changes the read."""
+    if not event or event.get("window") in {None, "", "none"}:
+        return suggestion
+    out = dict(suggestion)
+    label = str(event.get("label") or "event")
+    window = str(event.get("window") or "")
+    note = f"Event {window}: {label}."
+    scenario = str(out.get("scenario") or "").rstrip()
+    if note not in scenario:
+        out["scenario"] = f"{scenario} {note}".strip()
+    if event.get("warn"):
+        duration = str(out.get("duration") or "").strip()
+        countdown = str(event.get("countdown") or "").strip()
+        suffix = f"caution {countdown}".strip()
+        if suffix and suffix not in duration:
+            out["duration"] = f"{duration} · {suffix}" if duration else suffix
+    return out
+
+
+def _advice_json(card: Any, pair: str) -> dict[str, Any]:
+    proposed = card.suggested_sl
+    return {
+        "action": card.action,
+        "title": card.title,
+        "detail": card.detail,
+        "window": card.window,
+        "severity": card.severity,
+        "event_title": card.event_title,
+        "event_when": card.event_when,
+        "countdown": card.countdown,
+        "currencies": card.currencies,
+        "suggested_sl": proposed,
+        "suggested_sl_text": price_text(pair, proposed) if proposed is not None else "",
+    }
+
+
+def _attach_event_stop(blocks: list[dict[str, Any]], pair: str, cards: list[Any]) -> None:
+    proposed = next((card.suggested_sl for card in cards if card.suggested_sl is not None), None)
+    if proposed is None:
+        return
+    text = price_text(pair, float(proposed))
+    for block in blocks:
+        block["event_stop"] = float(proposed)
+        block["event_stop_text"] = text
+
+
 def board_payload(
     cfg: dict[str, Any] | None = None,
     *,
@@ -438,11 +667,16 @@ def board_payload(
     cfg = cfg if cfg is not None else app_config()
     wl = load_wl(cfg)
     rows = build_board_rows(wl, cfg, refresh_data=refresh_data, regenerate=True if refresh_data else False)
+    bundle = load_calendar(cfg)
+    events = list(bundle.events)
+    clock = _clock(now) if now is not None else None
+    for row in rows:
+        attach_next_event(row, events, now=clock, cfg=cfg)
     _state, _fresh = process_watch(
         rows,
-        calendar=None,
+        calendar=bundle,
         cfg=cfg,
-        now=now_utc(now) if now is not None else None,
+        now=clock,
         persist=True,
         path=alert_state_path(),
     )
@@ -469,6 +703,7 @@ def board_payload(
     for alert in visible_alerts(_state):
         _push(alert.kind, alert.message, alert.pair)
 
+    cal = calendar_context(bundle)
     return {
         "timezone": timezone_name(cfg),
         "timezone_tag": timezone_tag(cfg),
@@ -478,6 +713,14 @@ def board_payload(
         "count": len(rows),
         "rows": [row_json(r, now=now, cfg=cfg) for r in rows],
         "alerts": alerts,
+        "calendar": {
+            "error": cal["error"],
+            "stale_cache": cal["stale_cache"],
+            "note": cal["note"],
+            "count": cal["count"],
+            "fetched_at": cal["fetched_at"],
+            "source": cal["source"],
+        },
     }
 
 
@@ -693,13 +936,33 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         if primary_iv == DAILY_INTERVAL
         else load_cached_ohlcv(symbol, cfg, primary_iv)
     )
-    hourly = suggestion_from_row(hourly_row, cfg, ohlcv=hourly_bars)
-    daily = suggestion_from_row(daily_row, cfg, ohlcv=daily_bars)
-    primary = suggestion_from_row(primary_row, cfg, ohlcv=primary_bars)
+    bundle = load_calendar(cfg)
+    events = list(bundle.events)
+    clock = _clock(None)
+    attach_next_event(primary_row, events, now=clock, cfg=cfg)
+    event = next_event_payload(symbol, events, cfg, clock)
+    hourly = _annotate_suggestion(suggestion_from_row(hourly_row, cfg, ohlcv=hourly_bars), event)
+    daily = _annotate_suggestion(suggestion_from_row(daily_row, cfg, ohlcv=daily_bars), event)
+    primary = _annotate_suggestion(suggestion_from_row(primary_row, cfg, ohlcv=primary_bars), event)
     ensure_consensus(symbol, cfg)
     hourly_c = read_consensus(symbol, "hourly", cfg)
     daily_c = read_consensus(symbol, "daily", cfg)
     from api.paperdesk import paper_snapshot
+
+    paper = paper_snapshot(symbol, cfg, primary_row)
+    cards = suggest_actions(
+        pair=symbol,
+        signal=getattr(primary_row, "raw_signal", None) or getattr(primary_row, "buy_sell", None),
+        validity=str(primary.get("validity") or ""),
+        position=paper.get("position"),
+        events=events,
+        cfg=cfg,
+        ohlcv=primary_bars,
+        mtf=getattr(primary_row, "mtf", None),
+        last_price=primary.get("now"),
+        now=clock,
+    )
+    _attach_event_stop([hourly, daily, primary], symbol, cards)
     tone, bias, headline = _headline(symbol, primary)
     parts = [lean_label(hourly_c if primary_iv != DAILY_INTERVAL else daily_c)]
     if primary.get("mtf") or getattr(primary_row, "mtf", None) is not None:
@@ -713,7 +976,16 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         reason = str(getattr(primary_row, "validity_reason", "") or primary.get("validity"))
         if reason:
             parts.append(reason)
+    if event is not None:
+        if event.get("window") not in {None, "", "none"}:
+            parts.append(f"Event {event['window']} · {event['label']}")
+        else:
+            parts.append(f"Next event {event['label']}")
     rationale = str(primary.get("rationale") or "").strip()
+    cal = calendar_context(bundle)
+    calendar_note = cal["note"]
+    if calendar_note is None and event is None and not bundle.error:
+        calendar_note = "No high-impact event for this pair in the window."
     return {
         "pair": symbol,
         "tf": tf_label(primary_iv),
@@ -727,7 +999,12 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "hourly": hourly,
         "daily": daily,
         "consensus": {"hourly": hourly_c, "daily": daily_c},
-        "paper": paper_snapshot(symbol, cfg, primary_row),
+        "paper": paper,
+        "next_event": event,
+        "advice": [_advice_json(card, symbol) for card in cards],
+        "calendar_error": bundle.error,
+        "calendar_stale": bool(bundle.stale_cache),
+        "calendar_note": calendar_note,
     }
 
 

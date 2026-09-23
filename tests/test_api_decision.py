@@ -24,6 +24,12 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     reset_limiter()
     from api.main import create_app
 
+    def _quiet_calendar(*_args, **_kwargs):
+        from forex_lab.calendar import CalendarBundle
+
+        return CalendarBundle()
+
+    monkeypatch.setattr("api.deskdata.fetch_calendar", _quiet_calendar)
     return TestClient(create_app())
 
 
