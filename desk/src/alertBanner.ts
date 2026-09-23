@@ -42,29 +42,41 @@ export function alertClauses(alerts: AlertItem[], limit = ALERT_BANNER_LIMIT): A
   return clauses;
 }
 
-/** One pill in a flip group. Index 0 is the newest change and carries the pair. */
+/**
+ * One pill in a flip group.
+ * `changes` on the clause stays ingest order (newest first). Badges reverse that
+ * so the strip reads oldest → newest, and the pair sits on the newest pill.
+ */
 export type FlipBadge = {
   pair: string | null;
   change: string;
   latest: boolean;
 };
 
-/** Badge order matches the strip: leftmost is newest. The pair sits on that first pill only. */
+/** Chronological pills: leftmost is oldest, rightmost is newest and carries the pair. */
 export function flipBadges(clause: Extract<AlertClause, { type: "flips" }>): FlipBadge[] {
-  return clause.changes.map((change, index) => ({
-    pair: index === 0 ? clause.pair : null,
+  const olderFirst = [...clause.changes].reverse();
+  const newest = olderFirst.length - 1;
+  return olderFirst.map((change, index) => ({
+    pair: index === newest ? clause.pair : null,
     change,
-    latest: index === 0,
+    latest: index === newest,
   }));
 }
 
 function clauseText(clause: AlertClause): string {
   if (clause.type === "note") return clause.text;
-  if (clause.changes.length === 1) return `${clause.pair} ${clause.changes[0]}`;
-  return `${clause.pair}: ${clause.changes.join(", ")}`;
+  const badges = flipBadges(clause);
+  if (badges.length === 1) return `${clause.pair} ${badges[0].change}`;
+  return badges
+    .map((badge) => (badge.pair ? `${badge.pair}: ${badge.change}` : badge.change))
+    .join(" → ");
 }
 
-/** Plain-text form of the strip. Same grouping the banner renders. */
+/**
+ * Plain-text form of the strip, oldest → newest within a pair, matching the badges.
+ * `alertClauses().changes` stays newest-first for ingest order.
+ */
 export function formatAlertBanner(alerts: AlertItem[], limit = ALERT_BANNER_LIMIT): string {
   const clauses = alertClauses(alerts, limit);
   if (!clauses.length) return "No active alerts";

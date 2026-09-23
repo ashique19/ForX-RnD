@@ -236,10 +236,11 @@
       font-weight: 800;
     }
     .alerts .alert-flip-dir {
-      display: inline-flex;
-      align-items: center;
       flex: 0 0 auto;
-      color: #d0924a;
+      color: #93370d;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
     }
     .alerts .alert-sep {
       margin: 0 0.45em;
