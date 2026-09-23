@@ -94,6 +94,7 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
+  const [modelStripDismissed, setModelStripDismissed] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
   const [retrainBusy, setRetrainBusy] = useState(false);
   const [gateNote, setGateNote] = useState<string | null>(null);
@@ -427,13 +428,16 @@ export function App() {
                 onUpdate={() => void refreshData(true)}
               />
               <ReplayTrainButton pair={selected} interval={rowTf} />
-              <ModelBuildStrip
-                pair={selected}
-                build={modelBuild}
-                busy={retrainBusy}
-                gateNote={gateNote}
-                onRetrain={runRetrainGate}
-              />
+              {modelStripDismissed ? null : (
+                <ModelBuildStrip
+                  pair={selected}
+                  build={modelBuild}
+                  busy={retrainBusy}
+                  gateNote={gateNote}
+                  onRetrain={runRetrainGate}
+                  onDismiss={() => setModelStripDismissed(true)}
+                />
+              )}
             </div>
             {offline ? (
               <div className="alerts bad api-down">

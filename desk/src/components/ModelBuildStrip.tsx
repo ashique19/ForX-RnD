@@ -25,12 +25,14 @@ export function ModelBuildStrip({
   busy,
   gateNote,
   onRetrain,
+  onDismiss,
 }: {
   pair: string;
   build: ModelBuild | null;
   busy: boolean;
   gateNote: string | null;
   onRetrain: () => void;
+  onDismiss: () => void;
 }) {
   const active = build && build.pair === pair ? build : null;
   const status = active?.status || "…";
@@ -70,6 +72,15 @@ export function ModelBuildStrip({
         title="Run the champion/challenger retrain gate for this Active pair. Walk-forward can take several minutes. Not automatic, and not a live edge."
       >
         {busy ? "Running gate…" : "Run retrain gate"}
+      </button>
+      <button
+        className="btn sm icon model-dismiss"
+        type="button"
+        aria-label="Dismiss model"
+        title="Dismiss model"
+        onClick={onDismiss}
+      >
+        <span aria-hidden="true">×</span>
       </button>
     </div>
   );

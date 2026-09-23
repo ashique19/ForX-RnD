@@ -1213,6 +1213,21 @@
       color: var(--muted);
     }
     .model-build .btn { flex-shrink: 0; margin-left: auto; }
+    /* Same control as the Alert strip dismiss: 22px, trailing, session-only. */
+    .model-build .model-dismiss {
+      margin-left: 0;
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      justify-content: center;
+      font-size: 15px;
+      line-height: 1;
+    }
+    .model-build .model-dismiss:hover {
+      border-color: currentColor;
+      color: inherit;
+    }
     @media (max-width: 860px) {
       .model-build { flex-wrap: wrap; }
       .model-build .reason { flex-basis: 100%; white-space: normal; }
