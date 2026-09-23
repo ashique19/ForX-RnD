@@ -1,53 +1,146 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../api";
 import type { BoardRow } from "../types";
 
-const WATCHLIST_EXPANDED_KEY = "forx.desk.watchlistExpanded";
+const FOCUSABLE =
+  'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-function loadWatchlistExpanded(): boolean {
-  try {
-    return localStorage.getItem(WATCHLIST_EXPANDED_KEY) !== "0";
-  } catch {
+function focusableIn(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => {
+    if (el.getAttribute("aria-hidden") === "true") return false;
+    if (el.closest("[hidden]")) return false;
     return true;
-  }
+  });
 }
 
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg className={open ? "chev open" : "chev"} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M6 4l4 4-4 4" />
-    </svg>
-  );
-}
-
-export function WatchlistPanel({
+export function WatchlistModal({
+  open,
+  onClose,
+  returnFocusRef,
   rows,
   selected,
   onSelect,
   onAdd,
   onRemove,
 }: {
+  open: boolean;
+  onClose: () => void;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
   rows: BoardRow[];
   selected: string;
   onSelect: (row: BoardRow) => void;
   onAdd: (pair: string, interval: string) => Promise<void>;
   onRemove: (pair: string) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    const opener = returnFocusRef.current;
+    const dialog = dialogRef.current;
+    const frame = window.requestAnimationFrame(() => dialog?.focus());
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const node = dialogRef.current;
+      if (!node) return;
+      const list = focusableIn(node);
+      if (list.length === 0) {
+        event.preventDefault();
+        node.focus();
+        return;
+      }
+      const first = list[0];
+      const last = list[list.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && node.contains(active);
+      if (event.shiftKey) {
+        if (!inside || active === first || active === node) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (!inside || active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open, returnFocusRef]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        id="watchlist-dialog"
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="watchlist-heading"
+        tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <WatchlistPanel
+          rows={rows}
+          selected={selected}
+          onSelect={(row) => {
+            onSelect(row);
+            onClose();
+          }}
+          onAdd={onAdd}
+          onRemove={onRemove}
+          onClose={onClose}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function WatchlistPanel({
+  rows,
+  selected,
+  onSelect,
+  onAdd,
+  onRemove,
+  onClose,
+}: {
+  rows: BoardRow[];
+  selected: string;
+  onSelect: (row: BoardRow) => void;
+  onAdd: (pair: string, interval: string) => Promise<void>;
+  onRemove: (pair: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [addOpen, setAddOpen] = useState(false);
   const [pair, setPair] = useState("");
   const [interval, setInterval] = useState("");
   const [error, setError] = useState("");
   const [assets, setAssets] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [expanded, setExpanded] = useState(loadWatchlistExpanded);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(WATCHLIST_EXPANDED_KEY, expanded ? "1" : "0");
-    } catch {
-      /* private mode or blocked storage */
-    }
-  }, [expanded]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 5000);
@@ -55,7 +148,7 @@ export function WatchlistPanel({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!addOpen) return;
     let cancel = false;
     api
       .assets()
@@ -68,7 +161,7 @@ export function WatchlistPanel({
     return () => {
       cancel = true;
     };
-  }, [open, rows]);
+  }, [addOpen, rows]);
 
   const watched = new Set(rows.map((row) => row.pair));
   const choices = assets.filter((item) => !watched.has(item));
@@ -83,33 +176,24 @@ export function WatchlistPanel({
     try {
       await onAdd(pair.trim(), interval);
       setPair("");
-      setOpen(false);
+      setAddOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add pair");
     }
   }
 
   const countLabel = `${rows.length} ${rows.length === 1 ? "pair" : "pairs"}`;
-  const selectedLabel = selected.trim();
 
   return (
-    <section className={expanded ? "panel watchlist" : "panel watchlist is-collapsed"}>
+    <section className="panel watchlist">
       <div className="panel-hd">
-        <h2>Watchlist</h2>
-        {expanded ? (
-          <span className="meta">{countLabel}</span>
-        ) : selectedLabel ? (
-          <span className="wl-chip" title="Selected pair">{selectedLabel}</span>
-        ) : (
-          <span className="meta">{countLabel}</span>
-        )}
+        <h2 id="watchlist-heading">Watchlist</h2>
+        <span className="meta">{countLabel}</span>
         <span className="spacer" />
-        {expanded && (
-          <button className="btn primary sm" type="button" onClick={() => setOpen((v) => !v)}>
-            + Add pair
-          </button>
-        )}
-        {expanded && open && (
+        <button className="btn primary sm" type="button" onClick={() => setAddOpen((v) => !v)} aria-expanded={addOpen}>
+          + Add pair
+        </button>
+        {addOpen && (
           <form className="add-pop" onSubmit={submit}>
             <select aria-label="Pair" value={pair} onChange={(e) => setPair(e.target.value)} autoFocus>
               <option value="">{choices.length ? "Select pair" : "No pairs left"}</option>
@@ -128,22 +212,11 @@ export function WatchlistPanel({
             {error && <span className="data-lag">{error}</span>}
           </form>
         )}
-        <button
-          className="btn sm icon panel-toggle"
-          type="button"
-          aria-expanded={expanded}
-          aria-controls="watchlist-details"
-          title={expanded ? "Collapse watchlist" : "Expand watchlist"}
-          aria-label={expanded ? "Collapse watchlist" : "Expand watchlist"}
-          onClick={() => {
-            setOpen(false);
-            setExpanded((current) => !current);
-          }}
-        >
-          <Chevron open={expanded} />
+        <button className="btn sm icon modal-close" type="button" aria-label="Close watchlist" onClick={onClose}>
+          <span aria-hidden="true">×</span>
         </button>
       </div>
-      <div className="panel-body" id="watchlist-details" hidden={!expanded}>
+      <div className="panel-body" id="watchlist-details">
         <table className="wl">
           <thead>
             <tr>
@@ -172,7 +245,15 @@ export function WatchlistPanel({
                 <tr
                   key={row.pair}
                   className={row.pair === selected ? "selected" : undefined}
+                  tabIndex={0}
+                  aria-current={row.pair === selected ? "true" : undefined}
                   onClick={() => onSelect(row)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onSelect(row);
+                  }}
                 >
                   <td className="pair">{row.pair}</td>
                   <td><span className="tf-pill">{row.tf}</span></td>

@@ -19,7 +19,7 @@ import { LearningsPanel } from "./components/Learnings";
 import { Placeholder } from "./components/Placeholder";
 import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
-import { WatchlistPanel } from "./components/Watchlist";
+import { WatchlistModal } from "./components/Watchlist";
 
 function sameBrief(cur: Brief | null, pair: string, tf: string): boolean {
   if (!cur) return false;
@@ -91,6 +91,8 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
+  const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const watchlistButtonRef = useRef<HTMLButtonElement>(null);
   const [lastOkMs, setLastOkMs] = useState<number | null>(null);
   const [nextAt, setNextAt] = useState<number | null>(null);
   const [stripProblem, setStripProblem] = useState<StripProblem>(null);
@@ -347,15 +349,28 @@ export function App() {
           <Placeholder mode={mode} pair={selected} />
         ) : (
           <>
-            <FreshnessStrip
-              lastAgo={lastAgo}
-              nextIn={nextIn}
-              updating={refreshing}
-              problem={stripProblem}
-              auto={realtime}
-              lastFetchDhaka={newest?.text ?? null}
-              onUpdate={() => void refreshData(true)}
-            />
+            <div className="desk-bar">
+              <button
+                ref={watchlistButtonRef}
+                className="btn watchlist-launch"
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={watchlistOpen}
+                aria-controls="watchlist-dialog"
+                onClick={() => setWatchlistOpen(true)}
+              >
+                Watchlist
+              </button>
+              <FreshnessStrip
+                lastAgo={lastAgo}
+                nextIn={nextIn}
+                updating={refreshing}
+                problem={stripProblem}
+                auto={realtime}
+                lastFetchDhaka={newest?.text ?? null}
+                onUpdate={() => void refreshData(true)}
+              />
+            </div>
             {offline ? (
               <div className="alerts bad api-down">
                 <span className="tag">{offlineTag}</span>
@@ -382,36 +397,6 @@ export function App() {
                 </button>
               </div>
             ) : null}
-            <div className="left-col">
-              <WatchlistPanel
-                rows={rows}
-                selected={selected}
-                onSelect={(row) => {
-                  setSelected(row.pair);
-                  setRowTf(row.interval);
-                  setChartTf(row.interval);
-                }}
-                onAdd={async (pair, interval) => {
-                  const wl = await api.addPair(pair, interval || undefined);
-                  const norm = pair.toUpperCase().replace(/[^A-Z]/g, "");
-                  const added = wl.pairs.find((item) => item.pair === norm);
-                  if (added) {
-                    setSelected(added.pair);
-                    setRowTf(added.interval);
-                    setChartTf(added.interval);
-                  }
-                  setTick((n) => n + 1);
-                }}
-                onRemove={async (pair) => {
-                  await api.removePair(pair);
-                  if (pair === selected) {
-                    const rest = rows.filter((row) => row.pair !== pair);
-                    setSelected(rest[0]?.pair ?? "");
-                  }
-                  setTick((n) => n + 1);
-                }}
-              />
-            </div>
             <div className="right-col">
               <SignalBrief
                 pair={brief?.pair ?? selected}
@@ -451,6 +436,37 @@ export function App() {
                 busy={refreshing}
               />
             </div>
+            <WatchlistModal
+              open={watchlistOpen}
+              onClose={() => setWatchlistOpen(false)}
+              returnFocusRef={watchlistButtonRef}
+              rows={rows}
+              selected={selected}
+              onSelect={(row) => {
+                setSelected(row.pair);
+                setRowTf(row.interval);
+                setChartTf(row.interval);
+              }}
+              onAdd={async (pair, interval) => {
+                const wl = await api.addPair(pair, interval || undefined);
+                const norm = pair.toUpperCase().replace(/[^A-Z]/g, "");
+                const added = wl.pairs.find((item) => item.pair === norm);
+                if (added) {
+                  setSelected(added.pair);
+                  setRowTf(added.interval);
+                  setChartTf(added.interval);
+                }
+                setTick((n) => n + 1);
+              }}
+              onRemove={async (pair) => {
+                await api.removePair(pair);
+                if (pair === selected) {
+                  const rest = rows.filter((row) => row.pair !== pair);
+                  setSelected(rest[0]?.pair ?? "");
+                }
+                setTick((n) => n + 1);
+              }}
+            />
           </>
         )}
       </main>

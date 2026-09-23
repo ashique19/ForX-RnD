@@ -141,28 +141,28 @@
     /* —— App shell —— */
     .app {
       display: grid;
-      grid-template-columns: 340px 1fr;
+      grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr);
       gap: 8px;
       padding: 8px;
       height: calc(100vh - var(--nav-h));
       min-height: 640px;
     }
-    /* Decision mode: the data strip is always its own row.
+    /* Decision mode: watchlist is a modal, so the desk is one full-width column.
+       The data strip is always its own row.
        The alert row exists only while a banner is shown.
        A dismissed alert must not leave an empty band. */
     .app:not(.single) {
+      grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr);
     }
-    .app:not(.single) .freshness { grid-column: 1 / -1; grid-row: 1; }
-    .app:not(.single) .left-col { grid-column: 1; grid-row: 2; }
-    .app:not(.single) .right-col { grid-column: 2; grid-row: 2; }
+    .app:not(.single) .desk-bar { grid-column: 1 / -1; grid-row: 1; }
+    .app:not(.single) .right-col { grid-column: 1; grid-row: 2; }
     .app:not(.single).has-alert {
       grid-template-rows: auto auto minmax(0, 1fr);
     }
     .app:not(.single).has-alert .alerts { grid-column: 1 / -1; grid-row: 2; }
-    .app:not(.single).has-alert .left-col { grid-column: 1; grid-row: 3; }
-    .app:not(.single).has-alert .right-col { grid-column: 2; grid-row: 3; }
+    .app:not(.single).has-alert .right-col { grid-column: 1; grid-row: 3; }
 
     /* —— Alerts strip —— */
     .alerts {
@@ -255,49 +255,9 @@
     }
     .btn.sm { padding: 3px 8px; font-size: 11px; }
 
-    /* —— Left column: watchlist —— */
-    .left-col {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 0;
-    }
+    /* —— Watchlist (modal) —— */
     .watchlist { flex: 1; min-height: 0; }
-    .watchlist .panel-body { overflow: auto; flex: 1; }
-    .watchlist .panel-body[hidden] { display: none; }
-    /* Collapsed watchlist hugs its header so the chart column picks up the width. */
-    .app:not(.single):has(.watchlist.is-collapsed) {
-      grid-template-columns: max-content minmax(0, 1fr);
-    }
-    .left-col:has(.watchlist.is-collapsed) {
-      width: max-content;
-      max-width: 100%;
-      align-self: start;
-    }
-    .watchlist.is-collapsed {
-      flex: 0 0 auto;
-      width: max-content;
-      max-width: 100%;
-    }
-    .watchlist.is-collapsed .panel-hd {
-      border-bottom: none;
-      width: max-content;
-      max-width: 100%;
-    }
-    .watchlist.is-collapsed .spacer { display: none; }
-    .wl-chip {
-      display: inline-flex;
-      align-items: center;
-      padding: 1px 8px;
-      border-radius: 999px;
-      background: var(--blue-bg);
-      border: 1px solid #b2ddff;
-      color: var(--blue);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      white-space: nowrap;
-    }
+    .watchlist .panel-body { overflow: auto; flex: 1; min-height: 0; }
 
     table.wl {
       width: 100%;
@@ -407,6 +367,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      min-width: 0;
       min-height: 0;
     }
 
@@ -804,19 +765,12 @@
     }
 
     @media (max-width: 1100px) {
-      .app { grid-template-columns: 300px 1fr; }
       .levels { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 860px) {
-      .app,
-      .app:not(.single):has(.watchlist.is-collapsed) {
-        grid-template-columns: 1fr;
+      .app {
+        grid-template-columns: minmax(0, 1fr);
         height: auto;
-      }
-      .left-col:has(.watchlist.is-collapsed),
-      .watchlist.is-collapsed,
-      .watchlist.is-collapsed .panel-hd {
-        width: 100%;
       }
       .tf-cards { grid-template-columns: 1fr; }
     }
@@ -893,6 +847,32 @@
       opacity: 1;
     }
     .wl-remove:hover { border-color: var(--red-border); color: #b42318; }
+    .desk-bar {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      min-width: 0;
+    }
+    .desk-bar .watchlist-launch {
+      flex: 0 0 auto;
+      align-self: stretch;
+      padding: 0 14px;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+    .desk-bar .watchlist-launch:hover {
+      border-color: var(--border-strong);
+      background: var(--surface-2);
+    }
+    .desk-bar .freshness {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
     .freshness {
       grid-column: 1 / -1;
       min-height: 36px;
@@ -1173,6 +1153,10 @@
     .right-col > .brief.is-collapsed { flex: 0 0 auto; }
     .right-col > .chart { flex: 1 1 62%; min-height: 420px; }
     table.wl tbody tr { cursor: pointer; }
+    table.wl tbody tr:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: -2px;
+    }
 
     /* —— Next event on the Decision brief —— */
     .next-event {
@@ -1324,4 +1308,41 @@
     @media (max-width: 860px) {
       .cal-row { grid-template-columns: 96px 1fr auto; }
       .cal-when, .cal-impact { display: none; }
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(16, 24, 40, 0.45);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 56px 16px 16px;
+    }
+    .modal-dialog {
+      width: min(960px, 100%);
+      max-height: calc(100vh - 72px);
+      display: flex;
+      min-width: 0;
+      outline: none;
+    }
+    .modal-dialog:focus {
+      outline: none;
+    }
+    .modal-dialog .watchlist.panel {
+      width: 100%;
+      min-height: min(240px, calc(100vh - 72px));
+      max-height: calc(100vh - 72px);
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+    }
+    .modal-close {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      justify-content: center;
+      font-size: 15px;
+      line-height: 1;
+      flex-shrink: 0;
     }
