@@ -288,7 +288,7 @@ export function SignalBrief({
             onSubmit={submit}
           />
         )}
-        <button className={`btn sm icon ${busy ? "spin" : ""}`} type="button" title="Refresh" aria-label="Refresh" onClick={onRefresh}>
+        <button className={`btn sm icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onRefresh}>
           <RefreshIcon />
         </button>
         <button

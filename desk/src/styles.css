@@ -148,32 +148,21 @@
       height: calc(100vh - var(--nav-h));
       min-height: 640px;
     }
-    /* Decision mode: the alert row exists only while a banner is shown.
-       The cache-refresh notice is its own row only while it has text.
+    /* Decision mode: the data strip is always its own row.
+       The alert row exists only while a banner is shown.
        A dismissed alert must not leave an empty band. */
-    .app:not(.single):not(.has-alert) {
-      grid-template-rows: minmax(0, 1fr);
+    .app:not(.single) {
+      grid-template-rows: auto minmax(0, 1fr);
     }
-    .app:not(.single):not(.has-alert) .left-col { grid-column: 1; grid-row: 1; }
-    .app:not(.single):not(.has-alert) .right-col { grid-column: 2; grid-row: 1; }
+    .app:not(.single) .freshness { grid-column: 1 / -1; grid-row: 1; }
+    .app:not(.single) .left-col { grid-column: 1; grid-row: 2; }
+    .app:not(.single) .right-col { grid-column: 2; grid-row: 2; }
     .app:not(.single).has-alert {
-      grid-template-rows: auto minmax(0, 1fr);
-    }
-    .app:not(.single).has-alert .alerts { grid-column: 1 / -1; grid-row: 1; }
-    .app:not(.single).has-alert .left-col { grid-column: 1; grid-row: 2; }
-    .app:not(.single).has-alert .right-col { grid-column: 2; grid-row: 2; }
-    .app.has-notice:not(.has-alert) {
-      grid-template-rows: auto minmax(0, 1fr);
-    }
-    .app.has-notice:not(.has-alert) .notice-slot { grid-column: 1 / -1; grid-row: 1; }
-    .app.has-notice:not(.has-alert) .left-col,
-    .app.has-notice:not(.has-alert) .right-col { grid-row: 2; }
-    .app.has-notice.has-alert {
       grid-template-rows: auto auto minmax(0, 1fr);
     }
-    .app.has-notice.has-alert .notice-slot { grid-column: 1 / -1; grid-row: 2; }
-    .app.has-notice.has-alert .left-col,
-    .app.has-notice.has-alert .right-col { grid-row: 3; }
+    .app:not(.single).has-alert .alerts { grid-column: 1 / -1; grid-row: 2; }
+    .app:not(.single).has-alert .left-col { grid-column: 1; grid-row: 3; }
+    .app:not(.single).has-alert .right-col { grid-column: 2; grid-row: 3; }
 
     /* —— Alerts strip —— */
     .alerts {
@@ -858,20 +847,47 @@
       opacity: 1;
     }
     .wl-remove:hover { border-color: var(--red-border); color: #b42318; }
-    .notice-slot {
-      display: none;
-    }
-    .notice-slot.active {
+    .freshness {
+      grid-column: 1 / -1;
+      min-height: 36px;
       display: flex;
       align-items: center;
-      min-height: 32px;
-      padding: 0 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 4px 10px;
       font-size: 12px;
-      color: var(--muted);
-      border-radius: var(--radius);
+      color: var(--text-2);
+      font-variant-numeric: tabular-nums;
+      background: var(--surface);
       border: 1px solid var(--border);
-      background: var(--surface-2);
+      border-radius: var(--radius);
     }
+    .freshness .tag {
+      background: var(--blue-bg);
+      border: 1px solid #b2ddff;
+      color: var(--blue);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .freshness .fresh-last { font-weight: 600; color: var(--text); }
+    .freshness .fresh-next { color: var(--muted); }
+    .freshness .sep { color: var(--faint); }
+    .freshness .spacer { flex: 1; min-width: 8px; }
+    .freshness.updating .fresh-next { color: var(--blue); font-weight: 600; }
+    .freshness.bad {
+      background: var(--red-bg);
+      border-color: var(--red-border);
+    }
+    .freshness.bad .tag {
+      background: #fff;
+      border-color: var(--red-border);
+      color: #b42318;
+    }
+    .freshness.bad .fresh-next { color: #b42318; font-weight: 600; }
     .paper-row {
       display: flex;
       flex-wrap: wrap;

@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability } from "./api";
+import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type UnreachableKind } from "./api";
+import { FreshnessStrip } from "./components/FreshnessStrip";
+import {
+  AUTO_REFRESH_FUDGE_MS,
+  classifyBatch,
+  classifyThrown,
+  collectTargets,
+  newestFetchMs,
+  refreshIntervalSeconds,
+  secondsAgo,
+  secondsUntil,
+  type StripProblem,
+} from "./freshness";
 import type { AlertItem, Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
@@ -34,12 +46,28 @@ export function alertBannerKey(alerts: AlertItem[], error: string | null): strin
     .join("\n");
 }
 
-function mergeBoardRow(board: Board | null, row: BoardRow): Board | null {
-  if (!board) return board;
+function rowsOf(board: Board | null): BoardRow[] {
+  return Array.isArray(board?.rows) ? board.rows : [];
+}
+
+function emptyBoard(row: BoardRow): Board {
+  return {
+    timezone: "Asia/Dhaka",
+    refreshed_at_dhaka: "",
+    refresh_seconds: 60,
+    data_refresh_seconds: 18,
+    count: 1,
+    rows: [row],
+    alerts: [],
+  };
+}
+
+function mergeBoardRow(board: Board | null, row: BoardRow): Board {
+  if (!board || !Array.isArray(board.rows)) return emptyBoard(row);
   const rows = board.rows.some((item) => item.pair === row.pair)
     ? board.rows.map((item) => (item.pair === row.pair ? { ...item, ...row } : item))
     : [...board.rows, row];
-  return { ...board, rows };
+  return { ...board, rows, count: rows.length };
 }
 
 export function App() {
@@ -53,38 +81,67 @@ export function App() {
   const [realtime, setRealtime] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState<string | null>(null);
-  const [offlineKind, setOfflineKind] = useState<"api" | "desk" | "network">("api");
+  const [offlineKind, setOfflineKind] = useState<UnreachableKind>("api");
   const [retryAt, setRetryAt] = useState<number | null>(null);
-  const [noticeUntil, setNoticeUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [manualBusy, setManualBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
+  const [lastOkMs, setLastOkMs] = useState<number | null>(null);
+  const [nextAt, setNextAt] = useState<number | null>(null);
+  const [stripProblem, setStripProblem] = useState<StripProblem>(null);
   const rowsRef = useRef<BoardRow[]>([]);
+  const failedRows = useRef<BoardRow[]>([]);
+  const boardReady = useRef(false);
+  const inflight = useRef(false);
   const retryLock = useRef(false);
   const attempt = useRef(0);
-  const nextNet = useRef(0);
-  const polls = useRef(0);
-  const extra = useRef(0);
-  const skipBoard = useRef(false);
-  rowsRef.current = board?.rows ?? [];
+  const selectedRef = useRef(selected);
+  const chartTfRef = useRef(chartTf);
+  const rowTfRef = useRef(rowTf);
+  const intervalRef = useRef(refreshIntervalSeconds(null));
+  const offlineRef = useRef(offline);
+  rowsRef.current = rowsOf(board);
+  selectedRef.current = selected;
+  chartTfRef.current = chartTf;
+  rowTfRef.current = rowTf;
+  offlineRef.current = offline;
+
+  const applyFailed = useCallback((next: Board | null): Board | null => {
+    return failedRows.current.reduce<Board | null>((acc, row) => mergeBoardRow(acc, row), next);
+  }, []);
 
   const loadBoard = useCallback(async () => {
     const next = await api.board();
     const rows = Array.isArray(next?.rows) ? next.rows : [];
-    setBoard(next && Array.isArray(next.rows) ? next : null);
+    if (!next || !Array.isArray(next.rows)) {
+      setBoard(null);
+      setError("Decision API returned an unexpected board.");
+      return null;
+    }
+    const merged = applyFailed(next);
+    boardReady.current = true;
+    if (next.data_refresh_seconds) {
+      intervalRef.current = refreshIntervalSeconds(next.data_refresh_seconds);
+    }
+    setBoard(merged);
     setSelected((cur) => (rows.some((row) => row.pair === cur) ? cur : rows[0]?.pair ?? cur));
     setError(null);
-    return next;
-  }, []);
+    setStripProblem((cur) => (cur === "unreachable" ? null : cur));
+    setLastOkMs((cur) => cur ?? newestFetchMs(rows, Date.now()));
+    return merged;
+  }, [applyFailed]);
 
   const beginRetry = useCallback(() => {
-    if (retryLock.current) return;
+    if (retryLock.current || inflight.current) return;
     retryLock.current = true;
     attempt.current += 1;
     setRetryAt(null);
     setBusy(true);
+    setRefreshing(true);
     setTick((n) => n + 1);
   }, []);
 
@@ -93,12 +150,16 @@ export function App() {
       if (!failure) {
         setOffline(null);
         setRetryAt(null);
+        setStripProblem((cur) => (cur === "unreachable" ? null : cur));
         return;
       }
-      setOffline(failure.message);
-      setOfflineKind(failure.kind ?? "api");
+      const message = typeof failure.message === "string" && failure.message.trim() ? failure.message : "API unreachable";
+      setOffline(message);
+      setOfflineKind(failure.kind === "desk" || failure.kind === "network" ? failure.kind : "api");
       setRetryAt(Date.now() + API_RETRY_SECONDS * 1000);
       setNowMs(Date.now());
+      setStripProblem("unreachable");
+      setError(null);
     });
   }, []);
 
@@ -109,22 +170,20 @@ export function App() {
     const briefTf = rowTf;
     const iv = chartTf;
     const jobs: Promise<unknown>[] = [];
-    if (!skipBoard.current) {
-      jobs.push(
-        loadBoard().catch((err: unknown) => {
-          if (cancel || isUnreachable(err)) return;
-          setError(err instanceof Error ? err.message : "Decision API is not reachable on port 8000.");
-        }),
-      );
-    } else {
-      skipBoard.current = false;
-    }
+    jobs.push(
+      loadBoard().catch((err: unknown) => {
+        if (cancel || isUnreachable(err)) return;
+        const merged = applyFailed(null);
+        if (merged) setBoard(merged);
+        setError(err instanceof Error ? err.message : "Decision API is not reachable on port 8000.");
+      }),
+    );
     if (pair) {
       jobs.push(
         api
           .brief(pair, briefTf)
           .then((next) => {
-            if (!cancel) setBrief(next);
+            if (!cancel && next) setBrief(next);
           })
           .catch(() => {
             if (cancel) return;
@@ -135,7 +194,7 @@ export function App() {
         api
           .ohlcv(pair, iv)
           .then((next) => {
-            if (!cancel) setOhlcv(next);
+            if (!cancel && next) setOhlcv(next);
           })
           .catch(() => {
             if (cancel) return;
@@ -147,129 +206,105 @@ export function App() {
       if (cancel || gen !== attempt.current) return;
       retryLock.current = false;
       setBusy(false);
+      if (inflight.current) return;
+      setRefreshing(false);
+      setManualBusy(false);
     });
     return () => {
       cancel = true;
     };
-  }, [loadBoard, tick, selected, rowTf, chartTf]);
+  }, [applyFailed, loadBoard, tick, selected, rowTf, chartTf]);
 
-  const reload = useCallback(async (opts?: { quiet?: boolean }) => {
-    const quiet = Boolean(opts?.quiet);
-    if (!selected) return;
-    if (quiet && Date.now() < nextNet.current) {
-      setTick((n) => n + 1);
-      return;
-    }
-    setBusy(true);
+  const refreshData = useCallback(async (manual = false) => {
+    // Market data only. Does not call POST /pipeline.
+    if (inflight.current || retryLock.current) return;
+    inflight.current = true;
+    setRefreshing(true);
+    if (manual) setManualBusy(true);
+    const intervalS = intervalRef.current;
+    const arm = (seconds: number) => setNextAt(Date.now() + Math.max(1, seconds) * 1000);
     try {
-      const result = await api.refresh(selected, chartTf);
-      if (result.rate_limited) {
-        const wait = Number(result.retry_after_s ?? 18);
-        nextNet.current = Date.now() + Math.max(0, wait) * 1000;
-        if (!quiet) {
-          const pause = Number.isFinite(wait) && wait > 0 ? wait : 18;
-          setNoticeUntil(Date.now() + pause * 1000);
-          setNowMs(Date.now());
-          setError(null);
-        }
-      } else {
-        nextNet.current = 0;
-        if (!quiet) {
-          setNoticeUntil(null);
-          setError(null);
-        }
-        if (result.row && !result.fetch_failed) {
-          const fresh = result.row;
-          setBoard((cur) => mergeBoardRow(cur, fresh));
-        }
-        if (result.fetch_failed && result.row) {
-          const failed = result.row;
-          skipBoard.current = true;
-          setBoard((cur) =>
-            cur
-              ? mergeBoardRow(cur, failed)
-              : {
-                  timezone: "Asia/Dhaka",
-                  refreshed_at_dhaka: "",
-                  refresh_seconds: 60,
-                  count: 1,
-                  rows: [failed],
-                  alerts: [],
-                },
-          );
-        }
+      const targets = boardReady.current
+        ? collectTargets(rowsRef.current, selectedRef.current, chartTfRef.current, rowTfRef.current)
+        : null;
+      const result = await api.refreshWatchlist(targets);
+      if (!result || !Array.isArray(result.results)) {
+        throw new Error("Decision API returned an unexpected refresh.");
       }
+      if (result.data_refresh_seconds) {
+        intervalRef.current = refreshIntervalSeconds(result.data_refresh_seconds);
+      }
+      const watched = new Map(rowsRef.current.map((row) => [row.pair, row.interval]));
+      failedRows.current = result.results.flatMap((item) => {
+        if (!item?.fetch_failed || !item.row) return [];
+        const iv = watched.get(item.row.pair);
+        if (iv && item.row.interval !== iv) return [];
+        return [item.row];
+      });
+      const problem = classifyBatch(result);
+      setStripProblem(problem);
+      if (result.updated) {
+        setLastOkMs(Date.now());
+        if (!problem) setError(null);
+      }
+      const retry = Number(result.retry_after_s ?? 0);
+      arm(problem === "rate_limited" && retry > 0 ? retry : intervalRef.current);
+      setTick((n) => n + 1);
     } catch (err) {
-      if (isUnreachable(err)) return;
-      if (!quiet) {
-        const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : 0;
-        const payload =
-          err && typeof err === "object" && "payload" in err
-            ? (err as { payload?: { retry_after_s?: number; error?: string } }).payload
-            : undefined;
-        if (status === 429 || payload?.error === "rate_limited") {
-          const wait = Number(payload?.retry_after_s ?? 18);
-          nextNet.current = Date.now() + Math.max(0, wait) * 1000;
-          const pause = Number.isFinite(wait) && wait > 0 ? wait : 18;
-          setNoticeUntil(Date.now() + pause * 1000);
-          setNowMs(Date.now());
-          setError(null);
-        } else {
+      if (!isUnreachable(err)) {
+        const classified = classifyThrown(err);
+        setStripProblem(classified.problem);
+        if (classified.problem !== "unreachable") {
           setError(err instanceof Error ? err.message : "Refresh failed");
         }
+        arm(classified.problem === "rate_limited" && classified.retryAfterS ? classified.retryAfterS : intervalS);
+      } else {
+        setStripProblem("unreachable");
+        arm(intervalS);
       }
+      setRefreshing(false);
+      setManualBusy(false);
     } finally {
-      if (quiet) {
-        const n = ++polls.current;
-        const others = rowsRef.current.filter((row) => row.pair !== selected);
-        if (n % 3 === 0 && others.length) {
-          const row = others[extra.current % others.length];
-          extra.current += 1;
-          void api.refresh(row.pair, row.interval).catch(() => undefined);
-        }
-      }
-      setTick((n) => n + 1);
+      inflight.current = false;
     }
-  }, [selected, chartTf]);
+  }, []);
 
   useEffect(() => {
-    if (!realtime || mode !== "decision" || !selected || offline) return;
-    const seconds = Math.max(60, board?.refresh_seconds ?? 60);
-    let cancel = false;
-    const run = () => {
-      if (!cancel) void reload({ quiet: true });
-    };
-    run();
-    const id = window.setInterval(run, seconds * 1000);
-    return () => {
-      cancel = true;
-      window.clearInterval(id);
-    };
-  }, [realtime, mode, selected, board?.refresh_seconds, reload, offline]);
+    if (mode !== "decision" || !realtime || offline) return;
+    if (nextAt == null) {
+      setNextAt(Date.now());
+      return;
+    }
+    if (refreshing) return;
+    const delay = Math.max(0, nextAt - Date.now());
+    const id = window.setTimeout(() => {
+      if (offlineRef.current) return;
+      void refreshData(false);
+    }, delay + AUTO_REFRESH_FUDGE_MS);
+    return () => window.clearTimeout(id);
+  }, [mode, realtime, nextAt, refreshing, refreshData, offline]);
 
   useEffect(() => {
-    if (!noticeUntil && !retryAt) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), 250);
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [noticeUntil, retryAt]);
+  }, []);
 
   useEffect(() => {
-    if (!offline || retryAt == null || busy) return;
+    if (!offline || retryAt == null || busy || refreshing) return;
     if (Date.now() < retryAt) return;
     beginRetry();
-  }, [offline, retryAt, busy, nowMs, beginRetry]);
+  }, [offline, retryAt, busy, refreshing, nowMs, beginRetry]);
 
-  const noticeLeft = noticeUntil ? Math.max(0, Math.ceil((noticeUntil - nowMs) / 1000)) : 0;
-  const retryLeft = retryAt == null ? null : Math.max(0, Math.ceil((retryAt - nowMs) / 1000));
-  const reconnecting = Boolean(offline) && (busy || retryLeft == null || retryLeft <= 0);
-  const offlineTag = offlineKind === "desk" ? "Desk" : offlineKind === "network" ? "Network" : "API";
-  const retryText = !offline
-    ? ""
-    : reconnecting
-      ? "Reconnecting…"
-      : `Retrying in ${retryLeft} ${retryLeft === 1 ? "second" : "seconds"}…`;
+  const rows = rowsOf(board);
+  const lastAgo = secondsAgo(lastOkMs, nowMs);
+  const nextIn = realtime && mode === "decision" && !offline ? secondsUntil(nextAt, nowMs) : null;
+  const newest = rows.reduce<{ age: number; text: string } | null>((best, row) => {
+    if (!row || row.fetch_age_s == null || !row.last_fetch_dhaka || row.last_fetch_dhaka === "n/a") return best;
+    if (!best || row.fetch_age_s < best.age) return { age: row.fetch_age_s, text: row.last_fetch_dhaka };
+    return best;
+  }, null);
 
-  const alerts = board?.alerts ?? [];
+  const alerts = Array.isArray(board?.alerts) ? board.alerts : [];
   const alertKey = alertBannerKey(alerts, error);
   const alertDismissed = dismissedAlertKey !== null && dismissedAlertKey === alertKey;
   const showAlert = !offline && !alertDismissed;
@@ -278,12 +313,24 @@ export function App() {
   const alertText = error
     ? error
     : alerts.length
-      ? alerts.slice(0, 3).map((item) => item.message).join("  ·  ")
+      ? alerts
+          .slice(0, 3)
+          .map((item) => (typeof item?.message === "string" ? item.message : ""))
+          .filter(Boolean)
+          .join("  ·  ") || "No active alerts"
       : "No active alerts";
+
+  const retryLeft = retryAt == null ? null : Math.max(0, Math.ceil((retryAt - nowMs) / 1000));
+  const reconnecting = Boolean(offline) && (busy || retryLeft == null || retryLeft <= 0);
+  const offlineTag = offlineKind === "desk" ? "Desk" : offlineKind === "network" ? "Network" : "API";
+  const retryText = !offline
+    ? ""
+    : reconnecting
+      ? "Reconnecting…"
+      : `Retrying in ${retryLeft ?? 0} ${retryLeft === 1 ? "second" : "seconds"}…`;
+
   const deskClass =
-    mode === "decision"
-      ? ["app", showBanner ? "has-alert" : "", noticeLeft > 0 ? "has-notice" : ""].filter(Boolean).join(" ")
-      : "app single";
+    mode === "decision" ? ["app", showBanner ? "has-alert" : ""].filter(Boolean).join(" ") : "app single";
 
   const levels = chartTf === "1d" ? brief?.daily : chartTf === "1h" ? brief?.hourly : null;
 
@@ -297,12 +344,23 @@ export function App() {
           <Placeholder mode={mode} pair={selected} />
         ) : (
           <>
+            <FreshnessStrip
+              lastAgo={lastAgo}
+              nextIn={nextIn}
+              updating={refreshing}
+              problem={stripProblem}
+              auto={realtime}
+              lastFetchDhaka={newest?.text ?? null}
+              onUpdate={() => void refreshData(true)}
+            />
             {offline ? (
               <div className="alerts bad api-down">
                 <span className="tag">{offlineTag}</span>
-                <span className="api-down-msg" role="status">{offline}</span>
+                <span className="api-down-msg" role="status">
+                  {offline}
+                </span>
                 <span className="api-down-eta">{retryText}</span>
-                <button className="btn primary sm" type="button" onClick={beginRetry} disabled={busy}>
+                <button className="btn primary sm" type="button" onClick={beginRetry} disabled={busy || refreshing}>
                   Reconnect
                 </button>
               </div>
@@ -321,12 +379,9 @@ export function App() {
                 </button>
               </div>
             ) : null}
-            <div className={noticeLeft > 0 ? "notice-slot active" : "notice-slot"} role="status" aria-live="polite">
-              {noticeLeft > 0 ? `Updated from cache · next network refresh in ${noticeLeft}s` : ""}
-            </div>
             <div className="left-col">
               <WatchlistPanel
-                rows={board?.rows ?? []}
+                rows={rows}
                 selected={selected}
                 onSelect={(row) => {
                   setSelected(row.pair);
@@ -347,7 +402,7 @@ export function App() {
                 onRemove={async (pair) => {
                   await api.removePair(pair);
                   if (pair === selected) {
-                    const rest = (board?.rows ?? []).filter((row) => row.pair !== pair);
+                    const rest = rows.filter((row) => row.pair !== pair);
                     setSelected(rest[0]?.pair ?? "");
                   }
                   setTick((n) => n + 1);
@@ -367,13 +422,13 @@ export function App() {
                 paper={brief?.paper ?? null}
                 toast={paperToast}
                 chartInterval={chartTf}
-                onRefresh={() => void reload()}
+                onRefresh={() => void refreshData(true)}
                 onOrder={async (side, size) => {
                   const result = await api.paperOrder(selected, side, size, rowTf);
                   setPaperToast(result.message);
                   setTick((n) => n + 1);
                 }}
-                busy={busy}
+                busy={manualBusy}
               />
               <ChartPanel
                 pair={selected}
@@ -381,11 +436,11 @@ export function App() {
                 onInterval={setChartTf}
                 realtime={realtime}
                 onRealtime={setRealtime}
-                onReload={() => void reload()}
+                onReload={() => void refreshData(true)}
                 data={ohlcv}
                 stop={levels?.stop ?? null}
                 target={levels?.target ?? null}
-                busy={busy}
+                busy={refreshing}
               />
             </div>
           </>

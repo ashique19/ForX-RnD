@@ -27,6 +27,7 @@ from forex_lab.freshness import (
     board_cfg,
     fx_session_open,
     interval_seconds,
+    is_rate_limited_reason,
     now_utc,
 )
 from forex_lab.session import classify_session, session_windows
@@ -44,6 +45,7 @@ from forex_lab.ui.watchlist import (
 )
 
 from api.consensus import ensure_consensus, lean_label, read_consensus
+from api.limiter import allow, data_refresh_seconds
 
 TF_LABELS = {
     "15m": "M15",
@@ -472,6 +474,7 @@ def board_payload(
         "timezone_tag": timezone_tag(cfg),
         "refreshed_at_dhaka": fmt_display(datetime.now(timezone.utc), cfg, seconds=True),
         "refresh_seconds": int(wl.refresh_seconds),
+        "data_refresh_seconds": data_refresh_seconds(),
         "count": len(rows),
         "rows": [row_json(r, now=now, cfg=cfg) for r in rows],
         "alerts": alerts,
@@ -811,6 +814,118 @@ def _note_failed_refresh(row: Any, reason: str) -> None:
     if flashed in {"BUY", "SELL"}:
         row.raw_signal = getattr(row, "raw_signal", None) or row.buy_sell
         row.buy_sell = "—"
+
+
+def _watch_targets(cfg: dict[str, Any]) -> list[tuple[str, str]]:
+    wl = load_wl(cfg)
+    default = wl.lab_interval(cfg)
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in wl.pairs:
+        symbol = normalize_pair(item.pair)
+        iv = parse_interval(item.resolved_interval(default), default=default)
+        key = (symbol, iv)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def _dedupe_targets(raw: list[tuple[str, str | None]], cfg: dict[str, Any]) -> list[tuple[str, str]]:
+    default = str(cfg.get("interval") or "1h")
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pair, interval in raw:
+        symbol = normalize_pair(pair)
+        iv = parse_interval(interval, default=default)
+        key = (symbol, iv)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def refresh_one(pair: str, *, interval: str | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One pair's market-data refresh, sharing the POST /refresh limiter.
+
+    Does not train, backtest, or generate signals.
+    """
+    cfg = cfg if cfg is not None else app_config()
+    symbol = normalize_pair(pair)
+    iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
+    allowed, retry = allow(f"{symbol}:{iv}")
+    if not allowed:
+        row = build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=False)
+        cached = row_json(row, cfg=cfg)
+        return {
+            "ok": True,
+            "rate_limited": True,
+            "retry_after_s": round(retry, 1),
+            "fetch_failed": False,
+            "fetch_error": None,
+            "pair": symbol,
+            "interval": iv,
+            "row": cached,
+            "source": "cache",
+            "detail": "Network refresh is waiting. Cached board was re-read.",
+        }
+    return refresh_pair(symbol, interval=iv, cfg=cfg)
+
+
+def _yf_rate_limited(result: dict[str, Any]) -> bool:
+    if result.get("rate_limited"):
+        return True
+    if not result.get("fetch_failed"):
+        return False
+    return is_rate_limited_reason(str(result.get("fetch_error") or ""))
+
+
+def refresh_watchlist(
+    pairs: list[tuple[str, str | None]] | None = None,
+    *,
+    cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Refresh OHLCV for the watchlist (or an explicit pair list).
+
+    Market data only. Does not call the research pipeline.
+    ``pairs is None`` uses the saved watchlist. An empty list refreshes nothing.
+    """
+    cfg = cfg if cfg is not None else app_config()
+    targets = _watch_targets(cfg) if pairs is None else _dedupe_targets(pairs, cfg)
+    results = [refresh_one(symbol, interval=iv, cfg=cfg) for symbol, iv in targets]
+    updated = any(not item.get("rate_limited") and not item.get("fetch_failed") for item in results)
+    hard_fail = [item for item in results if item.get("fetch_failed") and not _yf_rate_limited(item)]
+    limited = [item for item in results if _yf_rate_limited(item)]
+    waits = [float(item.get("retry_after_s") or 0) for item in limited if item.get("rate_limited")]
+    if hard_fail:
+        reason = "error"
+        rate_limited = False
+        fetch_failed = True
+    elif not updated and limited:
+        reason = "rate_limited"
+        rate_limited = True
+        fetch_failed = False
+    else:
+        reason = None
+        rate_limited = False
+        fetch_failed = False
+    retry = max(waits) if waits else 0.0
+    if reason == "rate_limited" and retry <= 0:
+        retry = float(data_refresh_seconds())
+    return {
+        "ok": True,
+        "updated": bool(updated or not results),
+        "rate_limited": rate_limited,
+        "fetch_failed": fetch_failed,
+        "reason": reason,
+        "retry_after_s": round(retry, 1),
+        "data_refresh_seconds": data_refresh_seconds(),
+        "refreshed_at_dhaka": fmt_display(datetime.now(timezone.utc), cfg, seconds=True),
+        "count": len(results),
+        "results": results,
+    }
 
 
 def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:

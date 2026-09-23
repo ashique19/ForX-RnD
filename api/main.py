@@ -28,14 +28,12 @@ from api.deskdata import (
     build_brief,
     mutate_watchlist,
     ohlcv_payload,
-    parse_interval,
-    refresh_pair,
-    row_json,
+    refresh_one,
+    refresh_watchlist,
     run_pipeline_pair,
     watchlist_json,
 )
 from api.learnings import MAX_LIMIT, learnings_payload
-from api.limiter import allow
 from api.paperdesk import PaperBlocked, paper_order
 
 _ORIGINS = [
@@ -56,6 +54,15 @@ class PaperOrderBody(BaseModel):
     side: str = Field(..., min_length=1)
     size: float | None = None
     interval: str | None = None
+
+
+class RefreshTarget(BaseModel):
+    pair: str = Field(..., min_length=1)
+    interval: str | None = None
+
+
+class RefreshBody(BaseModel):
+    pairs: list[RefreshTarget] | None = None
 
 
 def create_app() -> FastAPI:
@@ -142,38 +149,25 @@ def create_app() -> FastAPI:
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/refresh")
+    def post_refresh_watchlist(body: RefreshBody | None = None) -> JSONResponse:
+        """Watchlist market data. Does not run train / backtest / signals."""
+        try:
+            pairs = None if body is None or body.pairs is None else [(item.pair, item.interval) for item in body.pairs]
+            payload = refresh_watchlist(pairs)
+        except WatchlistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(status_code=200, content=payload)
+
     @app.post("/refresh/{pair}")
     def post_refresh(pair: str, interval: str | None = Query(default=None)) -> JSONResponse:
         try:
-            symbol = normalize_pair(pair)
-            iv = parse_interval(interval, default=str(app_config().get("interval") or "1h"))
+            payload = refresh_one(pair, interval=interval)
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        allowed, retry = allow(f"{symbol}:{iv}")
-        if not allowed:
-            from api import deskdata as _desk
-
-            cfg = app_config()
-            row = _desk.build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=False)
-            cached = row_json(row)
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "ok": True,
-                    "rate_limited": True,
-                    "retry_after_s": round(retry, 1),
-                    "pair": symbol,
-                    "interval": iv,
-                    "row": cached,
-                    "board": {"rows": [cached], "from_cache": True},
-                    "source": "cache",
-                    "detail": "Network refresh is waiting. Cached board was re-read.",
-                },
-            )
-        try:
-            payload = refresh_pair(symbol, interval=iv)
-        except WatchlistError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if payload.get("rate_limited"):
+            cached = payload.get("row")
+            payload = {**payload, "board": {"rows": [cached], "from_cache": True}}
         return JSONResponse(status_code=200, content=payload)
 
     @app.post("/paper/order")

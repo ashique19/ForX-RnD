@@ -2089,6 +2089,10 @@ def render() -> None:
     with st.sidebar:
         st.header("Lab")
         st.caption("Secondary. Open when you need data or a model — not to read signals.")
+        st.caption(
+            "Decision desk auto-refresh updates watchlist prices only. "
+            "Train, backtest, and generate signals stay on the buttons below."
+        )
         pair = st.selectbox("Pair", options=pairs, index=0, help="From config/default.yaml")
         status = artifact_status(pair, cfg)
         with st.expander("Fetch / Train / Backtest", expanded=False):
