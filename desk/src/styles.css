@@ -353,17 +353,19 @@
 
     /* —— Signal brief —— */
     .brief .panel-body { padding: 12px; overflow: auto; }
-    .bias-row {
+    .bias-block {
       container-type: inline-size;
       container-name: bias;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .bias-row {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
       column-gap: 12px;
       row-gap: 2px;
       align-items: center;
-      margin-bottom: 12px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
     }
     .bias-row .bias-tag { grid-column: 1; grid-row: 1; }
     .bias-row .bias-headline { grid-column: 2; grid-row: 1; }
