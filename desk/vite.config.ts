@@ -20,6 +20,7 @@ export default defineConfig({
       "/pipeline": api,
       "/paper": api,
       "/assets": api,
+      "/learnings": api,
     },
   },
 });

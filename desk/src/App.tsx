@@ -3,6 +3,7 @@ import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type U
 import type { Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
+import { LearningsPanel } from "./components/Learnings";
 import { Placeholder } from "./components/Placeholder";
 import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
@@ -265,7 +266,9 @@ export function App() {
     <>
       <TopNav mode={mode} onMode={setMode} />
       <main className={mode === "decision" ? "app" : "app single"}>
-        {mode !== "decision" ? (
+        {mode === "learnings" ? (
+          <LearningsPanel />
+        ) : mode !== "decision" ? (
           <Placeholder mode={mode} pair={selected} />
         ) : (
           <>
