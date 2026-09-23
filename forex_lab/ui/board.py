@@ -23,7 +23,9 @@ from forex_lab.freshness import (
     VALIDITY_OK,
     VALIDITY_STALE,
     Freshness,
+    FAILURE_TF_LABEL,
     assess_ohlcv,
+    format_failure_reason,
     now_utc,
 )
 from forex_lab.mtf import (
@@ -694,6 +696,45 @@ def apply_freshness(
     return row
 
 
+def _cached_bars_without_signal(
+    pair: str,
+    interval: str,
+    ohlcv: pd.DataFrame,
+    cfg: dict[str, Any],
+    *,
+    lab_interval: str,
+    data_source: str | None,
+    fetch_at: str,
+    now: Any,
+) -> BoardRow:
+    """Bars for this timeframe exist. The saved signal is for another timeframe."""
+    fresh = assess_ohlcv(ohlcv, interval, cfg, now=now)
+    label = FAILURE_TF_LABEL.get(str(interval), str(interval))
+    note = (
+        f"{label} bars are cached. No {interval} signal — "
+        f"the saved signal is for {lab_interval} and was not copied."
+    )
+    if fresh.reason and fresh.validity in {VALIDITY_STALE, VALIDITY_ERROR, VALIDITY_CLOSED}:
+        note = f"{note} {fresh.reason}"
+    row = _status_row(
+        pair,
+        interval,
+        STATUS_NEED_TRAIN,
+        note,
+        data_source=data_source or "cached",
+        n_bars=len(ohlcv),
+        validity=fresh.validity,
+        validity_reason=note,
+        last_bar_at=fresh.last_bar_label,
+        last_fetch_at=fetch_at if fetch_at != "n/a" else None,
+    )
+    try:
+        row.close = float(ohlcv["Close"].iloc[-1])
+    except (TypeError, ValueError, IndexError):
+        row.close = None
+    return attach_visuals(row, ohlcv, cfg, now=now)
+
+
 def _latest_csv_row(pair: str, cfg: dict[str, Any]) -> pd.Series | None:
     df = load_signals(cfg)
     if df is None or df.empty or "pair" not in df.columns:
@@ -756,7 +797,11 @@ def build_board_row(
                 n_bars=n_bars,
                 error="data CSV missing",
                 validity=VALIDITY_MISSING,
-                validity_reason="no OHLCV cache — Fetch required",
+                validity_reason=format_failure_reason(
+                    interval,
+                    "no OHLCV cache",
+                    last_ok=fetch_at if fetch_at != "n/a" else None,
+                ),
                 last_fetch_at=fetch_at if fetch_at != "n/a" else None,
             ),
             None,
@@ -797,10 +842,26 @@ def build_board_row(
                 data_source=data_source,
                 error="data CSV unreadable",
                 validity=VALIDITY_MISSING,
-                validity_reason="data CSV unreadable",
+                validity_reason=format_failure_reason(interval, "data CSV unreadable"),
             ),
             None,
             cfg,
+            now=clock,
+        )
+
+    lab_iv = str(cfg.get("interval") or "1h")
+    if str(interval) != lab_iv:
+        # The on-disk signal and model belong to the lab timeframe. Do not
+        # replay that BUY/SELL on another interval, and do not score these
+        # bars with a model trained on a different bar size.
+        return _cached_bars_without_signal(
+            pair,
+            interval,
+            ohlcv,
+            cfg,
+            lab_interval=lab_iv,
+            data_source=data_source,
+            fetch_at=fetch_at,
             now=clock,
         )
 

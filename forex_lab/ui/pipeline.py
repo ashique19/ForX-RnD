@@ -217,6 +217,17 @@ def _run_cmd(fn, args: Namespace, cfg: dict[str, Any]) -> tuple[int, str]:
         return 1, buf.getvalue() + traceback.format_exc()
 
 
+def _fetch_interval_order(requested: str) -> list[str]:
+    """1h before 1d so a missing daily file can be built from hourly bars."""
+    ordered: list[str] = []
+    for iv in ("1h", requested, "1d"):
+        if iv and iv not in ordered:
+            ordered.append(iv)
+    if "1d" in ordered:
+        ordered = [iv for iv in ordered if iv != "1d"] + ["1d"]
+    return ordered
+
+
 def run_fetch(
     pair: str,
     *,
@@ -225,15 +236,55 @@ def run_fetch(
     synthetic: bool = False,
     cfg: dict[str, Any] | None = None,
 ) -> tuple[int, str]:
+    """Fetch the Lab pair. Real fetches also ensure 1h and 1d.
+
+    Synthetic mode writes only the requested interval and says why 1h/1d
+    companions were skipped. A real fetch never falls back to synthetic
+    prices: 1d is downloaded, or aggregated from 1h when the provider
+    cannot fill a missing daily cache.
+    """
     cfg = _prepared_cfg(cfg, period=period, interval=interval)
-    args = Namespace(
-        pair=str(pair).upper(),
-        period=period,
-        interval=interval,
-        synthetic=bool(synthetic),
-        config=None,
-    )
-    return _run_cmd(cmd_fetch, args, cfg)
+    symbol = str(pair).upper()
+    requested = str(interval or cfg.get("interval") or "1h")
+    if synthetic:
+        args = Namespace(
+            pair=symbol,
+            period=period,
+            interval=interval,
+            synthetic=True,
+            config=None,
+        )
+        rc, log = _run_cmd(cmd_fetch, args, cfg)
+        note = (
+            f"[fetch] {symbol}: companion 1h/1d skipped — "
+            "synthetic fetch does not build the other interval.\n"
+        )
+        return rc, (log or "") + note
+
+    from forex_lab.data import ensure_interval_ohlcv
+
+    lines: list[str] = []
+    requested_ok = False
+    for iv in _fetch_interval_order(requested):
+        frame, source, reason = ensure_interval_ohlcv(
+            symbol,
+            cfg,
+            iv,
+            incremental=False,
+            period=period,
+        )
+        if frame is not None and source == "resampled_from_1h":
+            lines.append(
+                f"[fetch] {symbol} {iv}: {len(frame)} bars aggregated from 1h "
+                f"(provider lacked 1d: {reason or 'download failed'})"
+            )
+        elif frame is not None:
+            lines.append(f"[fetch] {symbol} {iv}: {len(frame)} bars via {source}")
+        else:
+            lines.append(f"[fetch] {symbol} {iv} — failed: {reason or 'no OHLCV cache'}")
+        if iv == requested and (frame is not None or source == "cache"):
+            requested_ok = True
+    return (0 if requested_ok else 1), "\n".join(lines) + "\n"
 
 
 def run_train(pair: str, *, cfg: dict[str, Any] | None = None) -> tuple[int, str]:
