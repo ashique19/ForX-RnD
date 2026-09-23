@@ -1,11 +1,34 @@
 import type { AssetOption, Board, BoardRow, Brief, Ohlcv, PaperState, Watchlist } from "./types";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+const DEFAULT_API_URL = "http://127.0.0.1:8000";
 
 /** Seconds to wait before the desk retries an unreachable API. Resets after each attempt. */
 export const API_RETRY_SECONDS = 5;
 
-export type ApiFailure = Error & { status?: number; payload?: unknown; unreachable?: boolean };
+export type UnreachableKind = "api" | "desk" | "network";
+
+export type ApiFailure = Error & {
+  status?: number;
+  payload?: unknown;
+  unreachable?: boolean;
+  kind?: UnreachableKind;
+};
+
+/** URL the trader starts with RUN_UI.bat. Same-origin fetches are proxied here. */
+export function apiReachUrl(): string {
+  return BASE || DEFAULT_API_URL;
+}
+
+export function unreachableMessage(kind: UnreachableKind, deskUrl = "http://127.0.0.1:5173"): string {
+  if (kind === "network") {
+    return "Network unreachable — this browser is offline, so API data cannot load. Click Reconnect when you are back online.";
+  }
+  if (kind === "desk") {
+    return `Desk server issue (${deskUrl}) — start with RUN_UI.bat, or click Reconnect once it is running.`;
+  }
+  return `API unreachable (${apiReachUrl()}) — start with RUN_UI.bat, or click Reconnect once it is running.`;
+}
 
 type ReachHandler = (failure: ApiFailure | null) => void;
 
@@ -41,9 +64,39 @@ function markUp(): void {
   emit(null);
 }
 
-function networkFailure(cause: unknown): ApiFailure {
-  const message = cause instanceof Error && cause.message ? cause.message : "Failed to fetch";
-  const err = new Error(message) as ApiFailure;
+function browserOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+let kindInflight: Promise<UnreachableKind> | null = null;
+
+/** Desk page is already on screen. Tell API, desk server, and offline apart. */
+async function classifyUnreachable(deskAnswered: boolean): Promise<UnreachableKind> {
+  if (browserOffline()) return "network";
+  // An HTTP response from this page's server means Vite is up and the API behind it is not.
+  // A direct VITE_API_BASE fetch never goes through the desk, so a failure there is the API.
+  if (deskAnswered || BASE) return "api";
+  if (kindInflight) return kindInflight;
+  kindInflight = (async () => {
+    try {
+      const signal =
+        typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(2000) : undefined;
+      const probe = await fetch("/", { cache: "no-store", signal });
+      return probe.status > 0 ? "api" : "desk";
+    } catch {
+      return "desk";
+    }
+  })().finally(() => {
+    kindInflight = null;
+  });
+  return kindInflight;
+}
+
+async function failUnreachable(deskAnswered: boolean): Promise<ApiFailure> {
+  const kind = await classifyUnreachable(deskAnswered);
+  const deskUrl = typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:5173";
+  const err = new Error(unreachableMessage(kind, deskUrl)) as ApiFailure;
+  err.kind = kind;
   return markDown(err);
 }
 
@@ -65,8 +118,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.headers ?? {}),
       },
     });
-  } catch (cause) {
-    throw networkFailure(cause);
+  } catch {
+    throw await failUnreachable(false);
   }
   const text = await res.text();
   let body: unknown = null;
@@ -87,7 +140,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const err = new Error(detail || `HTTP ${res.status}`) as ApiFailure;
     err.status = res.status;
     err.payload = body;
-    if (gatewayDown(res.status, text)) throw markDown(err);
+    if (gatewayDown(res.status, text)) throw await failUnreachable(true);
     markUp();
     throw err;
   }

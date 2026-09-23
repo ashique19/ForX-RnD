@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability } from "./api";
+import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type UnreachableKind } from "./api";
 import type { Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
@@ -36,6 +36,7 @@ export function App() {
   const [realtime, setRealtime] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState<string | null>(null);
+  const [offlineKind, setOfflineKind] = useState<UnreachableKind>("api");
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [noticeUntil, setNoticeUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -76,7 +77,8 @@ export function App() {
         setRetryAt(null);
         return;
       }
-      setOffline(failure.message || "Failed to fetch");
+      setOffline(failure.message);
+      setOfflineKind(failure.kind ?? "api");
       setRetryAt(Date.now() + API_RETRY_SECONDS * 1000);
       setNowMs(Date.now());
     });
@@ -242,6 +244,7 @@ export function App() {
   const noticeLeft = noticeUntil ? Math.max(0, Math.ceil((noticeUntil - nowMs) / 1000)) : 0;
   const retryLeft = retryAt == null ? null : Math.max(0, Math.ceil((retryAt - nowMs) / 1000));
   const reconnecting = Boolean(offline) && (busy || retryLeft == null || retryLeft <= 0);
+  const offlineTag = offlineKind === "desk" ? "Desk" : offlineKind === "network" ? "Network" : "API";
   const retryText = !offline
     ? ""
     : reconnecting
@@ -268,7 +271,7 @@ export function App() {
           <>
             {offline ? (
               <div className="alerts bad api-down">
-                <span className="tag">API</span>
+                <span className="tag">{offlineTag}</span>
                 <span className="api-down-msg" role="status">{offline}</span>
                 <span className="api-down-eta">{retryText}</span>
                 <button className="btn primary sm" type="button" onClick={beginRetry} disabled={busy}>
