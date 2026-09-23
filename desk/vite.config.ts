@@ -40,6 +40,8 @@ export default defineConfig({
       "/assets": apiProxy(),
       "/learnings": apiProxy(),
       "/calendar": apiProxy(),
+      "/history": apiProxy(),
+      "/replay": apiProxy(),
     },
   },
 });

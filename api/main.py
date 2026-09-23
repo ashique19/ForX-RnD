@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from forex_lab import __version__ as lab_version
@@ -36,6 +36,7 @@ from api.deskdata import (
 )
 from api.learnings import MAX_LIMIT, learnings_payload
 from api.paperdesk import PaperBlocked, paper_order
+from api.replayjob import ReplayJobError, get_job, job_file, start_pull, start_replay
 
 _ORIGINS = [
     "http://127.0.0.1:5173",
@@ -64,6 +65,22 @@ class RefreshTarget(BaseModel):
 
 class RefreshBody(BaseModel):
     pairs: list[RefreshTarget] | None = None
+
+
+class HistoryPullBody(BaseModel):
+    pair: str = Field(..., min_length=1)
+    interval: str | None = "1h"
+    start: str | None = "2015-01-01"
+    end: str | None = None
+    source: str | None = None
+
+
+class ReplayTrainBody(BaseModel):
+    pair: str = Field(..., min_length=1)
+    interval: str | None = None
+    start: str | None = "2015-01-01"
+    end: str | None = None
+    pull: bool = True
 
 
 def create_app() -> FastAPI:
@@ -201,6 +218,63 @@ def create_app() -> FastAPI:
         except (BrokerError, WatchlistError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/history/pull")
+    def post_history_pull(body: HistoryPullBody) -> dict:
+        """Download Dukascopy (HistData fallback) OHLC into data/history. No synthetic prices."""
+        try:
+            return start_pull(
+                app_config(),
+                pair=body.pair,
+                interval=body.interval,
+                start=body.start,
+                end=body.end,
+                source=body.source,
+            )
+        except ReplayJobError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/history/pull/{job_id}")
+    def get_history_pull(job_id: str) -> dict:
+        return _job_or_404(job_id)
+
+    @app.post("/replay/train")
+    def post_replay_train(body: ReplayTrainBody) -> dict:
+        """Walk-forward replay for one watchlist pair. Paper books only; live journal untouched."""
+        try:
+            return start_replay(
+                app_config(),
+                pair=body.pair,
+                interval=body.interval,
+                start=body.start,
+                end=body.end,
+                pull=body.pull,
+            )
+        except ReplayJobError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/replay/jobs/{job_id}")
+    def get_replay_job(job_id: str) -> dict:
+        return _job_or_404(job_id)
+
+    @app.get("/replay/jobs/{job_id}/scoreboard")
+    def get_replay_scoreboard(job_id: str, format: str = Query(default="csv")) -> FileResponse:
+        kind = str(format or "csv").lower()
+        name = "scoreboard.xlsx" if kind in {"xlsx", "excel"} else "scoreboard.csv"
+        media = (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if name.endswith("xlsx")
+            else "text/csv"
+        )
+        return _job_download(job_id, name, media)
+
+    @app.get("/replay/jobs/{job_id}/equity")
+    def get_replay_equity(job_id: str) -> FileResponse:
+        return _job_download(job_id, "equity.png", "image/png")
+
+    @app.get("/replay/jobs/{job_id}/report")
+    def get_replay_report(job_id: str) -> FileResponse:
+        return _job_download(job_id, "report.md", "text/markdown")
+
     @app.post("/pipeline/{pair}")
     def post_pipeline(pair: str, fetch: bool = Query(default=False)) -> dict:
         try:
@@ -209,6 +283,21 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return app
+
+
+def _job_or_404(job_id: str) -> dict:
+    try:
+        return get_job(job_id, app_config())
+    except ReplayJobError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _job_download(job_id: str, name: str, media: str) -> FileResponse:
+    try:
+        path = job_file(job_id, name, app_config())
+    except ReplayJobError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, media_type=media, filename=path.name)
 
 
 app = create_app()

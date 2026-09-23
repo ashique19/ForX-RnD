@@ -1,0 +1,286 @@
+"""Background history-pull and replay-train jobs.
+
+Live paper (``broker.store``) is never opened here. Each replay job gets its
+own directory under ``data/replay/`` with separate PaperBroker JSON files.
+"""
+from __future__ import annotations
+
+import json
+import re
+import threading
+import uuid
+from pathlib import Path
+from typing import Any
+
+from forex_lab.history import (
+    HistoryError,
+    history_status,
+    load_history,
+    load_meta,
+    normalize_interval,
+    pull_history,
+    replay_store_dir,
+)
+from forex_lab.replay import CALENDAR_ASOF_GAP, ReplayError, run_replay
+from forex_lab.ui.watchlist import WatchlistError, normalize_pair
+
+from api.deskdata import ASSET_ALLOW
+
+_JOBS: dict[str, dict[str, Any]] = {}
+_LOCK = threading.Lock()
+_ID = re.compile(r"^[a-f0-9]{32}$")
+
+
+class ReplayJobError(ValueError):
+    """Bad pair, interval, or unknown job."""
+
+
+def parse_pair(pair: str) -> str:
+    try:
+        symbol = normalize_pair(pair)
+    except WatchlistError as exc:
+        raise ReplayJobError(str(exc)) from exc
+    if symbol not in ASSET_ALLOW:
+        raise ReplayJobError(f"{symbol} is not on the Decision watchlist universe")
+    return symbol
+
+
+def job_dir(job_id: str, cfg: dict[str, Any] | None = None) -> Path:
+    if not _ID.match(job_id):
+        raise ReplayJobError("unknown job")
+    return replay_store_dir(cfg) / job_id
+
+
+def start_pull(
+    cfg: dict[str, Any],
+    *,
+    pair: str,
+    interval: str | None,
+    start: str | None,
+    end: str | None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    symbol = parse_pair(pair)
+    iv = _interval(interval)
+    return _start(cfg, kind="pull", pair=symbol, interval=iv, start=start, end=end, pull=False, source=source)
+
+
+def start_replay(
+    cfg: dict[str, Any],
+    *,
+    pair: str,
+    interval: str | None,
+    start: str | None,
+    end: str | None,
+    pull: bool = True,
+) -> dict[str, Any]:
+    symbol = parse_pair(pair)
+    iv = _interval(interval)
+    return _start(cfg, kind="replay", pair=symbol, interval=iv, start=start, end=end, pull=pull, source=None)
+
+
+def get_job(job_id: str, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not _ID.match(str(job_id or "")):
+        raise ReplayJobError("unknown job")
+    with _LOCK:
+        current = _JOBS.get(job_id)
+        if current is not None:
+            return _public(current)
+    path = job_dir(job_id, cfg) / "status.json"
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ReplayJobError("job status is unreadable") from exc
+        if isinstance(data, dict):
+            return data
+    raise ReplayJobError("unknown job")
+
+
+def wait_job(job_id: str, timeout: float = 30, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Block until the worker finishes. Tests only."""
+    with _LOCK:
+        thread = (_JOBS.get(job_id) or {}).get("thread")
+    if isinstance(thread, threading.Thread):
+        thread.join(timeout)
+    return get_job(job_id, cfg)
+
+
+def job_file(job_id: str, name: str, cfg: dict[str, Any] | None = None) -> Path:
+    root = job_dir(job_id, cfg).resolve()
+    path = (root / name).resolve()
+    if path.parent != root or not path.is_file():
+        raise ReplayJobError("report file is not ready")
+    return path
+
+
+def _interval(interval: str | None) -> str:
+    try:
+        return normalize_interval(interval or "1h")
+    except HistoryError as exc:
+        raise ReplayJobError(str(exc)) from exc
+
+
+def _start(
+    cfg: dict[str, Any],
+    *,
+    kind: str,
+    pair: str,
+    interval: str,
+    start: str | None,
+    end: str | None,
+    pull: bool,
+    source: str | None,
+) -> dict[str, Any]:
+    job_id = uuid.uuid4().hex
+    folder = job_dir(job_id, cfg)
+    folder.mkdir(parents=True, exist_ok=True)
+    status: dict[str, Any] = {
+        "job_id": job_id,
+        "kind": kind,
+        "status": "running",
+        "phase": "pull" if kind == "pull" or pull else "replay",
+        "pair": pair,
+        "interval": interval,
+        "start": start,
+        "end": end,
+        "fraction": 0.0,
+        "message": "Starting",
+        "as_of_dhaka": None,
+        "error": None,
+        "calendar_note": CALENDAR_ASOF_GAP,
+        "promotion_line": None,
+        "source": None,
+        "bid_ask": None,
+        "rows": None,
+        "report": None,
+    }
+    with _LOCK:
+        _JOBS[job_id] = status
+    _write(status, folder)
+    thread = threading.Thread(
+        target=_worker,
+        args=(job_id, cfg, kind, pair, interval, start, end, pull, source),
+        name=f"forx-{kind}-{pair}",
+        daemon=True,
+    )
+    with _LOCK:
+        _JOBS[job_id]["thread"] = thread
+    thread.start()
+    return _public(status)
+
+
+def _worker(
+    job_id: str,
+    cfg: dict[str, Any],
+    kind: str,
+    pair: str,
+    interval: str,
+    start: str | None,
+    end: str | None,
+    pull: bool,
+    source: str | None,
+) -> None:
+    folder = job_dir(job_id, cfg)
+    try:
+        if kind == "pull" or pull:
+            stale = True
+            if kind == "replay":
+                info = history_status(pair, interval, cfg, start, end)
+                stale = bool(info.get("stale"))
+                if not stale:
+                    _update(job_id, folder, phase="pull", fraction=1.0, message="History cache covers this range", source=info.get("source"), rows=info.get("rows"), bid_ask=info.get("bid_ask"))
+            if kind == "pull" or stale:
+                pulled = pull_history(
+                    pair,
+                    cfg,
+                    interval=interval,
+                    start=start,
+                    end=end,
+                    source=source,
+                    progress=lambda payload: _on_progress(job_id, folder, payload),
+                )
+                _update(
+                    job_id,
+                    folder,
+                    source=pulled.get("source"),
+                    rows=pulled.get("rows"),
+                    bid_ask=pulled.get("bid_ask"),
+                    message=f"History {pulled.get('rows')} bars from {pulled.get('source')}",
+                )
+        if kind == "pull":
+            _update(job_id, folder, status="done", phase="done", fraction=1.0)
+            return
+        meta = load_meta(pair, interval, cfg)
+        frame = load_history(pair, cfg, interval, start=start, end=end)
+        result = run_replay(
+            frame,
+            cfg,
+            pair,
+            interval=interval,
+            job_dir=folder,
+            source=str(meta.get("source") or "cache"),
+            progress=lambda payload: _on_progress(job_id, folder, payload),
+        )
+        _update(
+            job_id,
+            folder,
+            status="done",
+            phase="done",
+            fraction=1.0,
+            message="Scoreboard ready",
+            source=result.get("source"),
+            bid_ask=result.get("bid_ask"),
+            rows=result.get("rows"),
+            promotion_line=result.get("promotion_line"),
+            report=_links(job_id),
+            as_of_dhaka=result.get("end_dhaka"),
+        )
+    except (HistoryError, ReplayError, ReplayJobError, OSError, ValueError) as exc:
+        _update(job_id, folder, status="error", phase="error", error=str(exc), message=str(exc))
+    except Exception as exc:  # noqa: BLE001 — surface it on the job, do not invent a scoreboard
+        _update(job_id, folder, status="error", phase="error", error=str(exc), message=str(exc))
+
+
+def _on_progress(job_id: str, folder: Path, payload: dict[str, Any]) -> None:
+    _update(
+        job_id,
+        folder,
+        phase=payload.get("phase") or "replay",
+        fraction=payload.get("fraction"),
+        message=payload.get("message"),
+        as_of_dhaka=payload.get("as_of_dhaka"),
+        rows=payload.get("rows"),
+    )
+
+
+def _links(job_id: str) -> dict[str, str]:
+    return {
+        "csv": f"/replay/jobs/{job_id}/scoreboard?format=csv",
+        "xlsx": f"/replay/jobs/{job_id}/scoreboard?format=xlsx",
+        "equity_png": f"/replay/jobs/{job_id}/equity",
+        "report_md": f"/replay/jobs/{job_id}/report",
+    }
+
+
+def _update(job_id: str, folder: Path, **fields: Any) -> None:
+    with _LOCK:
+        current = _JOBS.get(job_id)
+        if current is None:
+            current = {"job_id": job_id}
+            _JOBS[job_id] = current
+        for key, value in fields.items():
+            if value is not None or key in {"error", "promotion_line", "as_of_dhaka"}:
+                current[key] = value
+        snapshot = _public(current)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "status.json").write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")
+
+
+def _write(status: dict[str, Any], folder: Path) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "status.json").write_text(json.dumps(_public(status), indent=2, default=str), encoding="utf-8")
+
+
+def _public(status: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in status.items() if k != "thread"}
