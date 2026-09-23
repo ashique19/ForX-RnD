@@ -142,73 +142,75 @@ export function SignalBrief({
       <div className="panel-body">
         <div className="bias-row">
           <span className={`bias-tag ${biasTone}`}>{bias}</span>
-          <div>
-            <div className="bias-headline">{headline}</div>
-            <div className="bias-sub">{sub}</div>
+          <div className="bias-headline">{headline}</div>
+          <div className="paper-row">
+            <button
+              className="btn paper-buy"
+              type="button"
+              disabled={!canOpen}
+              title={paper?.block_reason || "Paper buy at the cached last close"}
+              onClick={() => {
+                setOrderError("");
+                void onOrder("BUY", size).catch((err: unknown) => {
+                  setOrderError(err instanceof Error ? err.message : "Paper order failed");
+                });
+              }}
+            >
+              Buy
+            </button>
+            <button
+              className="btn paper-sell"
+              type="button"
+              disabled={!canOpen}
+              title={paper?.block_reason || "Paper sell at the cached last close"}
+              onClick={() => {
+                setOrderError("");
+                void onOrder("SELL", size).catch((err: unknown) => {
+                  setOrderError(err instanceof Error ? err.message : "Paper order failed");
+                });
+              }}
+            >
+              Sell
+            </button>
+            <button
+              className="btn"
+              type="button"
+              disabled={!open || busy}
+              title={open ? "Close the open paper position" : "No open paper position"}
+              onClick={() => {
+                setOrderError("");
+                void onOrder("CLOSE", size).catch((err: unknown) => {
+                  setOrderError(err instanceof Error ? err.message : "Paper close failed");
+                });
+              }}
+            >
+              Close
+            </button>
+            <label className="paper-size">
+              Lots
+              <input
+                aria-label="Paper size"
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={size}
+                onChange={(e) => setSize(Number(e.target.value))}
+              />
+            </label>
           </div>
-        </div>
-        <div className="paper-row">
-          <button
-            className="btn paper-buy"
-            type="button"
-            disabled={!canOpen}
-            title={paper?.block_reason || "Paper buy at the cached last close"}
-            onClick={() => {
-              setOrderError("");
-              void onOrder("BUY", size).catch((err: unknown) => {
-                setOrderError(err instanceof Error ? err.message : "Paper order failed");
-              });
-            }}
-          >
-            Buy
-          </button>
-          <button
-            className="btn paper-sell"
-            type="button"
-            disabled={!canOpen}
-            title={paper?.block_reason || "Paper sell at the cached last close"}
-            onClick={() => {
-              setOrderError("");
-              void onOrder("SELL", size).catch((err: unknown) => {
-                setOrderError(err instanceof Error ? err.message : "Paper order failed");
-              });
-            }}
-          >
-            Sell
-          </button>
-          <button
-            className="btn"
-            type="button"
-            disabled={!open || busy}
-            title={open ? "Close the open paper position" : "No open paper position"}
-            onClick={() => {
-              setOrderError("");
-              void onOrder("CLOSE", size).catch((err: unknown) => {
-                setOrderError(err instanceof Error ? err.message : "Paper close failed");
-              });
-            }}
-          >
-            Close
-          </button>
-          <label className="paper-size">
-            Lots
-            <input
-              aria-label="Paper size"
-              type="number"
-              min={0.01}
-              step={0.01}
-              value={size}
-              onChange={(e) => setSize(Number(e.target.value))}
-            />
-          </label>
-          {open && (
-            <span className="paper-pos">
-              Paper {open.side} {open.size} @ {open.entry_price} · {open.entry_time_dhaka}
-            </span>
+          <div className="bias-sub">{sub}</div>
+          {(open || paper?.block_reason || toast || orderError) && (
+            <div className="paper-status">
+              {open && (
+                <span className="paper-pos">
+                  Paper {open.side} {open.size} @ {open.entry_price} · {open.entry_time_dhaka}
+                </span>
+              )}
+              {!open && paper?.block_reason && <span className="paper-note">{paper.block_reason}</span>}
+              {toast && <span className="paper-toast">{toast}</span>}
+              {orderError && <span className="paper-note">{orderError}</span>}
+            </div>
           )}
-          {!open && paper?.block_reason && <span className="paper-note">{paper.block_reason}</span>}
-          {toast && <span className="paper-toast">{toast}</span>}
-          {orderError && <span className="paper-note">{orderError}</span>}
         </div>
         {hourly && daily && consensus ? (
           <div className="tf-cards">
