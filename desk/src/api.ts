@@ -48,7 +48,13 @@ export function isUnreachable(err: unknown): boolean {
 }
 
 function emit(failure: ApiFailure | null): void {
-  for (const handler of reachListeners) handler(failure);
+  for (const handler of reachListeners) {
+    try {
+      handler(failure);
+    } catch {
+      // A listener error must not reject the fetch and take down the desk.
+    }
+  }
 }
 
 function markDown(err: ApiFailure): ApiFailure {
@@ -70,31 +76,49 @@ function browserOffline(): boolean {
 
 let kindInflight: Promise<UnreachableKind> | null = null;
 
+/**
+ * Ask the desk server for a static file, not the SPA document.
+ * Any HTTP status (including 404) means the desk process answered.
+ * AbortController only — AbortSignal.timeout is missing on older browsers and must not run at startup.
+ */
+async function deskServerAnswers(): Promise<boolean> {
+  if (typeof fetch !== "function") return true;
+  let timer = 0;
+  try {
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    timer = ctrl ? window.setTimeout(() => ctrl.abort(), 2000) : 0;
+    const res = await fetch("/favicon.ico", { cache: "no-store", signal: ctrl ? ctrl.signal : undefined });
+    return typeof res?.status === "number";
+  } catch {
+    return false;
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
+}
+
 /** Desk page is already on screen. Tell API, desk server, and offline apart. */
 async function classifyUnreachable(deskAnswered: boolean): Promise<UnreachableKind> {
-  if (browserOffline()) return "network";
-  // An HTTP response from this page's server means Vite is up and the API behind it is not.
-  // A direct VITE_API_BASE fetch never goes through the desk, so a failure there is the API.
-  if (deskAnswered || BASE) return "api";
-  if (kindInflight) return kindInflight;
-  kindInflight = (async () => {
-    try {
-      const signal =
-        typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(2000) : undefined;
-      const probe = await fetch("/", { cache: "no-store", signal });
-      return probe.status > 0 ? "api" : "desk";
-    } catch {
-      return "desk";
+  try {
+    if (browserOffline()) return "network";
+    // An HTTP response from this page's server means the desk is up and the API behind it is not.
+    // A direct VITE_API_BASE fetch never goes through the desk, so a failure there is the API.
+    if (deskAnswered || BASE) return "api";
+    if (!kindInflight) {
+      kindInflight = deskServerAnswers()
+        .then((up) => (up ? "api" : "desk"))
+        .finally(() => {
+          kindInflight = null;
+        });
     }
-  })().finally(() => {
-    kindInflight = null;
-  });
-  return kindInflight;
+    return await kindInflight;
+  } catch {
+    return "api";
+  }
 }
 
 async function failUnreachable(deskAnswered: boolean): Promise<ApiFailure> {
   const kind = await classifyUnreachable(deskAnswered);
-  const deskUrl = typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:5173";
+  const deskUrl = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "http://127.0.0.1:5173";
   const err = new Error(unreachableMessage(kind, deskUrl)) as ApiFailure;
   err.kind = kind;
   return markDown(err);
