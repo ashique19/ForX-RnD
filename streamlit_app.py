@@ -992,6 +992,49 @@ def _render_dense_row(
             _render_paper_actions(row, cfg, broker, news=news, calendar=calendar, compact=True)
 
 
+def _render_other_forecasters(pair: str, cfg: dict) -> None:
+    """Collapsed multi-site lean. The fetch runs in the background and does not block the board."""
+    try:
+        from api.consensus import ensure_consensus, read_consensus
+    except Exception as exc:
+        st.caption(f"Other forecasters unavailable ({exc.__class__.__name__}).")
+        return
+    ensure_consensus(pair, cfg)
+    with st.expander("Other forecasters", expanded=False):
+        for label, horizon in (("Hourly", "hourly"), ("Daily", "daily")):
+            snap = read_consensus(pair, horizon, cfg)
+            agg = snap.get("aggregate") or {}
+            counts = agg.get("counts") or {}
+            top = agg.get("top_side") or "no side"
+            conf = agg.get("confidence")
+            agree = f" · {round(float(conf) * 100)}% agree" if isinstance(conf, (int, float)) else ""
+            age = snap.get("fetched_at_dhaka") or "not fetched yet"
+            if snap.get("stale"):
+                age = f"{age} · stale"
+            if snap.get("pending"):
+                age = f"{age} · updating"
+            span = agg.get("range_span")
+            if isinstance(span, dict) and span.get("low") is not None and span.get("high") is not None:
+                digits = 3 if "JPY" in pair else 5
+                levels = f"{float(span['low']):.{digits}f}–{float(span['high']):.{digits}f} · {span.get('count')} published"
+            else:
+                levels = "no published range"
+            st.markdown(
+                f"**{label}** · Buy {counts.get('Buy', 0)} · Sell {counts.get('Sell', 0)} · "
+                f"Neutral {counts.get('Neutral', 0)} · {top}{agree}"
+            )
+            st.caption(f"{levels} · {age} · {agg.get('errors', 0)} errors · {agg.get('missing', 0)} missing · {agg.get('skipped', 0)} skipped")
+            lines = []
+            for row in snap.get("forecasters") or []:
+                status = str(row.get("status") or "")
+                shown = row.get("direction") if status == "OK" else status.lower()
+                why = str(row.get("reason") or "").strip()
+                extra = f" — {why}" if why and status != "OK" else ""
+                lines.append(f"{row.get('source')}: {shown}{extra}")
+            if lines:
+                st.caption(" · ".join(lines[:8]) + (" …" if len(lines) > 8 else ""))
+
+
 def _render_detail_drawer(
     row,
     cfg,
@@ -1027,6 +1070,7 @@ def _render_detail_drawer(
             st.warning(row.signal_details or row.validity_reason or "data stale — refresh required")
         elif row.validity in {VALIDITY_MISSING, VALIDITY_ERROR} or row.status not in {"ready", "stale"}:
             st.warning(row.signal_details or row.validity_reason or NEED_FETCH_TRAIN)
+        _render_other_forecasters(row.pair, cfg)
         tabs = st.tabs(["Chart", "SHAP", "News", "Risk", "Rationale"])
         with tabs[0]:
             _render_price_chart(row, cfg)

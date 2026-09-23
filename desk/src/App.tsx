@@ -218,6 +218,13 @@ export function App() {
     };
   }, [applyFailed, loadBoard, tick, selected, rowTf, chartTf]);
 
+  useEffect(() => {
+    const pending = Boolean(brief?.consensus?.hourly?.pending || brief?.consensus?.daily?.pending);
+    if (!pending) return;
+    const id = window.setTimeout(() => setTick((n) => n + 1), 4000);
+    return () => window.clearTimeout(id);
+  }, [brief]);
+
   const refreshData = useCallback(async (manual = false) => {
     // Market data only. Does not call POST /pipeline.
     if (inflight.current || retryLock.current) return;

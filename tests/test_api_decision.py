@@ -79,12 +79,16 @@ def test_consensus_missing_without_cache(client: TestClient):
     body = res.json()
     assert body["pair"] == "EURUSD"
     assert body["status"] == "MISSING"
-    assert body["forecasters"]
-    assert all(row["status"] == "MISSING" and row["direction"] is None for row in body["forecasters"])
+    assert len(body["forecasters"]) >= 10
+    assert all(row["direction"] is None for row in body["forecasters"])
+    assert all(row["status"] in {"MISSING", "SKIPPED", "RANGE"} for row in body["forecasters"])
+    assert any(row["status"] == "SKIPPED" and row["reason"] for row in body["forecasters"])
     assert all(row["status"] == "MISSING" for row in body["ranges"])
-    blob = json.dumps(body)
-    assert "Buy" not in blob
-    assert "Sell" not in blob
+    agg = body["aggregate"]
+    assert agg["counts"] == {"Buy": 0, "Sell": 0, "Neutral": 0}
+    assert agg["top_side"] is None
+    assert agg["confidence"] is None
+    assert agg["range_span"] is None
 
     bad = client.get("/consensus/EURUSD", params={"horizon": "weekly"})
     assert bad.status_code == 400
@@ -122,9 +126,13 @@ def test_consensus_cache_ok_and_stale_and_garbage(tmp_path: Path):
     stale_at = (now - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
     stale = {"EURUSD": {"daily": {"fetched_at": stale_at, "forecasters": [{"source": "DailyForex", "direction": "Buy"}]}}}
     old = read_consensus("EURUSD", "daily", cache=stale, now=now)
-    assert old["status"] == "MISSING"
-    assert all(row["direction"] is None for row in old["forecasters"])
-    assert all("stale" in row["reason"] for row in old["forecasters"])
+    assert old["fresh"] is False
+    assert old["stale"] is True
+    assert old["age_s"] >= 12 * 3600
+    assert old["fetched_at_dhaka"] and "Asia/Dhaka" in old["fetched_at_dhaka"]
+    by_old = {row["source"]: row for row in old["forecasters"]}
+    assert by_old["DailyForex"]["status"] == "OK"
+    assert by_old["DailyForex"]["direction"] == "Buy"
 
 
 def test_ohlcv_uses_cache_and_missing_pair(client: TestClient):

@@ -30,6 +30,19 @@ INVESTING_HTML = """
 """
 
 
+def test_dailyforex_title_bias_does_not_scrape_prices():
+    html = """
+    <html><head><title>USD/JPY Forecast: Upside Bias in Focus</title></head>
+    <body><h1>USD/JPY Forecast: Upside Bias in Focus</h1>
+    <p>Broker spread 0.1 and a random 157.20 in the chrome.</p></body></html>
+    """
+    parsed = parse_dailyforex_article(html)
+    assert parsed["direction"] == "Buy"
+    assert parsed["low"] is None
+    assert parsed["high"] is None
+    assert "Upside Bias" not in str(parsed["reason"])
+
+
 def test_dailyforex_heading_is_sell_and_levels_only():
     parsed = parse_dailyforex_article(DAILYFOREX_HTML)
     assert parsed["direction"] == "Sell"
