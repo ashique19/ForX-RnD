@@ -2,6 +2,24 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import type { BoardRow } from "../types";
 
+const WATCHLIST_EXPANDED_KEY = "forx.desk.watchlistExpanded";
+
+function loadWatchlistExpanded(): boolean {
+  try {
+    return localStorage.getItem(WATCHLIST_EXPANDED_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg className={open ? "chev open" : "chev"} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  );
+}
+
 export function WatchlistPanel({
   rows,
   selected,
@@ -21,6 +39,15 @@ export function WatchlistPanel({
   const [error, setError] = useState("");
   const [assets, setAssets] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [expanded, setExpanded] = useState(loadWatchlistExpanded);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WATCHLIST_EXPANDED_KEY, expanded ? "1" : "0");
+    } catch {
+      /* private mode or blocked storage */
+    }
+  }, [expanded]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 5000);
@@ -62,16 +89,27 @@ export function WatchlistPanel({
     }
   }
 
+  const countLabel = `${rows.length} ${rows.length === 1 ? "pair" : "pairs"}`;
+  const selectedLabel = selected.trim();
+
   return (
-    <section className="panel watchlist">
+    <section className={expanded ? "panel watchlist" : "panel watchlist is-collapsed"}>
       <div className="panel-hd">
         <h2>Watchlist</h2>
-        <span className="meta">{rows.length} {rows.length === 1 ? "pair" : "pairs"}</span>
+        {expanded ? (
+          <span className="meta">{countLabel}</span>
+        ) : selectedLabel ? (
+          <span className="wl-chip" title="Selected pair">{selectedLabel}</span>
+        ) : (
+          <span className="meta">{countLabel}</span>
+        )}
         <span className="spacer" />
-        <button className="btn primary sm" type="button" onClick={() => setOpen((v) => !v)}>
-          + Add pair
-        </button>
-        {open && (
+        {expanded && (
+          <button className="btn primary sm" type="button" onClick={() => setOpen((v) => !v)}>
+            + Add pair
+          </button>
+        )}
+        {expanded && open && (
           <form className="add-pop" onSubmit={submit}>
             <select aria-label="Pair" value={pair} onChange={(e) => setPair(e.target.value)} autoFocus>
               <option value="">{choices.length ? "Select pair" : "No pairs left"}</option>
@@ -90,8 +128,22 @@ export function WatchlistPanel({
             {error && <span className="data-lag">{error}</span>}
           </form>
         )}
+        <button
+          className="btn sm icon panel-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls="watchlist-details"
+          title={expanded ? "Collapse watchlist" : "Expand watchlist"}
+          aria-label={expanded ? "Collapse watchlist" : "Expand watchlist"}
+          onClick={() => {
+            setOpen(false);
+            setExpanded((current) => !current);
+          }}
+        >
+          <Chevron open={expanded} />
+        </button>
       </div>
-      <div className="panel-body">
+      <div className="panel-body" id="watchlist-details" hidden={!expanded}>
         <table className="wl">
           <thead>
             <tr>

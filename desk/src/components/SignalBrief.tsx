@@ -267,12 +267,13 @@ export function SignalBrief({
     });
   };
   const collapsedNote = !expanded && (open || toast || orderError);
+  const pairLabel = pair.trim();
   return (
     <section className={expanded ? "panel brief" : "panel brief is-collapsed"}>
       <div className="panel-hd">
-        <h2>Signal brief</h2>
+        <h2 className={expanded ? undefined : "brief-pair"}>{expanded ? "Signal brief" : pairLabel || "Signal brief"}</h2>
         {expanded ? (
-          <span className="meta">{pair} · selected</span>
+          <span className="meta">{pairLabel ? `${pairLabel} · selected` : "selected"}</span>
         ) : (
           <BriefMetrics suggestion={focus} chartInterval={chartInterval} />
         )}
@@ -292,7 +293,7 @@ export function SignalBrief({
           <RefreshIcon />
         </button>
         <button
-          className="btn sm icon brief-toggle"
+          className="btn sm icon panel-toggle brief-toggle"
           type="button"
           aria-expanded={expanded}
           aria-controls="signal-brief-details"
