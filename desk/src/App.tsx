@@ -14,6 +14,7 @@ import {
   type StripProblem,
 } from "./freshness";
 import type { AlertItem, Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
+import { AlertMessage } from "./components/AlertMessage";
 import { CalendarPanel } from "./components/CalendarPanel";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
@@ -335,15 +336,6 @@ export function App() {
   const showAlert = !offline && !alertDismissed;
   const showBanner = Boolean(offline) || showAlert;
   const alertClass = error ? "alerts bad" : alerts.length ? "alerts" : "alerts quiet";
-  const alertText = error
-    ? error
-    : alerts.length
-      ? alerts
-          .slice(0, 3)
-          .map((item) => (typeof item?.message === "string" ? item.message : ""))
-          .filter(Boolean)
-          .join("  ·  ") || "No active alerts"
-      : "No active alerts";
 
   const retryLeft = retryAt == null ? null : Math.max(0, Math.ceil((retryAt - nowMs) / 1000));
   const reconnecting = Boolean(offline) && (busy || retryLeft == null || retryLeft <= 0);
@@ -449,7 +441,7 @@ export function App() {
             ) : showAlert ? (
               <div className={alertClass} role="status">
                 <span className="tag">{error ? "API" : "Alert"}</span>
-                <span className="alert-msg">{alertText}</span>
+                <AlertMessage alerts={alerts} error={error} />
                 <button
                   className="btn sm icon alert-dismiss"
                   type="button"
