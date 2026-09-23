@@ -359,14 +359,15 @@ export function App() {
             <div className="desk-bar">
               <button
                 ref={watchlistButtonRef}
-                className="btn watchlist-launch"
+                className={selected ? "btn watchlist-launch is-active" : "btn watchlist-launch"}
                 type="button"
                 aria-haspopup="dialog"
                 aria-expanded={watchlistOpen}
                 aria-controls="watchlist-dialog"
+                aria-label={selected ? `Open watchlist. Active pair is ${selected}` : "Open watchlist"}
                 onClick={() => setWatchlistOpen(true)}
               >
-                Watchlist
+                {selected ? `Active ${selected}` : "Watchlist"}
               </button>
               <FreshnessStrip
                 lastAgo={lastAgo}

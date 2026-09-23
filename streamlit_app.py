@@ -953,13 +953,12 @@ def _render_dense_row(
         pair_kwargs = {
             "key": f"board_open_{row.pair}_{row.timeframe}",
             "use_container_width": True,
-            "help": "Open detail drawer (chart / SHAP / news / risk / rationale)",
+            "help": "Make this pair Active. Forecasters refresh for this pair only.",
         }
         if selected:
             pair_kwargs["type"] = "primary"
         if c[0].button(row.pair, **pair_kwargs):
-            cur = st.session_state.get("board_detail_pair")
-            st.session_state["board_detail_pair"] = None if cur == row.pair else row.pair
+            st.session_state["board_detail_pair"] = row.pair
             st.rerun()
         with c[1]:
             _dense_cell(row.timeframe)
@@ -993,13 +992,14 @@ def _render_dense_row(
 
 
 def _render_other_forecasters(pair: str, cfg: dict) -> None:
-    """Collapsed multi-site lean. The fetch runs in the background and does not block the board."""
+    """Collapsed multi-site lean for the one Active pair. Does not block the board."""
     try:
         from api.consensus import ensure_consensus, read_consensus
     except Exception as exc:
         st.caption(f"Other forecasters unavailable ({exc.__class__.__name__}).")
         return
     ensure_consensus(pair, cfg)
+    st.caption("Consensus is for this Active pair. Other watchlist pairs keep their last snapshot.")
     with st.expander("Other forecasters", expanded=False):
         for label, horizon in (("Hourly", "hourly"), ("Daily", "daily")):
             snap = read_consensus(pair, horizon, cfg)
@@ -1056,6 +1056,7 @@ def _render_detail_drawer(
                 unsafe_allow_html=True,
             )
             st.caption(
+                "Active subject. Forecasters refresh for this pair only. "
                 "Chart / SHAP / news / risk / rationale. "
                 "News context, not a trade instruction. Advisory cards never auto-submit. "
                 f"{clock_note(cfg)}"
@@ -1917,7 +1918,8 @@ def render_watch_board(cfg) -> None:
                 if flash:
                     st.success(flash)
                 st.caption(
-                    "Click a pair for chart / SHAP / news / risk / rationale. "
+                    "One Active pair. Click a row to set it — forecasters refresh for that pair only. "
+                    "Chart / SHAP / news / risk / rationale. "
                     + PAPER_STALE_CAPTION
                     + " "
                     + PAPER_GATE_CAPTION
@@ -1943,7 +1945,7 @@ def render_watch_board(cfg) -> None:
             selected = None
         if selected:
             st.markdown(
-                section_head_html("Detail", str(selected), note="Chart / SHAP / News / Risk / Rationale"),
+                section_head_html("Active", str(selected), note="Forecasters refresh for this pair only"),
                 unsafe_allow_html=True,
             )
             open_row = next((r for r in rows if r.pair == selected), None)

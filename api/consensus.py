@@ -43,6 +43,7 @@ _state_lock = threading.Lock()
 _queued: set[str] = set()
 _queue: list[str] = []
 _worker_on = False
+_active: str | None = None
 
 
 class ConsensusError(ValueError):
@@ -164,11 +165,12 @@ def _index_by_source(rows: object) -> dict[str, dict[str, Any]]:
 
 def reset_consensus_state() -> None:
     """Drop the in-process fetch queue. Tests only."""
-    global _worker_on
+    global _worker_on, _active
     with _state_lock:
         _queued.clear()
         _queue.clear()
         _worker_on = False
+        _active = None
 
 
 def consensus_pending(pair: str) -> bool:
@@ -417,6 +419,9 @@ def _drain_queue() -> None:
                 _worker_on = False
                 return
             pair_u = _queue.pop(0)
+            if pair_u != _active:
+                _queued.discard(pair_u)
+                continue
         try:
             _refresh_one(pair_u)
         finally:
@@ -425,12 +430,14 @@ def _drain_queue() -> None:
 
 
 def ensure_consensus(pair: str, cfg: dict[str, Any] | None = None, *, now: datetime | None = None) -> None:
-    """Queue a background refresh when the cache is stale. Returns immediately.
+    """Queue a background refresh for this Active pair. Returns immediately.
 
-    Network off (``FORX_CONSENSUS_NETWORK=0``) is a no-op. One worker drains
-    the queue so watchlist pairs are not fetched in parallel.
+    The latest call replaces any pair still waiting, so a watchlist of many
+    symbols does not turn into a scrape of every symbol. A fetch already in
+    flight is left to finish; the next start is only the Active pair. A fresh
+    cache is left alone. Network off (``FORX_CONSENSUS_NETWORK=0``) is a no-op.
     """
-    global _worker_on
+    global _worker_on, _active
     if not network_enabled():
         return
     pair_u = _canonical_pair(pair)
@@ -438,15 +445,26 @@ def ensure_consensus(pair: str, cfg: dict[str, Any] | None = None, *, now: datet
         return
     clock = _utc_now(now)
     if _pair_is_fresh(pair_u, cfg, clock):
+        with _state_lock:
+            _active = pair_u
+            for waiting in list(_queue):
+                _queue.remove(waiting)
+                _queued.discard(waiting)
         return
+    start = False
     with _state_lock:
-        if pair_u in _queued:
-            return
-        _queued.add(pair_u)
-        _queue.append(pair_u)
-        start = not _worker_on
-        if start:
-            _worker_on = True
+        _active = pair_u
+        for waiting in list(_queue):
+            if waiting == pair_u:
+                continue
+            _queue.remove(waiting)
+            _queued.discard(waiting)
+        if pair_u not in _queued:
+            _queued.add(pair_u)
+            _queue.append(pair_u)
+            if not _worker_on:
+                _worker_on = True
+                start = True
     if start:
         threading.Thread(target=_drain_queue, name="consensus-refresh", daemon=True).start()
 

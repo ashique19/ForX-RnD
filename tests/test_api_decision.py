@@ -722,10 +722,12 @@ def test_failed_refresh_is_not_live_and_keeps_age(monkeypatch: pytest.MonkeyPatc
     def _board(*_a, **_k):
         return row
 
+    calls: list[tuple] = []
     monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _board)
-    monkeypatch.setattr("api.deskdata.ensure_consensus", lambda *_a, **_k: None)
+    monkeypatch.setattr("api.deskdata.ensure_consensus", lambda *a, **_k: calls.append(a))
     out = refresh_pair("EURUSD", interval="1h", cfg={"interval": "1h", "board": {"stale_bars": 2}})
+    assert calls == []
     assert out["fetch_failed"] is True
     assert out["row"]["data"]["text"] == "STALE"
     assert out["row"]["session"]["text"] == "NY"

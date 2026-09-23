@@ -1,6 +1,7 @@
 """Pair spelling and consensus math. Synthetic snippets only — no saved pages."""
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -204,4 +205,46 @@ def test_background_refresh_does_not_block(tmp_path, monkeypatch):
             break
         time.sleep(0.05)
     assert any(row["source"] == "FXEmpire" and row["direction"] == "Buy" for row in snap["forecasters"])
+    reset_consensus_state()
+
+
+def test_switch_active_drops_waiting_pair(tmp_path, monkeypatch):
+    """An in-flight fetch finishes. Pairs queued after it are replaced by the latest Active."""
+    monkeypatch.setenv("FORX_CONSENSUS_CACHE", str(tmp_path / "c.json"))
+    monkeypatch.setenv("FORX_CONSENSUS_NETWORK", "1")
+    monkeypatch.setenv("FORX_CONSENSUS_GAP_S", "0")
+    reset_consensus_state()
+    stamp = "2026-09-23T12:00:00Z"
+    entered = threading.Event()
+    release = threading.Event()
+    seen: list[str] = []
+
+    def fake(pair: str, now: datetime | None = None):
+        seen.append(pair)
+        if pair == "EURUSD":
+            entered.set()
+            assert release.wait(timeout=3)
+        row = {
+            "source": "FXEmpire",
+            "direction": "Buy",
+            "status": "OK",
+            "reason": "",
+            "url": "",
+            "entry": None,
+            "fetched_at": stamp,
+        }
+        horizon = {"fetched_at": stamp, "forecasters": [row], "ranges": []}
+        return {"hourly": horizon, "daily": dict(horizon)}
+
+    monkeypatch.setattr("api.consensus_registry.fetch_registered", fake)
+    clock = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    ensure_consensus("EURUSD", now=clock)
+    assert entered.wait(timeout=2)
+    ensure_consensus("USDJPY", now=clock)
+    ensure_consensus("GBPUSD", now=clock)
+    release.set()
+    deadline = time.perf_counter() + 2
+    while time.perf_counter() < deadline and seen != ["EURUSD", "GBPUSD"]:
+        time.sleep(0.02)
+    assert seen == ["EURUSD", "GBPUSD"]
     reset_consensus_state()

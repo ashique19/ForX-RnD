@@ -188,7 +188,7 @@ function WatchlistPanel({
     <section className="panel watchlist">
       <div className="panel-hd">
         <h2 id="watchlist-heading">Watchlist</h2>
-        <span className="meta">{countLabel}</span>
+        <span className="meta">{countLabel} · click a row to set Active</span>
         <span className="spacer" />
         <button className="btn primary sm" type="button" onClick={() => setAddOpen((v) => !v)} aria-expanded={addOpen}>
           + Add pair
@@ -255,7 +255,10 @@ function WatchlistPanel({
                     onSelect(row);
                   }}
                 >
-                  <td className="pair">{row.pair}</td>
+                  <td className="pair">
+                    {row.pair}
+                    {row.pair === selected ? <span className="active-pill">Active</span> : null}
+                  </td>
                   <td><span className="tf-pill">{row.tf}</span></td>
                   <td>
                     <span className={`sig ${sigClass}`}>
