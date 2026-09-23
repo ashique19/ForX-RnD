@@ -117,7 +117,12 @@ async function classifyUnreachable(deskAnswered: boolean): Promise<UnreachableKi
 }
 
 async function failUnreachable(deskAnswered: boolean): Promise<ApiFailure> {
-  const kind = await classifyUnreachable(deskAnswered);
+  let kind: UnreachableKind = "api";
+  try {
+    kind = await classifyUnreachable(deskAnswered);
+  } catch {
+    kind = "api";
+  }
   const deskUrl = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "http://127.0.0.1:5173";
   const err = new Error(unreachableMessage(kind, deskUrl)) as ApiFailure;
   err.kind = kind;
@@ -128,7 +133,10 @@ async function failUnreachable(deskAnswered: boolean): Promise<ApiFailure> {
 function gatewayDown(status: number, raw: string): boolean {
   if (status === 502 || status === 503 || status === 504) return true;
   // Vite's dev proxy answers with an empty 500 when the API port is closed.
-  return status === 500 && !raw.trim();
+  if (status === 500 && !raw.trim()) return true;
+  // A document body is the desk shell or an error page, not a JSON API failure.
+  const head = raw.trim().slice(0, 64).toLowerCase();
+  return head.startsWith("<!doctype") || head.startsWith("<html");
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
