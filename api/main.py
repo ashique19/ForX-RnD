@@ -29,7 +29,7 @@ from api.deskdata import (
     calendar_payload,
     mutate_watchlist,
     ohlcv_payload,
-    refresh_one,
+    refresh_active_pair,
     refresh_watchlist,
     run_pipeline_pair,
     watchlist_json,
@@ -65,6 +65,7 @@ class RefreshTarget(BaseModel):
 
 class RefreshBody(BaseModel):
     pairs: list[RefreshTarget] | None = None
+    active: str | None = None
 
 
 def _one_active_pair(value: object) -> str:
@@ -211,7 +212,8 @@ def create_app() -> FastAPI:
         """Watchlist market data. Does not run train / backtest / signals."""
         try:
             pairs = None if body is None or body.pairs is None else [(item.pair, item.interval) for item in body.pairs]
-            payload = refresh_watchlist(pairs)
+            active = None if body is None else body.active
+            payload = refresh_watchlist(pairs, active=active)
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse(status_code=200, content=payload)
@@ -219,7 +221,7 @@ def create_app() -> FastAPI:
     @app.post("/refresh/{pair}")
     def post_refresh(pair: str, interval: str | None = Query(default=None)) -> JSONResponse:
         try:
-            payload = refresh_one(pair, interval=interval)
+            payload = refresh_active_pair(pair, interval=interval)
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if payload.get("rate_limited"):

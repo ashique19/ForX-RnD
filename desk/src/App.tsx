@@ -231,7 +231,7 @@ export function App() {
       const targets = boardReady.current
         ? collectTargets(rowsRef.current, selectedRef.current, chartTfRef.current, rowTfRef.current)
         : null;
-      const result = await api.refreshWatchlist(targets);
+      const result = await api.refreshWatchlist(targets, selectedRef.current);
       if (!result || !Array.isArray(result.results)) {
         throw new Error("Decision API returned an unexpected refresh.");
       }

@@ -140,6 +140,9 @@ export interface Suggestion {
   chip: string;
   tone: string;
   validity: string;
+  /** Explicit failure such as `Daily — failed: no OHLCV cache`. Empty when the horizon is usable. */
+  validity_reason?: string;
+  status?: string;
   now: number | null;
   now_text: string;
   stop: number | null;

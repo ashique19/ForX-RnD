@@ -224,10 +224,13 @@ export const api = {
       { method: "POST" },
     ),
   /** Watchlist OHLCV only. ``null`` asks the API for every saved pair. Does not run the pipeline. */
-  refreshWatchlist: (pairs: { pair: string; interval: string }[] | null) =>
+  refreshWatchlist: (pairs: { pair: string; interval: string }[] | null, active?: string | null) =>
     request<RefreshBatch>("/refresh", {
       method: "POST",
-      body: JSON.stringify(pairs == null ? {} : { pairs }),
+      body: JSON.stringify({
+        ...(pairs == null ? {} : { pairs }),
+        ...(active ? { active } : {}),
+      }),
     }),
   paperOrder: (pair: string, side: string, size?: number, interval?: string) =>
     request<{ ok: boolean; message: string; paper: PaperState }>("/paper/order", {

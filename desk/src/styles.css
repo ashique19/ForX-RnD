@@ -521,6 +521,16 @@
     .chip.buy { background: var(--green-bg); color: #027a48; }
     .chip.sell { background: var(--red-bg); color: #b42318; }
     .tf-card-bd { padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .gap-reason {
+      margin: 0;
+      padding: 6px 8px;
+      background: var(--red-bg);
+      color: #b42318;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .brief-gap { margin: 0 12px 8px; }
 
     .levels {
       display: grid;
