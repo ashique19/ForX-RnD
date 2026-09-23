@@ -1078,7 +1078,7 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "interval": primary_iv,
         "bias": bias,
         "bias_tone": tone,
-        "confidence": primary.get("confidence"),
+        "confidence": champ.get("confidence") if str(champ.get("id") or "brief") != "brief" else primary.get("confidence"),
         "headline": headline,
         "sub": sub,
         "champion": {
