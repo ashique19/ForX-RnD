@@ -453,6 +453,25 @@ export interface ReplayReportLinks {
   report_md: string;
 }
 
+export interface ScoreboardBook {
+  book: string;
+  n_trades: number | null;
+  win_rate: number | null;
+  expectancy: number | null;
+  net_pnl: number | null;
+  max_drawdown: number | null;
+  profit_factor: number | "inf" | "-inf" | null;
+  total_return?: number | null;
+  promotion?: string | null;
+}
+
+export interface ReplayPromotion {
+  verdict: string | null;
+  promote: boolean;
+  reasons: string[];
+  mode?: string | null;
+}
+
 export interface ReplayJob {
   job_id: string;
   kind: string;
@@ -463,13 +482,29 @@ export interface ReplayJob {
   fraction: number | null;
   message: string | null;
   as_of_dhaka: string | null;
+  finished_at_dhaka?: string | null;
   error: string | null;
   /** download | decode | insufficient_bars | train | error, set when status is error. */
   reason?: string | null;
   calendar_note: string | null;
   promotion_line: string | null;
+  promotion?: ReplayPromotion | null;
+  /** Inline champion / challenger / SMA rows. Present on a finished replay. */
+  scoreboard?: ScoreboardBook[] | null;
+  /** Replay promote does not replace the live weekly champion. */
+  advisory?: string | null;
   source: string | null;
   bid_ask: boolean | null;
   rows: number | null;
   report: ReplayReportLinks | null;
+}
+
+export interface ReplayLatest {
+  pair: string;
+  interval: string | null;
+  interval_match: boolean;
+  advisory: string;
+  job: ReplayJob | null;
+  recent_error: ReplayJob | null;
+  running: ReplayJob | null;
 }

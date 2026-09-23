@@ -37,7 +37,7 @@ from api.deskdata import (
 )
 from api.learnings import MAX_LIMIT, learnings_payload
 from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_settings
-from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
+from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, latest_replay, start_pull, start_replay
 from api.strategies import STRATEGY_IDS
 from forex_lab.ui.model_build import model_build_status
 from forex_lab.ui.pipeline import run_retrain
@@ -362,6 +362,14 @@ def create_app() -> FastAPI:
     @app.get("/replay/jobs/{job_id}")
     def get_replay_job(job_id: str) -> dict:
         return _job_or_404(job_id)
+
+    @app.get("/replay/latest")
+    def get_replay_latest(pair: str = Query(..., min_length=1), interval: str | None = Query(default=None)) -> dict:
+        """Last successful replay for one Active pair, with scoreboard rows inline."""
+        try:
+            return latest_replay(app_config(), pair=pair, interval=interval)
+        except ReplayJobError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/replay/jobs/{job_id}/scoreboard")
     def get_replay_scoreboard(job_id: str, format: str = Query(default="csv")) -> FileResponse:
