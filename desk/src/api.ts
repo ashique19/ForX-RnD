@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, PortfolioFeed, RefreshBatch, ReplayJob, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, PortfolioFeed, RefreshBatch, ReplayJob, ReplayLatest, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -262,6 +262,12 @@ export const api = {
   replayTrain: (body: { pair: string; interval?: string; start?: string; end?: string | null; pull?: boolean }) =>
     request<ReplayJob>("/replay/train", { method: "POST", body: JSON.stringify(body) }),
   replayJob: (jobId: string) => request<ReplayJob>(`/replay/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" }),
+  /** Last successful replay for the Active pair, with the scoreboard inline. */
+  replayLatest: (pair: string, interval?: string | null) => {
+    const params = new URLSearchParams({ pair });
+    if (interval) params.set("interval", interval);
+    return request<ReplayLatest>(`/replay/latest?${params.toString()}`, { cache: "no-store" });
+  },
   calendar: (pairs?: string[], force = false) => {
     const params = new URLSearchParams();
     if (pairs && pairs.length) params.set("pairs", pairs.join(","));

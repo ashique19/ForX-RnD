@@ -22,7 +22,7 @@ import { Placeholder } from "./components/Placeholder";
 import { PortfolioPanel } from "./components/Portfolio";
 import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
-import { ReplayTrainButton } from "./components/ReplayTrain";
+import { LastReplayStrip, ReplayProvider, ReplayTrainButton } from "./components/ReplayTrain";
 import { WatchlistModal } from "./components/Watchlist";
 
 function sameBrief(cur: Brief | null, pair: string, tf: string): boolean {
@@ -419,17 +419,20 @@ export function App() {
                 lastFetchDhaka={newest?.text ?? null}
                 onUpdate={() => void refreshData(true)}
               />
-              <ReplayTrainButton pair={selected} interval={rowTf} />
-              {modelStripDismissed ? null : (
-                <ModelBuildStrip
-                  pair={selected}
-                  build={modelBuild}
-                  busy={retrainBusy}
-                  gateNote={gateNote}
-                  onRetrain={runRetrainGate}
-                  onDismiss={() => setModelStripDismissed(true)}
-                />
-              )}
+              <ReplayProvider pair={selected} interval={rowTf}>
+                <ReplayTrainButton />
+                {modelStripDismissed ? null : (
+                  <ModelBuildStrip
+                    pair={selected}
+                    build={modelBuild}
+                    busy={retrainBusy}
+                    gateNote={gateNote}
+                    onRetrain={runRetrainGate}
+                    onDismiss={() => setModelStripDismissed(true)}
+                  />
+                )}
+                <LastReplayStrip />
+              </ReplayProvider>
             </div>
             {offline ? (
               <div className="alerts bad api-down">
