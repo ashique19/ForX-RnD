@@ -1268,7 +1268,15 @@
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
+    .cal-note {
+      padding: 8px 12px;
+      color: var(--text-2);
+      font-size: 12px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
     .cal-row.is-warn { background: #fffdf5; box-shadow: inset 3px 0 0 #f79009; }
+    .cal-row.is-hit { box-shadow: inset 3px 0 0 var(--blue); }
     .cal-row.is-selected { background: var(--blue-bg); }
     .cal-row.is-warn.is-selected { background: #fffaeb; }
     .cal-cd {

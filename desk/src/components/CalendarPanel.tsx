@@ -66,17 +66,20 @@ export function CalendarPanel({ selected }: { selected: string }) {
 
   const events = feed?.events ?? [];
   const relevant = events.filter((event) => event.pairs.length > 0);
-  const others = events.length - relevant.length;
+  const others = events.filter((event) => event.pairs.length === 0);
+  const ordered = [...relevant, ...others];
   const stale = Boolean(feed?.stale_cache);
   const feedError = feed?.error && events.length === 0 ? feed.error : null;
-  const empty = Boolean(feed) && !error && !feedError && relevant.length === 0;
+  const empty = Boolean(feed) && !error && !feedError && events.length === 0;
 
   return (
     <section className="panel calendar-panel" aria-label="Calendar">
       <header className="panel-hd">
         <h2>Calendar</h2>
         <span className="meta">
-          {feed ? `${relevant.length} for watched pairs` : "Loading"}
+          {feed
+            ? `${relevant.length} hit watched pairs · ${events.length} high-impact`
+            : "Loading"}
           {selected ? ` · ${selected}` : ""}
         </span>
         <span className="spacer" />
@@ -89,7 +92,7 @@ export function CalendarPanel({ selected }: { selected: string }) {
           {busy ? "Loading…" : "Refresh"}
         </button>
       </header>
-      {(stale || feed?.note) && relevant.length > 0 && (
+      {(stale || feed?.note) && events.length > 0 && (
         <div className="cal-banner" role="status">
           {feed?.note || "Using stale local cache — live calendar fetch failed."}
         </div>
@@ -109,19 +112,27 @@ export function CalendarPanel({ selected }: { selected: string }) {
         )}
         {empty && !feedError && (
           <p className="cal-empty">
-            No high-impact events for the watched pairs in this window.
-            {others > 0
-              ? ` ${others} other high-impact ${others === 1 ? "print is" : "prints are"} in the feed and ${others === 1 ? "does" : "do"} not hit these pairs.`
-              : " The feed returned none after the impact filter."}
+            No high-impact events in this window. The feed returned none after the impact filter.
             {feed?.note ? ` ${feed.note}` : ""}
           </p>
         )}
-        {relevant.map((event) => {
+        {ordered.length > 0 && relevant.length === 0 && (
+          <p className="cal-note">
+            None of these high-impact prints hit the watched pairs{selected ? ` (${selected})` : ""}. They are
+            still listed so the feed is not hidden.
+          </p>
+        )}
+        {ordered.map((event) => {
           const countdown = countdownLabel(event.when, now);
           const selectedHit = selected && event.pairs.includes(selected.toUpperCase());
           return (
             <article
-              className={["cal-row", event.warn || event.highlight ? "is-warn" : "", selectedHit ? "is-selected" : ""]
+              className={[
+                "cal-row",
+                event.warn ? "is-warn" : "",
+                event.pairs.length ? "is-hit" : "",
+                selectedHit ? "is-selected" : "",
+              ]
                 .filter(Boolean)
                 .join(" ")}
               key={`${event.currency}|${event.title}|${event.when}`}
@@ -143,7 +154,7 @@ export function CalendarPanel({ selected }: { selected: string }) {
                   </div>
                 )}
               </div>
-              <div className="cal-pairs">{event.pairs.join(", ")}</div>
+              <div className="cal-pairs">{event.pairs.length ? event.pairs.join(", ") : "no watched pair"}</div>
             </article>
           );
         })}
