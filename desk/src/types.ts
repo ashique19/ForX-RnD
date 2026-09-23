@@ -54,9 +54,36 @@ export interface Board {
   timezone: string;
   refreshed_at_dhaka: string;
   refresh_seconds: number;
+  /** Server floor for auto market-data refresh (FORX_REFRESH_MIN_S, default 18). */
+  data_refresh_seconds?: number;
   count: number;
   rows: BoardRow[];
   alerts: AlertItem[];
+}
+
+export interface RefreshResult {
+  ok: boolean;
+  rate_limited?: boolean;
+  retry_after_s?: number;
+  fetch_failed?: boolean;
+  fetch_error?: string | null;
+  pair?: string;
+  interval?: string;
+  row?: BoardRow;
+  source?: string;
+}
+
+export interface RefreshBatch {
+  ok: boolean;
+  updated: boolean;
+  rate_limited: boolean;
+  fetch_failed: boolean;
+  reason: "rate_limited" | "error" | null;
+  retry_after_s: number;
+  data_refresh_seconds: number;
+  refreshed_at_dhaka: string;
+  count: number;
+  results: RefreshResult[];
 }
 
 export interface ForecastRow {

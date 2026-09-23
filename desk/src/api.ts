@@ -1,6 +1,7 @@
-import type { AssetOption, Board, BoardRow, Brief, LearningsFeed, Ohlcv, PaperState, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, LearningsFeed, Ohlcv, PaperState, RefreshBatch, Watchlist } from "./types";
 
-const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+const rawBase = import.meta.env?.VITE_API_BASE;
+const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
 const DEFAULT_API_URL = "http://127.0.0.1:8000";
 
 /** Seconds to wait before the desk retries an unreachable API. Resets after each attempt. */
@@ -139,6 +140,20 @@ function gatewayDown(status: number, raw: string): boolean {
   return head.startsWith("<!doctype") || head.startsWith("<html");
 }
 
+function errorDetail(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const record = body as { detail?: unknown; error?: unknown };
+  const raw = "detail" in record ? record.detail : "error" in record ? record.error : undefined;
+  if (typeof raw === "string" && raw.trim()) return raw;
+  if (raw == null) return fallback;
+  try {
+    const text = typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+    return text.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -153,7 +168,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw await failUnreachable(false);
   }
-  const text = await res.text();
+  let text = "";
+  try {
+    text = await res.text();
+  } catch {
+    throw await failUnreachable(true);
+  }
   let body: unknown = null;
   if (text) {
     try {
@@ -163,13 +183,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
-    const detail =
-      body && typeof body === "object" && body && "detail" in body
-        ? String((body as { detail: unknown }).detail)
-        : body && typeof body === "object" && body && "error" in body
-          ? String((body as { error: unknown }).error)
-          : res.statusText;
-    const err = new Error(detail || `HTTP ${res.status}`) as ApiFailure;
+    const err = new Error(errorDetail(body, res.statusText || `HTTP ${res.status}`)) as ApiFailure;
     err.status = res.status;
     err.payload = body;
     if (gatewayDown(res.status, text)) throw await failUnreachable(true);
@@ -209,6 +223,12 @@ export const api = {
       `/refresh/${encodeURIComponent(pair)}${interval ? `?interval=${encodeURIComponent(interval)}` : ""}`,
       { method: "POST" },
     ),
+  /** Watchlist OHLCV only. ``null`` asks the API for every saved pair. Does not run the pipeline. */
+  refreshWatchlist: (pairs: { pair: string; interval: string }[] | null) =>
+    request<RefreshBatch>("/refresh", {
+      method: "POST",
+      body: JSON.stringify(pairs == null ? {} : { pairs }),
+    }),
   paperOrder: (pair: string, side: string, size?: number, interval?: string) =>
     request<{ ok: boolean; message: string; paper: PaperState }>("/paper/order", {
       method: "POST",

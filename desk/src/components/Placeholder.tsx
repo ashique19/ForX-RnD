@@ -13,7 +13,7 @@ const COPY: Record<Exclude<Mode, "decision" | "learnings">, { title: string; bod
   },
   lab: {
     title: "Lab",
-    body: "Run pipeline calls the existing forex_lab path: train, then backtest, then generate signals. Streamlit on port 8501 is still the full Lab until cutover.",
+    body: "Run pipeline trains, then backtests, then generates signals. It does not run on the Decision data timer. Update now on Decision only refreshes watchlist prices. Streamlit on port 8501 is still the full Lab until cutover.",
   },
   awareness: {
     title: "Awareness",

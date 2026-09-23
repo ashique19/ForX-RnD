@@ -219,6 +219,7 @@ def test_board_rows_mark_stale_or_missing_honestly(client: TestClient):
     assert res.status_code == 200
     body = res.json()
     assert "Asia/Dhaka" in body["refreshed_at_dhaka"]
+    assert body["data_refresh_seconds"] == 60
     assert body["rows"]
     row = next(r for r in body["rows"] if r["pair"] == "EURUSD")
     assert row["tf"]
@@ -297,6 +298,142 @@ def test_refresh_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyP
     assert body["board"]["from_cache"] is True
     assert calls["refresh"] == [False, False]
     assert yf_calls["n"] == 1
+
+
+def _board_row(pair: str, *_a, **_k):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        pair=pair,
+        timeframe=_k.get("interval") or "1h",
+        buy_sell="—",
+        raw_signal="SELL",
+        close=1.1,
+        validity="STALE",
+        validity_reason="cached",
+        status="stale",
+        rationale="",
+        signal_details="",
+        confidence=None,
+        last_bar_at=None,
+        last_fetch_at=None,
+        last_signal_at=None,
+        session=None,
+        quote=None,
+        risk=None,
+        mtf=None,
+        data_source="cached (test)",
+    )
+
+
+def test_data_refresh_seconds_follows_limiter(monkeypatch: pytest.MonkeyPatch):
+    from api.limiter import data_refresh_seconds
+
+    monkeypatch.delenv("FORX_REFRESH_MIN_S", raising=False)
+    assert data_refresh_seconds() == 18
+    monkeypatch.setenv("FORX_REFRESH_MIN_S", "18.2")
+    assert data_refresh_seconds() == 19
+    monkeypatch.setenv("FORX_REFRESH_MIN_S", "0")
+    assert data_refresh_seconds() == 18
+
+
+def test_refresh_watchlist_is_market_data_only(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    """POST /refresh updates watched pairs and does not run the research pipeline."""
+    yf_calls: list[tuple[str, str]] = []
+    pipeline: list[str] = []
+
+    def _yf(pair, _cfg, interval="1h", **_k):
+        yf_calls.append((pair, interval))
+        return object(), "yfinance"
+
+    def _pipeline(*_a, **_k):
+        pipeline.append("run")
+        raise AssertionError("data refresh must not run the pipeline")
+
+    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
+    monkeypatch.setattr("api.deskdata.run_pipeline_pair", _pipeline)
+    body_pairs = [
+        {"pair": "EURUSD", "interval": "1h"},
+        {"pair": "GBPUSD", "interval": "1h"},
+        {"pair": "EURUSD", "interval": "1h"},
+    ]
+    first = client.post("/refresh", json={"pairs": body_pairs})
+    assert first.status_code == 200
+    body = first.json()
+    assert body["updated"] is True
+    assert body["reason"] is None
+    assert body["rate_limited"] is False
+    assert body["data_refresh_seconds"] == 60
+    assert [item["pair"] for item in body["results"]] == ["EURUSD", "GBPUSD"]
+    assert yf_calls == [("EURUSD", "1h"), ("GBPUSD", "1h")]
+    assert pipeline == []
+    second = client.post("/refresh", json={"pairs": body_pairs})
+    assert second.status_code == 200
+    limited = second.json()
+    assert limited["updated"] is False
+    assert limited["rate_limited"] is True
+    assert limited["reason"] == "rate_limited"
+    assert limited["retry_after_s"] > 0
+    assert all(item["source"] == "cache" for item in limited["results"])
+    assert yf_calls == [("EURUSD", "1h"), ("GBPUSD", "1h")]
+    assert pipeline == []
+
+
+def test_refresh_watchlist_classifies_failures(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
+
+    def _limited(*_a, **_k):
+        return None, "yfinance rate limited (HTTP 429)"
+
+    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _limited)
+    limited = client.post("/refresh", json={"pairs": [{"pair": "EURUSD", "interval": "15m"}]}).json()
+    assert limited["reason"] == "rate_limited"
+    assert limited["updated"] is False
+    assert limited["results"][0]["fetch_failed"] is True
+
+    def _down(*_a, **_k):
+        return None, "yfinance failed (connection timed out)"
+
+    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _down)
+    failed = client.post("/refresh", json={"pairs": [{"pair": "GBPUSD", "interval": "1h"}]}).json()
+    assert failed["reason"] == "error"
+    assert failed["fetch_failed"] is True
+    assert failed["updated"] is False
+
+
+def test_refresh_empty_watchlist_does_not_fetch(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    def _yf(*_a, **_k):
+        raise AssertionError("empty refresh must not fetch")
+
+    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    res = client.post("/refresh", json={"pairs": []})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["results"] == []
+    assert body["updated"] is True
+    assert body["reason"] is None
+
+
+def test_refresh_watchlist_defaults_to_saved_pairs(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "watchlist.yaml").write_text(
+        "refresh_seconds: 60\npairs:\n- EURUSD\n- {pair: USDJPY, interval: 1d}\n",
+        encoding="utf-8",
+    )
+    seen: list[tuple[str, str]] = []
+
+    def _yf(pair, _cfg, interval="1h", **_k):
+        seen.append((pair, interval))
+        return object(), "yfinance"
+
+    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
+    res = client.post("/refresh", json={})
+    assert res.status_code == 200
+    assert seen == [("EURUSD", "1h"), ("USDJPY", "1d")]
+    assert [item["pair"] for item in res.json()["results"]] == ["EURUSD", "USDJPY"]
 
 
 def test_pipeline_stops_on_train_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
