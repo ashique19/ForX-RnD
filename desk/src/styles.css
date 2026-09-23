@@ -148,13 +148,18 @@
       height: calc(100vh - var(--nav-h));
       min-height: 640px;
     }
-    .app:not(.single) {
+    /* Decision mode is two rows (alert, then cards). The cache-refresh
+       notice is a third row only while it has text — an empty slot must
+       not leave a dead band under the alert. */
+    .app:not(.single) .alerts { grid-column: 1 / -1; grid-row: 1; }
+    .app:not(.single) .left-col { grid-column: 1; grid-row: 2; }
+    .app:not(.single) .right-col { grid-column: 2; grid-row: 2; }
+    .app.has-notice {
       grid-template-rows: auto auto minmax(0, 1fr);
     }
-    .app:not(.single) .alerts { grid-row: 1; }
-    .app:not(.single) .notice-slot { grid-row: 2; }
-    .app:not(.single) .left-col { grid-column: 1; grid-row: 3; }
-    .app:not(.single) .right-col { grid-column: 2; grid-row: 3; }
+    .app.has-notice .notice-slot { grid-column: 1 / -1; grid-row: 2; }
+    .app.has-notice .left-col,
+    .app.has-notice .right-col { grid-row: 3; }
 
     /* —— Alerts strip —— */
     .alerts {
@@ -803,21 +808,18 @@
     }
     .wl-remove:hover { border-color: var(--red-border); color: #b42318; }
     .notice-slot {
-      grid-column: 1 / -1;
-      height: 32px;
-      min-height: 32px;
+      display: none;
+    }
+    .notice-slot.active {
       display: flex;
       align-items: center;
+      min-height: 32px;
       padding: 0 10px;
       font-size: 12px;
       color: var(--muted);
       border-radius: var(--radius);
-      border: 1px solid transparent;
-      background: transparent;
-    }
-    .notice-slot.active {
+      border: 1px solid var(--border);
       background: var(--surface-2);
-      border-color: var(--border);
     }
     .paper-row {
       display: flex;
