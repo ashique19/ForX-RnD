@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, Ohlcv, PaperState, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, LearningsFeed, Ohlcv, PaperState, Watchlist } from "./types";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
 
@@ -74,4 +74,6 @@ export const api = {
       `/pipeline/${encodeURIComponent(pair)}?fetch=${fetchBars ? "true" : "false"}`,
       { method: "POST" },
     ),
+  learnings: (limit = 50) =>
+    request<LearningsFeed>(`/learnings?limit=${limit}`, { cache: "no-store" }),
 };

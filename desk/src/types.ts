@@ -177,4 +177,38 @@ export interface Ohlcv {
   indicators?: IndicatorSeries;
 }
 
-export type Mode = "decision" | "calendar" | "paper" | "lab" | "awareness";
+export type Mode = "decision" | "calendar" | "paper" | "lab" | "awareness" | "learnings";
+
+export type LearningSource = "paper" | "digest" | "model" | "awareness";
+
+export interface LearningItem {
+  id: string;
+  title: string;
+  detail: string;
+  at: string;
+  at_dhaka: string;
+  source: LearningSource;
+}
+
+export interface LearningFeedInfo {
+  id: string;
+  label: string;
+  source: LearningSource;
+  path: string;
+  present: boolean;
+  count: number;
+  error?: string;
+}
+
+export interface LearningsFeed {
+  timezone: string;
+  generated_at: string;
+  generated_at_dhaka: string;
+  count: number;
+  total: number;
+  limit: number;
+  latest_at: string | null;
+  latest_at_dhaka: string | null;
+  items: LearningItem[];
+  feeds: LearningFeedInfo[];
+}

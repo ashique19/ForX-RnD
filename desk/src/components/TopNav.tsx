@@ -7,6 +7,7 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "paper", label: "Paper" },
   { id: "lab", label: "Lab" },
   { id: "awareness", label: "Awareness" },
+  { id: "learnings", label: "Learnings" },
 ];
 
 function formatDhaka(now: Date): string {

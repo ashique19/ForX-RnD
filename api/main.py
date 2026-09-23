@@ -34,6 +34,7 @@ from api.deskdata import (
     run_pipeline_pair,
     watchlist_json,
 )
+from api.learnings import MAX_LIMIT, learnings_payload
 from api.limiter import allow
 from api.paperdesk import PaperBlocked, paper_order
 
@@ -108,6 +109,10 @@ def create_app() -> FastAPI:
     @app.get("/board")
     def get_board() -> dict:
         return board_payload()
+
+    @app.get("/learnings")
+    def get_learnings(limit: int = Query(default=50, ge=1, le=MAX_LIMIT)) -> dict:
+        return learnings_payload(limit=limit)
 
     @app.get("/brief/{pair}")
     def get_brief(pair: str, tf: str | None = Query(default=None)) -> dict:
