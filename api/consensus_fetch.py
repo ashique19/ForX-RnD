@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -23,6 +25,11 @@ def _now_iso(now: datetime | None = None) -> str:
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=timezone.utc)
     return clock.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+_page_cache: dict[str, tuple[float, int, str]] = {}
+_page_lock = threading.Lock()
+_PAGE_TTL_S = 15 * 60
 
 
 def http_get(url: str, *, timeout: float = 20.0) -> tuple[int, str, str]:
@@ -53,6 +60,52 @@ def http_get(url: str, *, timeout: float = 20.0) -> tuple[int, str, str]:
         if cffi_err:
             reason = f"{cffi_err}; {reason}"
         return 0, "", reason
+
+
+def failure_reason(status: int, body: str, err: str) -> str | None:
+    """Short reason when this response is not a usable page. None on HTTP 200 with a body.
+
+    The phrases stay specific: HTTP 403, timeout, empty parse, rate limited, bot check.
+    A caller that knows the pair is absent should say ``pair not listed`` itself.
+    """
+    sample = (body or "")[:1500]
+    sample_l = sample.lower()
+    err_l = (err or "").lower()
+    if status == 429 or "too many requests" in sample_l or "rate limit" in err_l:
+        return "rate limited"
+    if status == 403:
+        return "HTTP 403"
+    if status == 401:
+        return "HTTP 401"
+    if status == 404:
+        return "HTTP 404"
+    if "just a moment" in sample_l or "cf-browser-verification" in sample_l:
+        return "bot check"
+    if "timed out" in err_l or "timeout" in err_l:
+        return "timeout"
+    if status == 0:
+        return "network error"
+    if status == 200 and body:
+        return None
+    if status == 200:
+        return "empty parse"
+    if status:
+        return f"HTTP {status}"
+    return "network error"
+
+
+def cached_http_get(url: str, *, timeout: float = 15.0) -> tuple[int, str, str]:
+    """Reuse a successful page for a few minutes so a watchlist does not refetch it per pair."""
+    now = time.time()
+    with _page_lock:
+        hit = _page_cache.get(url)
+        if hit is not None and now - hit[0] < _PAGE_TTL_S:
+            return hit[1], hit[2], ""
+    status, body, err = http_get(url, timeout=timeout)
+    if status == 200 and body:
+        with _page_lock:
+            _page_cache[url] = (time.time(), status, body)
+    return status, body, err
 
 
 def _strip(html: str) -> str:
@@ -112,7 +165,11 @@ def parse_dailyforex_article(html: str) -> dict[str, Any]:
         end = headings[index + 1].start() if index + 1 < len(headings) else start + 1800
         break
     if direction is None:
-        return {"direction": None, "entry": None, "low": None, "high": None, "window": "", "reason": "no outlook heading"}
+        titled = _title_bias(html)
+        if titled is None:
+            return {"direction": None, "entry": None, "low": None, "high": None, "window": "", "reason": "no outlook heading"}
+        # Title states a bias. Do not scrape prices out of page chrome.
+        return {"direction": titled, "entry": None, "low": None, "high": None, "window": "", "reason": ""}
     section = _strip(html[start:end])
     timeline = ""
     found = re.search(r"Timeline:\s*([^.]{1,40})", section, re.I)
@@ -132,6 +189,24 @@ def parse_dailyforex_article(html: str) -> dict[str, Any]:
         "window": timeline,
         "reason": "",
     }
+
+
+def _title_bias(html: str) -> str | None:
+    """Explicit bias phrase in the article title only. Not the body."""
+    chunks = re.findall(r"<h1[^>]*>(.*?)</h1>", html, flags=re.I | re.S)
+    titled = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.I | re.S)
+    if titled:
+        chunks.append(titled.group(1))
+    text = " ".join(_strip(chunk) for chunk in chunks).lower()
+    if not text:
+        return None
+    if "downside bias" in text or "bearish" in text:
+        return "Sell"
+    if "upside bias" in text or "bullish" in text:
+        return "Buy"
+    if "neutral bias" in text or re.search(r"\bneutral\b", text):
+        return "Neutral"
+    return None
 
 
 def classify_dailyforex_horizon(url: str, window: str) -> str:
@@ -170,7 +245,7 @@ def fetch_dailyforex(pair: str, *, now: datetime | None = None) -> dict[str, dic
     """One DailyForex row per horizon. Levels only, no article body."""
     stamp = _now_iso(now)
     page_url = _df_pair_url(pair)
-    status, body, err = http_get(page_url)
+    status, body, err = cached_http_get(page_url)
     empty = {
         hz: {
             "forecaster": _row("DailyForex", None, "ERROR", err or f"HTTP {status}", page_url, stamp),
@@ -178,8 +253,9 @@ def fetch_dailyforex(pair: str, *, now: datetime | None = None) -> dict[str, dic
         }
         for hz in ("hourly", "daily")
     }
-    if status != 200 or not body or "Just a moment" in body[:800]:
-        reason = err or ("blocked by bot check" if body and "Just a moment" in body else f"HTTP {status or 'fail'}")
+    failed = failure_reason(status, body, err)
+    if failed:
+        reason = failed
         for hz in empty:
             empty[hz]["forecaster"]["reason"] = reason
             empty[hz]["range"]["reason"] = reason
@@ -188,12 +264,12 @@ def fetch_dailyforex(pair: str, *, now: datetime | None = None) -> dict[str, dic
     if not ident:
         for hz in empty:
             empty[hz]["forecaster"]["status"] = "MISSING"
-            empty[hz]["forecaster"]["reason"] = "pair id not on currency page"
+            empty[hz]["forecaster"]["reason"] = "pair not listed"
             empty[hz]["range"]["status"] = "MISSING"
-            empty[hz]["range"]["reason"] = "pair id not on currency page"
+            empty[hz]["range"]["reason"] = "pair not listed"
         return empty
     api = f"https://www.dailyforex.com/api/articles/currency-pairs/1/{ident.group(1)}/1"
-    st_api, raw, api_err = http_get(api)
+    st_api, raw, api_err = cached_http_get(api)
     try:
         payload = json.loads(raw) if st_api == 200 and raw else {}
     except json.JSONDecodeError:
@@ -211,7 +287,7 @@ def fetch_dailyforex(pair: str, *, now: datetime | None = None) -> dict[str, dic
     picked: dict[str, dict[str, Any]] = {}
     for href in hrefs[:8]:
         url = "https://www.dailyforex.com" + href
-        st_art, html, _art_err = http_get(url)
+        st_art, html, _art_err = cached_http_get(url)
         if st_art != 200 or not html:
             continue
         parsed = parse_dailyforex_article(html)
@@ -307,10 +383,10 @@ def fetch_investing(pair: str, *, now: datetime | None = None) -> dict[str, dict
     stamp = _now_iso(now)
     slug = f"{pair[:3].lower()}-{pair[3:].lower()}"
     url = f"https://www.investing.com/currencies/{slug}-technical"
-    status, body, err = http_get(url)
-    blocked = (not body) or status in {0, 401, 403, 429} or "Just a moment" in body[:800]
-    if blocked:
-        reason = "Investing.com blocked by bot check" if status in {401, 403} or "Just a moment" in (body or "") else (err or f"HTTP {status or 'fail'}")
+    status, body, err = cached_http_get(url)
+    failed = failure_reason(status, body, err)
+    if failed:
+        reason = failed
         return {
             hz: {
                 "forecaster": _row("Investing.com", None, "ERROR", reason, url, stamp),
@@ -338,10 +414,10 @@ def fetch_fxstreet(pair: str, *, now: datetime | None = None) -> dict[str, dict[
     """FXStreet is often behind a bot check. Record that; do not invent a bias."""
     stamp = _now_iso(now)
     url = f"https://www.fxstreet.com/currencies/{pair.lower()}"
-    status, body, err = http_get(url)
-    blocked = status in {0, 401, 403, 429} or "Just a moment" in (body or "")[:1200] or "cf-browser-verification" in (body or "")
-    if blocked or status != 200:
-        reason = "FXStreet blocked by bot check" if blocked else (err or f"HTTP {status}")
+    status, body, err = cached_http_get(url)
+    failed = failure_reason(status, body, err)
+    if failed or status != 200:
+        reason = failed or "fetch failed"
         row = _row("FXStreet", None, "ERROR", reason, url, stamp)
         return {"hourly": {"forecaster": row}, "daily": {"forecaster": dict(row)}}
     # A 200 page still is not a bias unless a single explicit token is present.
@@ -395,21 +471,10 @@ def _range(
 
 
 def fetch_pair_consensus(pair: str, *, now: datetime | None = None) -> dict[str, Any]:
-    """Both horizons for one pair. Each source is isolated so one failure stays local."""
-    stamp = _now_iso(now)
-    dailyforex = _safe(lambda: fetch_dailyforex(pair, now=now), "DailyForex", stamp, with_range=True)
-    investing = _safe(lambda: fetch_investing(pair, now=now), "Investing.com", stamp, with_range=True)
-    fxstreet = _safe(lambda: fetch_fxstreet(pair, now=now), "FXStreet", stamp, with_range=False)
-    out: dict[str, Any] = {}
-    for hz in ("hourly", "daily"):
-        forecasters = [
-            dailyforex[hz]["forecaster"],
-            investing[hz]["forecaster"],
-            fxstreet[hz]["forecaster"],
-        ]
-        ranges = [dailyforex[hz]["range"], investing[hz]["range"]]
-        out[hz] = {"fetched_at": stamp, "forecasters": forecasters, "ranges": ranges}
-    return out
+    """Both horizons for one pair. Each registered source is isolated."""
+    from api.consensus_registry import fetch_registered
+
+    return fetch_registered(pair, now=now)
 
 
 def _safe(fn, source: str, stamp: str, *, with_range: bool) -> dict[str, dict[str, Any]]:

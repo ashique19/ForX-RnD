@@ -327,10 +327,10 @@ def test_chrome_cards_borders_and_section_heads():
     assert "Board" in head and "pair row" in head
     source = Path(project_root() / "streamlit_app.py").read_text(encoding="utf-8")
     assert 'section_head_html("Scan", "Board"' in source
-    assert 'section_head_html("Detail"' in source
+    assert 'section_head_html("Active"' in source
     assert 'section_head_html("Health", "Alerts, awareness, digest")' in source
     scan_at = source.find('section_head_html("Scan", "Board"')
-    detail_at = source.find('section_head_html("Detail"')
+    detail_at = source.find('section_head_html("Active"')
     health_at = source.find('section_head_html("Health", "Alerts, awareness, digest")')
     assert 0 < scan_at < detail_at < health_at
     # Duplicate scan board must not return after Health.

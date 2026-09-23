@@ -1,8 +1,9 @@
-"""External-forecaster adapters for the Decision brief.
+"""External-forecaster cache for the Decision brief and the Lab drawer.
 
-DailyForex, Investing.com, and FXStreet are fetched when the cache is stale.
-Only a parsed bias and numeric levels are kept. Article text is not stored,
-and a direction is never invented from pivots or an idle default.
+Live sources are fetched on a background thread when the cache is older than
+the TTL. The read path never waits on the network. A direction is shown only
+when a source stated one. Last-success rows stay visible after the TTL, with
+age in Asia/Dhaka, instead of being wiped to a blank MISSING.
 """
 from __future__ import annotations
 
@@ -13,28 +14,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from forex_lab.clock import fmt_display
 from forex_lab.paths import resolve_under_root
+from forex_lab.ui.watchlist import WatchlistError
+
+from api.consensus_registry import (
+    REGISTRY,
+    SourceSpec,
+    aggregate_consensus,
+    live_sources,
+    pair_forms,
+    range_sources,
+)
 
 HORIZONS = ("hourly", "daily")
 DIRECTIONS = frozenset({"Buy", "Sell", "Neutral"})
 DEFAULT_TTL_S = 30 * 60
 DEFAULT_CACHE = "data/consensus_cache.json"
 
-FORECASTERS: dict[str, tuple[str, ...]] = {
-    "hourly": ("DailyForex", "Investing.com", "FXStreet"),
-    "daily": ("DailyForex", "Investing.com", "FXStreet"),
-}
-RANGES: dict[str, tuple[str, ...]] = {
-    "hourly": ("DailyForex", "Investing.com"),
-    "daily": ("DailyForex", "Investing.com"),
-}
-
 NOTE = (
-    "Public pages are fetched for DailyForex, Investing.com, and FXStreet. "
-    "A direction is shown only when that page states one. Nothing is invented."
+    "Directions and ranges are copied from each source. "
+    "Confidence is agreement among published Buy and Sell calls (at least two). "
+    "Nothing is filled in when a source is silent."
 )
 
 _fetch_lock = threading.Lock()
+_state_lock = threading.Lock()
+_queued: set[str] = set()
+_queue: list[str] = []
+_worker_on = False
+_active: str | None = None
 
 
 class ConsensusError(ValueError):
@@ -154,6 +163,33 @@ def _index_by_source(rows: object) -> dict[str, dict[str, Any]]:
     return out
 
 
+def reset_consensus_state() -> None:
+    """Drop the in-process fetch queue. Tests only."""
+    global _worker_on, _active
+    with _state_lock:
+        _queued.clear()
+        _queue.clear()
+        _worker_on = False
+        _active = None
+
+
+def consensus_pending(pair: str) -> bool:
+    key = str(pair or "").strip().upper()
+    with _state_lock:
+        return key in _queued
+
+
+def _spec_by_name() -> dict[str, SourceSpec]:
+    return {spec.name: spec for spec in REGISTRY}
+
+
+def _canonical_pair(pair: str) -> str:
+    try:
+        return pair_forms(pair)["pair"]
+    except WatchlistError:
+        return str(pair or "").strip().upper()
+
+
 def read_consensus(
     pair: str,
     horizon: str,
@@ -164,78 +200,170 @@ def read_consensus(
 ) -> dict[str, Any]:
     """One horizon of other-forecaster directions and ranges.
 
-    Cache records older than the TTL, or with a direction outside
-    Buy/Sell/Neutral, are returned as MISSING.
+    A stale cache still returns the last published direction and range, with
+    ``fresh`` false and a Dhaka timestamp. Invalid directions stay MISSING.
     """
-    pair_u = str(pair or "").strip().upper()
+    pair_u = _canonical_pair(pair)
     hz = normalize_horizon(horizon)
     clock = _utc_now(now)
     payload = cache if cache is not None else load_cache()
     block = _pair_block(payload, pair_u, hz)
     fetched = _parse_fetched_at((block or {}).get("fetched_at"))
-    age_s = None if fetched is None else (clock - fetched).total_seconds()
+    age_s = None if fetched is None else max(0.0, (clock - fetched).total_seconds())
     fresh = fetched is not None and age_s is not None and age_s <= _ttl_s(cfg)
-    reason = "no cache"
-    if block is None:
-        reason = "no cache"
+    have_block = block is not None
+    pending = consensus_pending(pair_u)
+    if not have_block:
+        reason = "fetch in progress" if pending else "no cache yet"
     elif fetched is None:
         reason = "cache missing fetched_at"
-    elif not fresh:
-        reason = "cache stale"
+    else:
+        reason = ""
 
-    fc_rows = _index_by_source((block or {}).get("forecasters")) if fresh else {}
-    rg_rows = _index_by_source((block or {}).get("ranges")) if fresh else {}
+    fc_rows = _index_by_source((block or {}).get("forecasters")) if have_block else {}
+    rg_rows = _index_by_source((block or {}).get("ranges")) if have_block else {}
+    specs = _spec_by_name()
 
     forecasters: list[dict[str, Any]] = []
-    ok_dirs = 0
-    for name in FORECASTERS[hz]:
-        row = fc_rows.get(name) or {}
-        forecasters.append(_forecaster_view(name, row, fresh=fresh, stale_reason=reason))
-        if forecasters[-1]["status"] == "OK":
-            ok_dirs += 1
+    for spec in REGISTRY:
+        if not spec.live:
+            forecasters.append(_skipped_view(spec))
+            continue
+        row = fc_rows.get(spec.name) or {}
+        forecasters.append(
+            _forecaster_view(
+                spec.name,
+                row,
+                have_block=have_block,
+                empty_reason=reason,
+                tier=spec.tier,
+                cfg=cfg,
+                fetched_fallback=(block or {}).get("fetched_at"),
+            )
+        )
 
     ranges: list[dict[str, Any]] = []
-    ok_ranges = 0
-    for name in RANGES[hz]:
-        row = rg_rows.get(name) or {}
-        ranges.append(_range_view(name, row, fresh=fresh, stale_reason=reason))
-        if ranges[-1]["status"] == "OK":
-            ok_ranges += 1
+    for spec in range_sources():
+        row = rg_rows.get(spec.name) or {}
+        ranges.append(
+            _range_view(
+                spec.name,
+                row,
+                have_block=have_block,
+                empty_reason=reason,
+                tier=spec.tier,
+                cfg=cfg,
+                fetched_fallback=(block or {}).get("fetched_at"),
+            )
+        )
 
+    ok_dirs = sum(1 for row in forecasters if row["status"] == "OK")
+    ok_ranges = sum(1 for row in ranges if row["status"] == "OK")
+    actionable = [row for row in forecasters if row["status"] not in {"SKIPPED", "RANGE"}]
     if ok_dirs == 0 and ok_ranges == 0:
         status = "MISSING"
-    elif ok_dirs == len(forecasters) and ok_ranges == len(ranges):
+    elif actionable and all(row["status"] == "OK" for row in actionable) and all(row["status"] == "OK" for row in ranges):
         status = "OK"
     else:
         status = "PARTIAL"
 
+    aggregate = aggregate_consensus(forecasters, ranges)
+    dhaka = None if fetched is None else fmt_display(fetched, cfg, seconds=False)
     return {
         "pair": pair_u,
         "horizon": hz,
         "status": status,
-        "fetched_at": None if fetched is None or not fresh else fetched.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "fresh": fresh,
+        "stale": bool(fetched is not None and not fresh),
+        "pending": pending,
+        "age_s": None if age_s is None else int(age_s),
+        "fetched_at": None if fetched is None else fetched.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "fetched_at_dhaka": dhaka,
         "forecasters": forecasters,
         "ranges": ranges,
+        "aggregate": aggregate,
         "note": NOTE,
+        "sources": len(specs),
     }
 
 
-def _forecaster_view(name: str, row: dict[str, Any], *, fresh: bool, stale_reason: str) -> dict[str, Any]:
+def _public_reason(status: str, raw: object) -> str:
+    """Non-OK rows always carry a reason. A blank MISSING is an empty parse."""
+    text = " ".join(str(raw or "").split())
+    if status == "OK":
+        return text
+    if not text:
+        return {"ERROR": "fetch failed", "SKIPPED": "not requested", "RANGE": "range only"}.get(status, "empty parse")
+    low = text.lower()
+    if "blocked by bot check" in low:
+        return "bot check"
+    return text
+
+
+def _last_ok_fields(
+    status: str,
+    row: dict[str, Any],
+    fetched: object,
+    cfg: dict[str, Any] | None,
+    *,
+    fallback: object = None,
+) -> tuple[str | None, str | None]:
+    stamp = row.get("last_ok_at")
+    if status == "OK" and not stamp:
+        stamp = fetched or fallback
+    parsed = _parse_fetched_at(stamp)
+    if parsed is None:
+        return None, None
+    iso = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return iso, fmt_display(parsed, cfg, seconds=False)
+
+
+def _skipped_view(spec: SourceSpec) -> dict[str, Any]:
+    return {
+        "source": spec.name,
+        "direction": None,
+        "status": "SKIPPED",
+        "reason": _public_reason("SKIPPED", spec.skip_reason),
+        "url": "",
+        "entry": None,
+        "fetched_at": None,
+        "last_ok_at": None,
+        "last_ok_at_dhaka": None,
+        "tier": spec.tier,
+    }
+
+
+def _forecaster_view(
+    name: str,
+    row: dict[str, Any],
+    *,
+    have_block: bool,
+    empty_reason: str,
+    tier: str,
+    cfg: dict[str, Any] | None = None,
+    fetched_fallback: object = None,
+) -> dict[str, Any]:
     explicit = str(row.get("status") or "").upper()
     direction = _direction(row.get("direction") or row.get("bias"))
     url = str(row.get("url") or "")
     fetched = row.get("fetched_at")
     entry = _num(row.get("entry"))
-    if not fresh:
-        status, why, direction = "MISSING", stale_reason, None
+    if not have_block or not row:
+        status, why, direction = "MISSING", empty_reason or "not in last fetch", None
     elif explicit == "ERROR":
         status, why, direction = "ERROR", str(row.get("reason") or "fetch failed"), None
+    elif explicit == "RANGE":
+        status, why, direction = "RANGE", str(row.get("reason") or "range only"), None
+    elif explicit == "SKIPPED":
+        status, why, direction = "SKIPPED", str(row.get("reason") or "skipped"), None
     elif direction and explicit in {"", "OK"}:
-        status, why = "OK", ""
+        status, why = "OK", str(row.get("reason") or "")
     elif explicit == "MISSING":
-        status, why, direction = "MISSING", str(row.get("reason") or "empty parse"), None
+        status, why, direction = "MISSING", str(row.get("reason") or ""), None
     else:
         status, why, direction = "MISSING", "direction missing or not Buy/Sell/Neutral", None
+    why = _public_reason(status, why)
+    last_ok_at, last_ok_dhaka = _last_ok_fields(status, row, fetched, cfg, fallback=fetched_fallback)
     return {
         "source": name,
         "direction": direction,
@@ -243,27 +371,43 @@ def _forecaster_view(name: str, row: dict[str, Any], *, fresh: bool, stale_reaso
         "reason": why,
         "url": url,
         "entry": entry if status == "OK" else None,
-        "fetched_at": None if not fresh else (str(fetched) if fetched else None),
+        "fetched_at": None if not have_block else (str(fetched) if fetched else None),
+        "last_ok_at": last_ok_at,
+        "last_ok_at_dhaka": last_ok_dhaka,
+        "tier": tier,
     }
 
 
-def _range_view(name: str, row: dict[str, Any], *, fresh: bool, stale_reason: str) -> dict[str, Any]:
+def _range_view(
+    name: str,
+    row: dict[str, Any],
+    *,
+    have_block: bool,
+    empty_reason: str,
+    tier: str,
+    cfg: dict[str, Any] | None = None,
+    fetched_fallback: object = None,
+) -> dict[str, Any]:
     explicit = str(row.get("status") or "").upper()
     low = _num(row.get("low"))
     high = _num(row.get("high"))
     window = str(row.get("window") or row.get("label") or "").strip()
     valid = low is not None and high is not None and high >= low
-    if not fresh:
-        status, why, low, high, window = "MISSING", stale_reason, None, None, None
+    if not have_block or not row:
+        status, why, low, high, window = "MISSING", empty_reason or "not in last fetch", None, None, None
     elif explicit == "ERROR":
         status, why, low, high, window = "ERROR", str(row.get("reason") or "fetch failed"), None, None, None
     elif valid and explicit in {"", "OK"}:
         status, why = "OK", ""
     elif explicit == "MISSING":
-        status, why, low, high = "MISSING", str(row.get("reason") or "range missing or invalid"), None, None
+        status, why, low, high = "MISSING", str(row.get("reason") or ""), None, None
         window = None
     else:
         status, why, low, high, window = "MISSING", "range missing or invalid", None, None, None
+    why = _public_reason(status, why)
+    _last_ok_at, last_ok_dhaka = _last_ok_fields(
+        status, row, row.get("fetched_at"), cfg, fallback=fetched_fallback
+    )
     return {
         "source": name,
         "low": low,
@@ -271,74 +415,186 @@ def _range_view(name: str, row: dict[str, Any], *, fresh: bool, stale_reason: st
         "window": window,
         "status": status,
         "reason": why,
+        "last_ok_at_dhaka": last_ok_dhaka,
+        "tier": tier,
     }
 
 
-def ensure_consensus(pair: str, cfg: dict[str, Any] | None = None, *, now: datetime | None = None) -> None:
-    """Refresh both horizons when the cache is older than the TTL. No-op if network is off."""
-    if not network_enabled():
-        return
-    pair_u = str(pair or "").strip().upper()
-    if not pair_u:
-        return
-    clock = _utc_now(now)
+def _pair_is_fresh(pair_u: str, cfg: dict[str, Any] | None, clock: datetime) -> bool:
     with _fetch_lock:
         payload = load_cache()
-        node = payload.get(pair_u) if isinstance(payload.get(pair_u), dict) else {}
-        if _horizon_fresh(node.get("hourly"), cfg, clock) and _horizon_fresh(node.get("daily"), cfg, clock):
-            return
-        from api.consensus_fetch import fetch_pair_consensus
+    node = payload.get(pair_u) if isinstance(payload.get(pair_u), dict) else {}
+    return _horizon_fresh(node.get("hourly"), cfg, clock) and _horizon_fresh(node.get("daily"), cfg, clock)
 
-        try:
-            fetched = fetch_pair_consensus(pair_u, now=clock)
-        except Exception:
-            stamp = clock.strftime("%Y-%m-%dT%H:%M:%SZ")
-            fetched = {}
-            for hz in HORIZONS:
-                fetched[hz] = {
+
+def _error_payload(stamp: str) -> dict[str, Any]:
+    fetched: dict[str, Any] = {}
+    for hz in HORIZONS:
+        fetched[hz] = {
+            "fetched_at": stamp,
+            "forecasters": [
+                {
+                    "source": spec.name,
+                    "direction": None,
+                    "status": "ERROR",
+                    "reason": "consensus fetch failed",
+                    "url": "",
+                    "entry": None,
                     "fetched_at": stamp,
-                    "forecasters": [
-                        {
-                            "source": name,
-                            "direction": None,
-                            "status": "ERROR",
-                            "reason": "consensus fetch failed",
-                            "url": "",
-                            "entry": None,
-                            "fetched_at": stamp,
-                        }
-                        for name in FORECASTERS[hz]
-                    ],
-                    "ranges": [
-                        {
-                            "source": name,
-                            "low": None,
-                            "high": None,
-                            "window": "",
-                            "status": "ERROR",
-                            "reason": "consensus fetch failed",
-                            "fetched_at": stamp,
-                        }
-                        for name in RANGES[hz]
-                    ],
                 }
+                for spec in live_sources()
+            ],
+            "ranges": [
+                {
+                    "source": spec.name,
+                    "low": None,
+                    "high": None,
+                    "window": "",
+                    "status": "ERROR",
+                    "reason": "consensus fetch failed",
+                    "fetched_at": stamp,
+                }
+                for spec in range_sources()
+            ],
+        }
+    return fetched
+
+
+def _prior_ok_stamp(prior: dict[str, Any] | None) -> str | None:
+    if not isinstance(prior, dict):
+        return None
+    if str(prior.get("status") or "").upper() == "OK" and prior.get("fetched_at"):
+        return str(prior.get("fetched_at"))
+    if prior.get("last_ok_at"):
+        return str(prior.get("last_ok_at"))
+    return None
+
+
+def _apply_last_ok(row: dict[str, Any], prior: dict[str, Any] | None) -> None:
+    status = str(row.get("status") or "").upper()
+    if status == "OK" and row.get("fetched_at"):
+        row["last_ok_at"] = str(row.get("fetched_at"))
+        return
+    row["last_ok_at"] = _prior_ok_stamp(prior)
+
+
+def carry_last_success(previous: dict[str, Any] | None, fetched: dict[str, Any]) -> None:
+    """Keep each source's last OK time when a later fetch fails. Does not keep the old side."""
+    prev = previous if isinstance(previous, dict) else {}
+    for hz in HORIZONS:
+        old_node = prev.get(hz) if isinstance(prev.get(hz), dict) else {}
+        new_node = fetched.get(hz) if isinstance(fetched.get(hz), dict) else {}
+        old_fc = _index_by_source(old_node.get("forecasters"))
+        for row in new_node.get("forecasters") or []:
+            if isinstance(row, dict):
+                _apply_last_ok(row, old_fc.get(str(row.get("source") or "")))
+        old_rg = _index_by_source(old_node.get("ranges"))
+        for row in new_node.get("ranges") or []:
+            if isinstance(row, dict):
+                _apply_last_ok(row, old_rg.get(str(row.get("source") or "")))
+
+
+def _refresh_one(pair_u: str) -> None:
+    clock = _utc_now(None)
+    stamp = clock.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        from api.consensus_registry import fetch_registered
+
+        fetched = fetch_registered(pair_u, now=clock)
+    except Exception:
+        fetched = _error_payload(stamp)
+    with _fetch_lock:
+        payload = load_cache()
+        carry_last_success(payload.get(pair_u) if isinstance(payload.get(pair_u), dict) else None, fetched)
         payload[pair_u] = fetched
         save_cache(payload)
 
 
+def _drain_queue() -> None:
+    global _worker_on
+    while True:
+        with _state_lock:
+            if not _queue:
+                _worker_on = False
+                return
+            pair_u = _queue.pop(0)
+            if pair_u != _active:
+                _queued.discard(pair_u)
+                continue
+        try:
+            _refresh_one(pair_u)
+        finally:
+            with _state_lock:
+                _queued.discard(pair_u)
+
+
+def ensure_consensus(pair: str, cfg: dict[str, Any] | None = None, *, now: datetime | None = None) -> None:
+    """Queue a background refresh for this Active pair. Returns immediately.
+
+    The latest call replaces any pair still waiting, so a watchlist of many
+    symbols does not turn into a scrape of every symbol. A fetch already in
+    flight is left to finish; the next start is only the Active pair. A fresh
+    cache is left alone. Network off (``FORX_CONSENSUS_NETWORK=0``) is a no-op.
+    """
+    global _worker_on, _active
+    if not network_enabled():
+        return
+    pair_u = _canonical_pair(pair)
+    if not pair_u:
+        return
+    clock = _utc_now(now)
+    if _pair_is_fresh(pair_u, cfg, clock):
+        with _state_lock:
+            _active = pair_u
+            for waiting in list(_queue):
+                _queue.remove(waiting)
+                _queued.discard(waiting)
+        return
+    start = False
+    with _state_lock:
+        _active = pair_u
+        for waiting in list(_queue):
+            if waiting == pair_u:
+                continue
+            _queue.remove(waiting)
+            _queued.discard(waiting)
+        if pair_u not in _queued:
+            _queued.add(pair_u)
+            _queue.append(pair_u)
+            if not _worker_on:
+                _worker_on = True
+                start = True
+    if start:
+        threading.Thread(target=_drain_queue, name="consensus-refresh", daemon=True).start()
+
+
 def lean_label(snapshot: dict[str, Any]) -> str:
     """Short bias line. MISSING when no cached OK directions — never a guessed lean."""
-    dirs = [
-        str(row.get("direction"))
-        for row in snapshot.get("forecasters") or []
-        if row.get("status") == "OK" and row.get("direction")
-    ]
-    if not dirs:
+    agg = snapshot.get("aggregate") if isinstance(snapshot.get("aggregate"), dict) else {}
+    counts = agg.get("counts") if isinstance(agg.get("counts"), dict) else None
+    if counts:
+        buys = int(counts.get("Buy") or 0)
+        sells = int(counts.get("Sell") or 0)
+        neutrals = int(counts.get("Neutral") or 0)
+        total = buys + sells + neutrals
+    else:
+        dirs = [
+            str(row.get("direction"))
+            for row in snapshot.get("forecasters") or []
+            if row.get("status") == "OK" and row.get("direction")
+        ]
+        buys = sum(1 for d in dirs if d == "Buy")
+        sells = sum(1 for d in dirs if d == "Sell")
+        neutrals = sum(1 for d in dirs if d == "Neutral")
+        total = len(dirs)
+    if total == 0:
         return "external forecasters MISSING"
-    buys = sum(1 for d in dirs if d == "Buy")
-    sells = sum(1 for d in dirs if d == "Sell")
+    conf = agg.get("confidence") if isinstance(agg, dict) else None
+    agree = f", {round(float(conf) * 100)}% agree" if isinstance(conf, (int, float)) else ""
     if buys > sells and buys > 0:
-        return f"consensus lean buy ({buys}/{len(dirs)} cached)"
+        return f"consensus lean buy ({buys}/{total} cached{agree})"
     if sells > buys and sells > 0:
-        return f"consensus lean sell ({sells}/{len(dirs)} cached)"
-    return f"external forecasters mixed ({len(dirs)} cached)"
+        return f"consensus lean sell ({sells}/{total} cached{agree})"
+    if neutrals and buys == sells:
+        return f"external forecasters neutral ({total} cached)"
+    return f"external forecasters mixed ({total} cached)"

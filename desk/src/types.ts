@@ -94,6 +94,27 @@ export interface ForecastRow {
   url?: string;
   entry?: number | null;
   fetched_at?: string | null;
+  last_ok_at?: string | null;
+  last_ok_at_dhaka?: string | null;
+  tier?: string;
+}
+
+export interface ConsensusCounts {
+  Buy: number;
+  Sell: number;
+  Neutral: number;
+}
+
+export interface ConsensusAggregate {
+  counts: ConsensusCounts;
+  ok: number;
+  listed?: number;
+  missing: number;
+  errors: number;
+  skipped: number;
+  top_side: string | null;
+  confidence: number | null;
+  range_span: { low: number; high: number; count: number } | null;
 }
 
 export interface RangeRow {
@@ -103,16 +124,24 @@ export interface RangeRow {
   window: string | null;
   status: string;
   reason: string;
+  last_ok_at_dhaka?: string | null;
 }
 
 export interface Consensus {
   pair: string;
   horizon: string;
   status: string;
+  fresh?: boolean;
+  stale?: boolean;
+  pending?: boolean;
+  age_s?: number | null;
   fetched_at?: string | null;
+  fetched_at_dhaka?: string | null;
   forecasters: ForecastRow[];
   ranges: RangeRow[];
+  aggregate?: ConsensusAggregate;
   note: string;
+  sources?: number;
 }
 
 export interface PaperPosition {

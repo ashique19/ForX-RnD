@@ -290,6 +290,20 @@
       background: var(--blue-bg);
     }
     table.wl tbody tr.selected td { color: var(--text); }
+    .active-pill {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--blue-bg);
+      border: 1px solid #b2ddff;
+      color: var(--blue);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      vertical-align: 1px;
+    }
     .pair { font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
     .tf-pill {
       display: inline-block;
@@ -583,6 +597,55 @@
     .fc-row .site, .rg-row .site { color: var(--text-2); }
     .fc-row .dir.buy { color: var(--green); font-weight: 600; }
     .fc-row .dir.sell { color: var(--red); font-weight: 600; }
+    .fc-row .dir.neutral { color: var(--muted); font-weight: 600; }
+    .fc-row .dir.err { color: var(--red); font-weight: 600; }
+    .fc-row .dir.skip { color: var(--faint); }
+    .consensus-sum {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      align-items: baseline;
+      font-size: 12px;
+    }
+    .consensus-sum .consensus-score {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    .consensus-sum .count { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .consensus-sum .count.buy { color: var(--green); }
+    .consensus-sum .count.sell { color: var(--red); }
+    .consensus-sum .count.neutral { color: var(--muted); }
+    .consensus-top { font-weight: 600; }
+    .consensus-top.buy { color: var(--green); }
+    .consensus-top.sell { color: var(--red); }
+    .consensus-meta {
+      font-size: 11px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .consensus-sources { margin-top: 2px; }
+    .consensus-sources summary {
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text-2);
+      font-weight: 600;
+    }
+    .consensus-sources .fc-row, .consensus-sources .rg-row { gap: 8px; }
+    .consensus-sources .why {
+      margin-left: auto;
+      max-width: 58%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--faint);
+      font-size: 10.5px;
+    }
+    .consensus-sources .tier {
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 600;
+    }
     .rg-row .rng {
       font-family: var(--mono);
       font-size: 11.5px;
@@ -880,6 +943,11 @@
     .desk-bar .watchlist-launch:hover {
       border-color: var(--border-strong);
       background: var(--surface-2);
+    }
+    .desk-bar .watchlist-launch.is-active {
+      color: var(--blue);
+      border-color: #b2ddff;
+      background: var(--blue-bg);
     }
     .desk-bar .freshness {
       flex: 1 1 auto;

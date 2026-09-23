@@ -222,6 +222,13 @@ export function App() {
     };
   }, [applyFailed, loadBoard, tick, selected, rowTf, chartTf]);
 
+  useEffect(() => {
+    const pending = Boolean(brief?.consensus?.hourly?.pending || brief?.consensus?.daily?.pending);
+    if (!pending) return;
+    const id = window.setTimeout(() => setTick((n) => n + 1), 4000);
+    return () => window.clearTimeout(id);
+  }, [brief]);
+
   const refreshData = useCallback(async (manual = false) => {
     // Market data only. Does not call POST /pipeline.
     if (inflight.current || retryLock.current) return;
@@ -387,14 +394,15 @@ export function App() {
             <div className="desk-bar">
               <button
                 ref={watchlistButtonRef}
-                className="btn watchlist-launch"
+                className={selected ? "btn watchlist-launch is-active" : "btn watchlist-launch"}
                 type="button"
                 aria-haspopup="dialog"
                 aria-expanded={watchlistOpen}
                 aria-controls="watchlist-dialog"
+                aria-label={selected ? `Open watchlist. Active pair is ${selected}` : "Open watchlist"}
                 onClick={() => setWatchlistOpen(true)}
               >
-                Watchlist
+                {selected ? `Active ${selected}` : "Watchlist"}
               </button>
               <FreshnessStrip
                 lastAgo={lastAgo}

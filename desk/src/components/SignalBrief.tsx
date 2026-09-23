@@ -56,20 +56,44 @@ function RefreshIcon() {
 }
 
 function dirClass(direction: string | null, status: string): string {
+  if (status === "ERROR") return "dir err";
+  if (status === "SKIPPED") return "dir skip";
+  if (status === "RANGE") return "dir miss";
   if (status !== "OK" || !direction) return "dir miss";
   const key = direction.toLowerCase();
-  if (key === "buy" || key === "sell") return `dir ${key}`;
+  if (key === "buy" || key === "sell" || key === "neutral") return `dir ${key}`;
   return "dir miss";
 }
 
 function sourceLabel(status: string, direction: string | null): string {
   if (status === "OK" && direction) return direction;
-  if (status === "ERROR") return "ERROR";
-  return "MISSING";
+  if (status === "ERROR") return "error";
+  if (status === "SKIPPED") return "skipped";
+  if (status === "RANGE") return "range only";
+  return "missing";
 }
 
-function sourceTitle(row: { reason?: string; url?: string; fetched_at?: string | null }): string {
-  return [row.reason, row.fetched_at, row.url].filter(Boolean).join(" · ");
+function ageLabel(consensus: Consensus): string {
+  if (consensus.age_s == null || !consensus.fetched_at_dhaka) {
+    return consensus.pending ? "fetching sources" : "not fetched yet";
+  }
+  const mins = Math.max(0, Math.round(consensus.age_s / 60));
+  const rel = mins < 1 ? "just now" : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+  const stale = consensus.fresh === false ? " · stale" : "";
+  const pending = consensus.pending ? " · updating" : "";
+  return `${rel} · ${consensus.fetched_at_dhaka}${stale}${pending}`;
+}
+
+function sourceTitle(row: { reason?: string; url?: string; fetched_at?: string | null; last_ok_at_dhaka?: string | null }): string {
+  return [row.reason, row.last_ok_at_dhaka ? `last OK ${row.last_ok_at_dhaka}` : "", row.fetched_at, row.url]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function failureDetail(row: { reason?: string; last_ok_at_dhaka?: string | null }): string {
+  const why = row.reason?.trim() || "empty parse";
+  const last = row.last_ok_at_dhaka ? `last OK ${row.last_ok_at_dhaka}` : "no prior success";
+  return `${why} · ${last}`;
 }
 
 function rangeText(row: Consensus["ranges"][number], pair: string): string {
@@ -79,6 +103,93 @@ function rangeText(row: Consensus["ranges"][number], pair: string): string {
   const low = row.low.toFixed(digits);
   const high = row.high.toFixed(digits);
   return `${low} – ${high}${row.window ? ` ${row.window}` : ""}`;
+}
+
+function priceDigits(pair: string): number {
+  if (pair.includes("JPY")) return 3;
+  if (pair.includes("XAU")) return 1;
+  return 5;
+}
+
+function spanText(consensus: Consensus, pair: string): string {
+  const span = consensus.aggregate?.range_span;
+  if (!span) return "no published range";
+  const digits = priceDigits(pair);
+  return `${span.low.toFixed(digits)}–${span.high.toFixed(digits)} · ${span.count} published`;
+}
+
+function topText(consensus: Consensus): string {
+  const agg = consensus.aggregate;
+  if (!agg?.top_side) return "no side";
+  if (agg.confidence == null) return agg.top_side;
+  return `${agg.top_side} · ${Math.round(agg.confidence * 100)}% agree`;
+}
+
+function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: string }) {
+  const counts = consensus.aggregate?.counts ?? { Buy: 0, Sell: 0, Neutral: 0 };
+  const listed = consensus.aggregate?.listed ?? consensus.forecasters.length;
+  const ok = consensus.aggregate?.ok ?? 0;
+  const failures = consensus.forecasters.filter((row) => row.status !== "OK");
+  return (
+    <div className="consensus">
+      <div className="section-lbl">Other forecasters</div>
+      <div className="consensus-sum">
+        <span className="consensus-score">{ok}/{listed} OK</span>
+        <span className="count buy">Buy {counts.Buy}</span>
+        <span className="count sell">Sell {counts.Sell}</span>
+        <span className="count neutral">Neutral {counts.Neutral}</span>
+        <span className={`consensus-top ${consensus.aggregate?.top_side?.toLowerCase() ?? ""}`}>{topText(consensus)}</span>
+      </div>
+      <div className="consensus-meta">{spanText(consensus, pair)}</div>
+      <div className="consensus-meta">{ageLabel(consensus)}</div>
+      <details className="consensus-sources">
+        <summary>Failures ({failures.length})</summary>
+        {failures.length === 0 ? (
+          <div className="consensus-meta">Every listed source returned a side.</div>
+        ) : (
+          <div className="forecasters">
+            {failures.map((row) => (
+              <div className="fc-row" key={row.source}>
+                <span className="site">
+                  {row.source}
+                  {row.tier ? <span className="tier"> {row.tier}</span> : null}
+                </span>
+                <span className={dirClass(row.direction, row.status)}>{row.status}</span>
+                <span className="why">{failureDetail(row)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
+      <details className="consensus-sources">
+        <summary>Sources ({consensus.forecasters.length})</summary>
+        <div className="forecasters">
+          {consensus.forecasters.map((row) => (
+            <div className="fc-row" key={row.source}>
+              <span className="site">
+                {row.source}
+                {row.tier ? <span className="tier"> {row.tier}</span> : null}
+              </span>
+              <span className={dirClass(row.direction, row.status)} title={sourceTitle(row) || undefined}>
+                {sourceLabel(row.status, row.direction)}
+              </span>
+              {row.status !== "OK" ? <span className="why">{failureDetail(row)}</span> : null}
+            </div>
+          ))}
+        </div>
+        <div className="section-lbl">Ranges</div>
+        <div className="ranges">
+          {consensus.ranges.map((row) => (
+            <div className="rg-row" key={row.source}>
+              <span className="site">{row.source}</span>
+              <span className="rng" title={row.reason || undefined}>{rangeText(row, pair)}</span>
+              {row.status !== "OK" ? <span className="why">{failureDetail(row)}</span> : null}
+            </div>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
 }
 
 function Card({ title, suggestion, consensus, pair }: { title: string; suggestion: Suggestion; consensus: Consensus; pair: string }) {
@@ -110,30 +221,7 @@ function Card({ title, suggestion, consensus, pair }: { title: string; suggestio
           </div>
         </div>
         {reason ? <div className="gap-reason" role="status">{reason}</div> : null}
-        <div>
-          <div className="section-lbl">Other forecasters</div>
-          <div className="forecasters">
-            {consensus.forecasters.map((row) => (
-              <div className="fc-row" key={row.source}>
-                <span className="site">{row.source}</span>
-                <span className={dirClass(row.direction, row.status)} title={sourceTitle(row) || undefined}>
-                  {sourceLabel(row.status, row.direction)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="section-lbl">Ranges</div>
-          <div className="ranges">
-            {consensus.ranges.map((row) => (
-              <div className="rg-row" key={row.source}>
-                <span className="site">{row.source}</span>
-                <span className="rng" title={row.reason || undefined}>{rangeText(row, pair)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ConsensusPanel consensus={consensus} pair={pair} />
         {suggestion.event_stop_text ? (
           <div className="lvl-note">Event SL {suggestion.event_stop_text} — tighter research stop, not a new order</div>
         ) : null}

@@ -1307,7 +1307,8 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     """Polled yfinance refresh + cache re-read. Never writes synthetic bars.
 
     Not a broker tick stream. OHLCV is fetched even when no model is trained so
-    the chart's last bar can move. Signal regen still needs a model.
+    the chart's last bar can move. Signal regen still needs a model. This does
+    not scrape external forecasters: that runs only for the one Active pair.
     """
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
@@ -1323,7 +1324,6 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     fetch_failed = fetched is None
     if fetch_failed:
         _note_failed_refresh(row, reason)
-    ensure_consensus(symbol, cfg)
     if source == SOURCE_RESAMPLED_FROM_1H:
         source_label = SOURCE_RESAMPLED_FROM_1H
     elif source == SOURCE_YFINANCE:
