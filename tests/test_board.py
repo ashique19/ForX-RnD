@@ -452,3 +452,27 @@ def test_attach_next_event_warns_inside_pre_event_window():
     assert row.next_event_warn is False
     assert "NFP" in row.next_event
     assert not row.next_event.startswith("⚠")
+
+
+def test_inactive_row_does_not_generate_signals(monkeypatch):
+    frame = generate_synthetic_ohlcv(pair="GBPUSD", bars=80, seed=1)
+    called: list[str] = []
+
+    def _status(*_a, **_k):
+        return {"model_exists": True, "data_exists": True, "n_bars": len(frame)}
+
+    def _gen(*_a, **_k):
+        called.append("generate")
+        raise AssertionError("inactive pair must not run the model")
+
+    monkeypatch.setattr("forex_lab.ui.board.artifact_status", _status)
+    monkeypatch.setattr("forex_lab.ui.board.load_cached_ohlcv", lambda *_a, **_k: frame)
+    monkeypatch.setattr("forex_lab.ui.board._latest_csv_row", lambda *_a, **_k: None)
+    monkeypatch.setattr("forex_lab.ui.board.generate_signals", _gen)
+    monkeypatch.setattr("forex_lab.ui.board.attach_mtf", lambda row, *_a, **_k: row)
+    row = build_board_row("GBPUSD", allow_generate=False, regenerate=False)
+    assert called == []
+    assert row.buy_sell == "—"
+    assert row.status != "need_train"
+    assert "not the active pair" in row.signal_details
+    assert "model was not run" in row.signal_details

@@ -38,6 +38,7 @@ class Watchlist:
     refresh_seconds: int = DEFAULT_REFRESH_SECONDS
     interval: str | None = None  # None = config/default.yaml interval
     path: str | None = None
+    active: str | None = None  # stored subject; resolve with active_pair()
 
     def pair_symbols(self) -> list[str]:
         return [p.pair for p in self.pairs]
@@ -55,6 +56,19 @@ class Watchlist:
 
 def watchlist_path(rel: str | Path | None = None) -> Path:
     return resolve_under_root(rel or DEFAULT_WATCHLIST_REL)
+
+
+def active_pair(wl: Watchlist) -> str:
+    """The one subject for Decision focus and heavy work.
+
+    A stored active pair is used when it is still on the list. Otherwise the
+    first pair, or an empty string when the watchlist has no pairs.
+    """
+    symbols = wl.pair_symbols()
+    stored = str(wl.active or "").strip().upper()
+    if stored and stored in symbols:
+        return stored
+    return symbols[0] if symbols else ""
 
 
 def normalize_pair(raw: str) -> str:
@@ -162,11 +176,19 @@ def watchlist_from_mapping(data: dict[str, Any] | None, *, path: Path | None = N
         items = discover_cached_pairs()
     else:
         items = [_item_from_raw(p) for p in raw_pairs]
+    active = None
+    raw_active = data.get("active")
+    if raw_active:
+        try:
+            active = normalize_pair(str(raw_active))
+        except WatchlistError:
+            active = None
     return Watchlist(
         pairs=_dedupe(items),
         refresh_seconds=refresh,
         interval=interval,
         path=str(path) if path else None,
+        active=active,
     )
 
 
@@ -198,9 +220,12 @@ def load_watchlist(
 def save_watchlist(wl: Watchlist, path: str | Path | None = None) -> Path:
     p = Path(path) if path is not None else (Path(wl.path) if wl.path else watchlist_path())
     p.parent.mkdir(parents=True, exist_ok=True)
+    resolved = active_pair(wl)
+    wl.active = resolved or None
     payload: dict[str, Any] = {
         "refresh_seconds": int(wl.refresh_seconds),
         "interval": wl.interval,
+        "active": wl.active,
         "pairs": [
             item.pair if item.interval is None else {"pair": item.pair, "interval": item.interval}
             for item in wl.pairs
@@ -220,14 +245,21 @@ def add_pair(wl: Watchlist, pair: str, interval: str | None = None) -> Watchlist
     item = WatchItem(pair=normalize_pair(pair), interval=interval or None)
     if any(p.pair == item.pair and p.interval == item.interval for p in wl.pairs):
         return wl
+    # A new pair becomes the subject only when the list was empty.
+    empty = not wl.pairs
     # Replace a same-pair global row when adding a timeframe override, and vice versa.
     wl.pairs = [p for p in wl.pairs if p.pair != item.pair] + [item]
+    if empty:
+        wl.active = item.pair
     return wl
 
 
 def remove_pair(wl: Watchlist, pair: str) -> Watchlist:
     key = normalize_pair(pair)
+    current = active_pair(wl)
     wl.pairs = [p for p in wl.pairs if p.pair != key]
+    if current == key:
+        wl.active = wl.pairs[0].pair if wl.pairs else None
     return wl
 
 

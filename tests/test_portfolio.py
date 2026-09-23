@@ -90,6 +90,80 @@ def _suggest(**over: object) -> dict:
     return base
 
 
+def test_auto_without_rows_builds_only_the_active_pair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    watch = tmp_path / "watchlist.yaml"
+    watch.write_text(
+        "refresh_seconds: 60\nactive: GBPUSD\npairs:\n- EURUSD\n- GBPUSD\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    monkeypatch.setenv("FORX_WATCHLIST_PATH", str(watch))
+    monkeypatch.setenv("FORX_PAPER_STORE", str(store))
+    monkeypatch.setenv("FORX_CONSENSUS_NETWORK", "0")
+    built: list[str] = []
+
+    def _build(pair, *_a, **_k):
+        built.append(str(pair).upper())
+        row = _row("HOLD", confidence=None)
+        row.pair = str(pair).upper()
+        return row
+
+    monkeypatch.setattr("api.deskdata.build_board_row", _build)
+    monkeypatch.setattr("api.consensus.read_consensus", lambda *_a, **_k: {"forecasters": []})
+    set_auto_enabled(False, cfg=cfg)
+    result = run_auto_paper(cfg, now=T0)
+    assert built == ["GBPUSD"]
+    assert result["events"] == []
+    book = portfolio_payload(cfg, sync=False, now=T0)
+    assert book["active_pair"] == "GBPUSD"
+
+
+def test_inactive_open_stays_frozen_until_that_pair_is_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    watch = tmp_path / "watchlist.yaml"
+    watch.write_text(
+        "refresh_seconds: 60\nactive: GBPUSD\npairs:\n- EURUSD\n- GBPUSD\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    monkeypatch.setenv("FORX_WATCHLIST_PATH", str(watch))
+    _install(monkeypatch, store, _suggest(), 1.05)
+    from forex_lab.broker import make_broker
+
+    broker = make_broker(cfg, path=store)
+    broker.submit(
+        "BUY",
+        "EURUSD",
+        size=1.0,
+        sl=1.09,
+        tp=1.12,
+        price=1.10,
+        timeframe="1h",
+        horizon=0,
+        timestamp=T0.isoformat(),
+        source="manual",
+        strategy_id="brief",
+        strategy_name="Brief",
+    )
+
+    def _build(pair, *_a, **_k):
+        row = _row("SELL", confidence=0.9)
+        row.pair = str(pair).upper()
+        row.close = 1.05
+        return row
+
+    monkeypatch.setattr("api.deskdata.build_board_row", _build)
+    result = run_auto_paper(cfg, now=T0 + timedelta(minutes=5))
+    assert result["events"] == []
+    book = portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=5))
+    assert len(book["open"]) == 1
+    assert book["open"][0]["pair"] == "EURUSD"
+    assert book["closed"] == []
+
+
 def test_human_duration_reads_in_hours_and_minutes():
     start = T0
     assert human_duration(start, start + timedelta(hours=2, minutes=15)) == "2h 15m"

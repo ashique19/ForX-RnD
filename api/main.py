@@ -32,6 +32,7 @@ from api.deskdata import (
     refresh_active_pair,
     refresh_watchlist,
     run_pipeline_pair,
+    set_active_pair,
     watchlist_json,
 )
 from api.learnings import MAX_LIMIT, learnings_payload
@@ -52,6 +53,10 @@ _ORIGINS = [
 class AddPairBody(BaseModel):
     pair: str = Field(..., min_length=1)
     interval: str | None = None
+
+
+class ActivePairBody(BaseModel):
+    pair: str = Field(..., min_length=1)
 
 
 class PaperOrderBody(BaseModel):
@@ -157,6 +162,13 @@ def create_app() -> FastAPI:
     def delete_watchlist(pair: str) -> dict:
         try:
             return mutate_watchlist(pair, remove=True)
+        except WatchlistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/watchlist/active")
+    def post_watchlist_active(body: ActivePairBody) -> dict:
+        try:
+            return set_active_pair(body.pair)
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

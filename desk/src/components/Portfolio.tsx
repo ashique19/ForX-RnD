@@ -252,7 +252,9 @@ export function PortfolioPanel() {
     <section className="panel portfolio" aria-label="Portfolio">
       <header className="panel-hd">
         <h2>Portfolio</h2>
-        <span className="meta">paper · Asia/Dhaka</span>
+        <span className="meta">
+          paper · Asia/Dhaka{feed?.active_pair ? ` · active ${feed.active_pair}` : ""}
+        </span>
         <span className="spacer" />
         <label className="auto-toggle">
           <input
@@ -323,6 +325,8 @@ export function PortfolioPanel() {
           : "Auto is paused. Open paper trades stay until you close the champion book from the signal brief. Pausing stops every auto open and close."}
         {" "}
         The hourly number is the cap for each strategy book. The confidence minimum is shared. The Decision headline follows the champion. Promoting a champion is manual; auto-promote can come later.
+        {" "}
+        Auto paper opens and manages {feed?.active_pair || "the active pair"} only. Other open books stay frozen until that pair is active again.
         {feed?.generated_at_dhaka ? ` Updated ${feed.generated_at_dhaka}.` : ""}
       </p>
       {feed?.block_status ? (

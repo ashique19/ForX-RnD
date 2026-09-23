@@ -204,6 +204,11 @@ export const api = {
       body: JSON.stringify({ pair, interval: interval || null }),
     }),
   removePair: (pair: string) => request<Watchlist>(`/watchlist/${encodeURIComponent(pair)}`, { method: "DELETE" }),
+  setActivePair: (pair: string) =>
+    request<Watchlist>("/watchlist/active", {
+      method: "POST",
+      body: JSON.stringify({ pair }),
+    }),
   board: () => request<Board>("/board"),
   brief: (pair: string, tf?: string) =>
     request<Brief>(`/brief/${encodeURIComponent(pair)}${tf ? `?tf=${encodeURIComponent(tf)}` : ""}`),
@@ -223,7 +228,7 @@ export const api = {
       `/refresh/${encodeURIComponent(pair)}${interval ? `?interval=${encodeURIComponent(interval)}` : ""}`,
       { method: "POST" },
     ),
-  /** Watchlist OHLCV only. ``null`` asks the API for every saved pair. Does not run the pipeline. */
+  /** Watchlist OHLCV only. ``null`` asks the API for the active pair. Does not run the pipeline. */
   refreshWatchlist: (pairs: { pair: string; interval: string }[] | null, active?: string | null) =>
     request<RefreshBatch>("/refresh", {
       method: "POST",

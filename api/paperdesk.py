@@ -31,6 +31,7 @@ from forex_lab.ui.board import (
     paper_submit_block_reason,
     paper_submit_risk_defaults,
 )
+from forex_lab.ui.watchlist import active_pair
 
 _PAPER_LOCK = threading.RLock()
 _SECONDS_IN_STAMP = re.compile(r"\d{1,2}:\d{2}:\d{2}")
@@ -434,9 +435,25 @@ def _block_status(
 
 
 def _watch_rows(cfg: dict[str, Any]) -> list[Any]:
+    """One board row for the active pair. Inactive pairs are not built here."""
     desk = _desk()
     wl = desk.load_wl(cfg)
-    return desk.build_board_rows(wl, cfg, refresh_data=False, regenerate=False)
+    symbol = active_pair(wl)
+    if not symbol:
+        return []
+    default = wl.lab_interval(cfg)
+    item = next((pair for pair in wl.pairs if pair.pair == symbol), None)
+    if item is None:
+        return []
+    return [
+        desk.build_board_row(
+            symbol,
+            cfg,
+            interval=item.resolved_interval(default),
+            refresh_data=False,
+            regenerate=False,
+        )
+    ]
 
 
 def _book_event(symbol: str, text: str, strategy_id: str) -> str:
@@ -648,8 +665,12 @@ def run_auto_paper(
     Stops, targets, duration, and opposite closes still run at the cap and
     below the confidence minimum. The follow-up open waits until the new
     side is eligible and under that book's cap. Manual orders land on the
-    champion book and sit outside this budget. Per-pair caps are not
-    implemented. Promoting a champion does not clear this memory.
+    champion book and sit outside this budget. Promoting a champion does not
+    clear this memory.
+
+    When ``rows`` is omitted, only the active watchlist pair is built and
+    managed. Rows passed in are not filtered. Open books on other pairs stay
+    frozen until that pair is active again.
     """
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
@@ -915,8 +936,11 @@ def portfolio_payload(
         opens_this_hour = _auto_opens_in_window(broker, clock, champion)
         cap = int(auto["max_opens_per_hour"])
         min_confidence = int(auto["min_confidence"])
+    active = ""
     try:
-        refresh = int(desk.load_wl(cfg).refresh_seconds)
+        wl = desk.load_wl(cfg)
+        refresh = int(wl.refresh_seconds)
+        active = active_pair(wl)
     except Exception:
         refresh = int((cfg.get("board") or {}).get("realtime_seconds") or 60)
     rate_limited = opens_this_hour >= cap
@@ -938,6 +962,7 @@ def portfolio_payload(
             blocks=list(auto_run.get("blocks") or []),
             min_confidence=min_confidence,
         ),
+        "active_pair": active,
         "refresh_seconds": max(60, refresh),
         "generated_at_dhaka": fmt_display(clock, cfg, seconds=True),
         "open": open_rows,

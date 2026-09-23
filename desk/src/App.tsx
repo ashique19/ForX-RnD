@@ -79,7 +79,7 @@ export function App() {
   const [board, setBoard] = useState<Board | null>(null);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [ohlcv, setOhlcv] = useState<Ohlcv | null>(null);
-  const [selected, setSelected] = useState("EURUSD");
+  const [selected, setSelected] = useState("");
   const [rowTf, setRowTf] = useState("1h");
   const [chartTf, setChartTf] = useState("1h");
   const [realtime, setRealtime] = useState(true);
@@ -136,7 +136,17 @@ export function App() {
       intervalRef.current = refreshIntervalSeconds(next.data_refresh_seconds);
     }
     setBoard(merged);
-    setSelected((cur) => (rows.some((row) => row.pair === cur) ? cur : rows[0]?.pair ?? cur));
+    const cur = selectedRef.current;
+    const stillHere = Boolean(cur) && rows.some((row) => row.pair === cur);
+    if (!stillHere) {
+      const active = String(next.active || "").toUpperCase();
+      const pick = rows.find((row) => row.pair === active) ?? rows[0];
+      setSelected(pick?.pair ?? "");
+      if (pick?.interval) {
+        setRowTf(pick.interval);
+        setChartTf(pick.interval);
+      }
+    }
     setError(null);
     setStripProblem((cur) => (cur === "unreachable" ? null : cur));
     setLastOkMs((cur) => cur ?? newestFetchMs(rows, Date.now()));
@@ -240,7 +250,7 @@ export function App() {
     const arm = (seconds: number) => setNextAt(Date.now() + Math.max(1, seconds) * 1000);
     try {
       const targets = boardReady.current
-        ? collectTargets(rowsRef.current, selectedRef.current, chartTfRef.current, rowTfRef.current)
+        ? collectTargets(selectedRef.current, chartTfRef.current, rowTfRef.current)
         : null;
       const result = await api.refreshWatchlist(targets, selectedRef.current);
       if (!result || !Array.isArray(result.results)) {
@@ -457,7 +467,7 @@ export function App() {
                 bias={brief?.bias ?? "—"}
                 confidence={brief?.confidence ?? null}
                 biasTone={brief?.bias_tone ?? "flat"}
-                headline={brief?.headline ?? `${selected} — loading`}
+                headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
                 sub={brief?.sub ?? "Asia/Dhaka · research desk"}
                 hourly={brief?.hourly ?? null}
                 daily={brief?.daily ?? null}
@@ -497,27 +507,34 @@ export function App() {
               returnFocusRef={watchlistButtonRef}
               rows={rows}
               selected={selected}
-              onSelect={(row) => {
+              onSelect={async (row) => {
+                try {
+                  await api.setActivePair(row.pair);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Could not set the active pair.");
+                  return;
+                }
                 setSelected(row.pair);
                 setRowTf(row.interval);
                 setChartTf(row.interval);
               }}
               onAdd={async (pair, interval) => {
                 const wl = await api.addPair(pair, interval || undefined);
-                const norm = pair.toUpperCase().replace(/[^A-Z]/g, "");
-                const added = wl.pairs.find((item) => item.pair === norm);
-                if (added) {
-                  setSelected(added.pair);
-                  setRowTf(added.interval);
-                  setChartTf(added.interval);
+                const focus = wl.pairs.find((item) => item.pair === wl.active);
+                if (focus) {
+                  setSelected(focus.pair);
+                  setRowTf(focus.interval);
+                  setChartTf(focus.interval);
                 }
                 setTick((n) => n + 1);
               }}
               onRemove={async (pair) => {
-                await api.removePair(pair);
-                if (pair === selected) {
-                  const rest = rows.filter((row) => row.pair !== pair);
-                  setSelected(rest[0]?.pair ?? "");
+                const wl = await api.removePair(pair);
+                const focus = wl.pairs.find((item) => item.pair === wl.active);
+                setSelected(focus?.pair ?? "");
+                if (focus) {
+                  setRowTf(focus.interval);
+                  setChartTf(focus.interval);
                 }
                 setTick((n) => n + 1);
               }}

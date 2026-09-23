@@ -908,6 +908,19 @@
       white-space: nowrap;
     }
     .alerts.api-down .btn { flex-shrink: 0; }
+    .wl-active {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 0 5px;
+      border-radius: 4px;
+      border: 1px solid var(--green-border);
+      background: var(--green-bg);
+      color: #067647;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      vertical-align: 1px;
+    }
     .wl-remove {
       border: 1px solid var(--border-strong);
       background: var(--surface);

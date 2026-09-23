@@ -56,6 +56,7 @@ from forex_lab.ui.quote import quote_digits
 from forex_lab.ui.watchlist import (
     KNOWN_INTERVALS,
     WatchlistError,
+    active_pair,
     add_pair,
     load_watchlist,
     normalize_pair,
@@ -349,6 +350,7 @@ def watchlist_json(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "interval": wl.lab_interval(cfg),
         "count": len(wl.pairs),
         "assets": assets_payload(cfg)["assets"],
+        "active": active_pair(wl),
         "pairs": [
             {
                 "pair": item.pair,
@@ -359,6 +361,18 @@ def watchlist_json(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             for item in wl.pairs
         ],
     }
+
+
+def set_active_pair(pair: str) -> dict[str, Any]:
+    """Persist the one watchlist subject. Unknown or off-list pairs are rejected."""
+    cfg = app_config()
+    wl = load_wl(cfg)
+    symbol = normalize_pair(pair)
+    if not wl.contains(symbol):
+        raise WatchlistError(f"{symbol} is not on the watchlist")
+    wl.active = symbol
+    save_watchlist(wl, watchlist_path())
+    return watchlist_json(cfg)
 
 
 def mutate_watchlist(pair: str, *, interval: str | None = None, remove: bool = False) -> dict[str, Any]:
@@ -674,7 +688,14 @@ def board_payload(
 ) -> dict[str, Any]:
     cfg = cfg if cfg is not None else app_config()
     wl = load_wl(cfg)
-    rows = build_board_rows(wl, cfg, refresh_data=refresh_data, regenerate=True if refresh_data else False)
+    focus = active_pair(wl)
+    rows = build_board_rows(
+        wl,
+        cfg,
+        refresh_data=refresh_data,
+        regenerate=True if refresh_data else False,
+        generate_pairs={focus} if focus else set(),
+    )
     bundle = load_calendar(cfg)
     events = list(bundle.events)
     clock = _clock(now) if now is not None else None
@@ -716,7 +737,9 @@ def board_payload(
         from api.paperdesk import run_auto_paper
 
         # Same cadence as the board poll — not a separate loop.
-        run_auto_paper(cfg, rows=rows, now=now)
+        # Only the active pair is opened or managed. Other books stay frozen.
+        auto_rows = [row for row in rows if str(row.pair).upper() == focus] if focus else []
+        run_auto_paper(cfg, rows=auto_rows, now=now)
     except Exception:
         # A paper-journal failure must not blank the decision board.
         pass
@@ -726,6 +749,7 @@ def board_payload(
         "refreshed_at_dhaka": fmt_display(datetime.now(timezone.utc), cfg, seconds=True),
         "refresh_seconds": int(wl.refresh_seconds),
         "data_refresh_seconds": data_refresh_seconds(),
+        "active": focus,
         "count": len(rows),
         "rows": [row_json(r, now=now, cfg=cfg) for r in rows],
         "alerts": alerts,
@@ -1195,20 +1219,18 @@ def _note_failed_refresh(row: Any, reason: str) -> None:
         row.buy_sell = "—"
 
 
-def _watch_targets(cfg: dict[str, Any]) -> list[tuple[str, str]]:
+def _active_targets(cfg: dict[str, Any]) -> list[tuple[str, str]]:
+    """The active pair and its saved interval. Empty when nothing is watched."""
     wl = load_wl(cfg)
+    symbol = active_pair(wl)
+    if not symbol:
+        return []
     default = wl.lab_interval(cfg)
-    out: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for item in wl.pairs:
-        symbol = normalize_pair(item.pair)
-        iv = parse_interval(item.resolved_interval(default), default=default)
-        key = (symbol, iv)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(key)
-    return out
+    item = next((pair for pair in wl.pairs if pair.pair == symbol), None)
+    if item is None:
+        return []
+    iv = parse_interval(item.resolved_interval(default), default=default)
+    return [(symbol, iv)]
 
 
 def _hourly_before_daily(targets: list[tuple[str, str]], symbol: str) -> list[tuple[str, str]]:
@@ -1315,16 +1337,19 @@ def refresh_watchlist(
     cfg: dict[str, Any] | None = None,
     active: str | None = None,
 ) -> dict[str, Any]:
-    """Refresh OHLCV for the watchlist (or an explicit pair list).
+    """Refresh OHLCV for the active pair, or for an explicit pair list.
 
     Market data only. Does not call the research pipeline.
-    ``pairs is None`` uses the saved watchlist. An empty list refreshes nothing.
-    ``active`` is the one Decision subject: that pair also gets 1h and 1d.
-    Other pairs stay on the interval they were asked for.
+    ``pairs is None`` refreshes the one active pair (saved interval, plus 1h
+    and 1d). An empty list refreshes nothing. A non-empty list refreshes those
+    pairs; ``active`` also gets 1h and 1d and other pairs stay on their interval.
     """
     cfg = cfg if cfg is not None else app_config()
-    targets = _watch_targets(cfg) if pairs is None else _dedupe_targets(pairs, cfg)
-    targets = expand_active_intervals(targets, active)
+    targets = _active_targets(cfg) if pairs is None else _dedupe_targets(pairs, cfg)
+    focus = active
+    if pairs is None and not str(focus or "").strip():
+        focus = active_pair(load_wl(cfg)) or None
+    targets = expand_active_intervals(targets, focus)
     results = [refresh_one(symbol, interval=iv, cfg=cfg) for symbol, iv in targets]
     updated = any(not item.get("rate_limited") and not item.get("fetch_failed") for item in results)
     hard_fail = [item for item in results if item.get("fetch_failed") and not _yf_rate_limited(item)]

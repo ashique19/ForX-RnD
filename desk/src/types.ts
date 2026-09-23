@@ -16,6 +16,8 @@ export interface Watchlist {
   refresh_seconds: number;
   interval: string;
   count: number;
+  /** The one pair Decision focus and auto paper follow. */
+  active?: string;
   pairs: WatchPair[];
   assets?: AssetOption[];
 }
@@ -56,6 +58,8 @@ export interface Board {
   refresh_seconds: number;
   /** Server floor for auto market-data refresh (FORX_REFRESH_MIN_S, default 18). */
   data_refresh_seconds?: number;
+  /** Active watchlist pair. Heavy board work follows this subject. */
+  active?: string;
   count: number;
   rows: BoardRow[];
   alerts: AlertItem[];
@@ -417,6 +421,8 @@ export interface PortfolioFeed {
   rate_status: string | null;
   /** Paused, rate-limited, below threshold, or gated. Null when auto can open. */
   block_status: string | null;
+  /** Watchlist subject auto paper opens and manages. */
+  active_pair?: string;
   refresh_seconds: number;
   generated_at_dhaka: string;
   open: PortfolioRow[];

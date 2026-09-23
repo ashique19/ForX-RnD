@@ -444,7 +444,7 @@ def test_refresh_empty_watchlist_does_not_fetch(client: TestClient, monkeypatch:
     assert body["reason"] is None
 
 
-def test_refresh_watchlist_defaults_to_saved_pairs(
+def test_refresh_watchlist_defaults_to_the_active_pair(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     (tmp_path / "watchlist.yaml").write_text(
@@ -461,8 +461,83 @@ def test_refresh_watchlist_defaults_to_saved_pairs(
     monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
     res = client.post("/refresh", json={})
     assert res.status_code == 200
-    assert seen == [("EURUSD", "1h"), ("USDJPY", "1d")]
-    assert [item["pair"] for item in res.json()["results"]] == ["EURUSD", "USDJPY"]
+    # Active pair only, and that pair gets 1h then 1d. USDJPY is not refreshed.
+    assert seen == [("EURUSD", "1h"), ("EURUSD", "1d")]
+    assert [item["pair"] for item in res.json()["results"]] == ["EURUSD", "EURUSD"]
+
+
+def test_set_active_pair_rejects_unknown_and_persists(client: TestClient, tmp_path: Path):
+    (tmp_path / "watchlist.yaml").write_text(
+        "refresh_seconds: 60\npairs:\n- EURUSD\n- GBPUSD\n",
+        encoding="utf-8",
+    )
+    missing = client.post("/watchlist/active", json={"pair": "USDJPY"})
+    assert missing.status_code == 400
+    junk = client.post("/watchlist/active", json={"pair": "nope"})
+    assert junk.status_code == 400
+    ok = client.post("/watchlist/active", json={"pair": "gbp/usd"})
+    assert ok.status_code == 200
+    assert ok.json()["active"] == "GBPUSD"
+    assert client.get("/watchlist").json()["active"] == "GBPUSD"
+    removed = client.delete("/watchlist/GBPUSD")
+    assert removed.status_code == 200
+    assert removed.json()["active"] == "EURUSD"
+
+
+def test_board_limits_generation_and_auto_to_the_active_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FORX_WATCHLIST_PATH", str(tmp_path / "watchlist.yaml"))
+    monkeypatch.setenv("FORX_ALERT_STATE", str(tmp_path / "alerts.json"))
+    monkeypatch.setenv("FORX_PAPER_STORE", str(tmp_path / "paper.json"))
+    monkeypatch.setenv("FORX_CONSENSUS_NETWORK", "0")
+    (tmp_path / "watchlist.yaml").write_text(
+        "refresh_seconds: 60\nactive: GBPUSD\npairs:\n- EURUSD\n- GBPUSD\n",
+        encoding="utf-8",
+    )
+    from forex_lab.calendar import CalendarBundle
+    from forex_lab.ui.board import BoardRow
+    from api.deskdata import board_payload
+
+    def _rows(_wl, _cfg, **kwargs):
+        assert kwargs["generate_pairs"] == {"GBPUSD"}
+        assert kwargs["regenerate"] is False
+        return [
+            BoardRow(
+                pair="EURUSD",
+                timeframe="1h",
+                buy_sell="BUY",
+                target="n/a",
+                signal_details="",
+                status="ready",
+                validity="OK",
+                close=1.1,
+            ),
+            BoardRow(
+                pair="GBPUSD",
+                timeframe="1h",
+                buy_sell="SELL",
+                target="n/a",
+                signal_details="",
+                status="ready",
+                validity="OK",
+                close=1.2,
+            ),
+        ]
+
+    seen: list[list[str]] = []
+
+    def _auto(_cfg, rows=None, now=None):
+        seen.append([row.pair for row in (rows or [])])
+        return {"events": [], "errors": [], "blocks": []}
+
+    monkeypatch.setattr("api.deskdata.build_board_rows", _rows)
+    monkeypatch.setattr("api.deskdata.fetch_calendar", lambda *_a, **_k: CalendarBundle())
+    monkeypatch.setattr("api.paperdesk.run_auto_paper", _auto)
+    payload = board_payload()
+    assert payload["active"] == "GBPUSD"
+    assert seen == [["GBPUSD"]]
+    assert [row["pair"] for row in payload["rows"]] == ["EURUSD", "GBPUSD"]
 
 
 def test_refresh_active_fetches_1h_and_1d_only_for_that_pair(

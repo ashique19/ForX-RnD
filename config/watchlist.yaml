@@ -2,5 +2,6 @@
 # Survives app reruns. Edit here or via the dashboard Add / Remove controls.
 refresh_seconds: 60
 interval: null
+active: EURUSD
 pairs:
   - EURUSD
