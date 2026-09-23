@@ -81,6 +81,47 @@ _OHLC_AGG = {
 class HistoryError(RuntimeError):
     """Download or cache error. Never replaced with synthetic prices."""
 
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+_REASON_LABELS = {
+    "download": "Download failed",
+    "decode": "Decode failed",
+    "insufficient_bars": "Not enough bars",
+    "train": "Train failed",
+}
+
+
+def explain_failure(exc: BaseException) -> tuple[str, str]:
+    """Map an exception to a reason code and a sentence that is never blank."""
+    text = " ".join(str(exc).split()).strip()
+    reason = getattr(exc, "reason", None)
+    if reason not in _REASON_LABELS:
+        reason = _infer_failure_reason(exc, text)
+    label = _REASON_LABELS.get(str(reason), "Failed")
+    if not text:
+        text = f"{label}: {exc.__class__.__name__}"
+    elif label.lower() not in text.lower():
+        text = f"{label}: {text}"
+    if reason not in _REASON_LABELS:
+        reason = "error"
+    return str(reason), text
+
+
+def _infer_failure_reason(exc: BaseException, text: str) -> str:
+    blob = f"{exc.__class__.__name__} {text}".lower()
+    if any(token in blob for token in ("lzma", "decode", "decompress", "badzip", "unzip", "not a zip")):
+        return "decode"
+    if any(token in blob for token in ("unreachable", "http", "timed out", "timeout", "network", "connection", "request failed")):
+        return "download"
+    if any(token in blob for token in ("not enough", "no bars", "no cached", "returned no", "returned nothing", "insufficient", "empty")):
+        return "insufficient_bars"
+    if any(token in blob for token in ("train failed", "fit_predict", "xgboost", "sklearn", "estimator")):
+        return "train"
+    return "error"
+
 
 def replay_cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:
     raw = dict((cfg or {}).get("replay") or {})
@@ -184,8 +225,8 @@ def parse_bi5(blob: bytes, hour: datetime, point: int) -> pd.DataFrame:
         return _empty_ticks()
     try:
         raw = lzma.decompress(blob)
-    except lzma.LZMAError:
-        return _empty_ticks()
+    except lzma.LZMAError as exc:
+        raise HistoryError(f"Dukascopy bi5 could not be decompressed ({exc})", reason="decode") from exc
     width = _TICK_DTYPE.itemsize
     n = len(raw) // width
     if n <= 0:
@@ -474,7 +515,10 @@ def pull_history(
         if grain_df is not None and not grain_df.empty and (covers_range(grain_df, start_dt, end_dt) or which == SOURCE_DUKA):
             used = SOURCE_DUKA
         elif which == SOURCE_DUKA:
-            raise HistoryError(f"Dukascopy returned no {pair_u} bars for {start_dt.date()} -> {end_dt.date()}")
+            raise HistoryError(
+                f"Dukascopy returned no {pair_u} bars for {start_dt.date()} -> {end_dt.date()}",
+                reason="insufficient_bars",
+            )
         elif grain_df is None or grain_df.empty or not covers_range(grain_df, start_dt, end_dt):
             _emit(progress, phase="pull", message=f"Dukascopy incomplete for {pair_u}; trying HistData", fraction=0.0)
             grain_df = _pull_histdata(
@@ -502,7 +546,8 @@ def pull_history(
     if grain_df is None or grain_df.empty:
         raise HistoryError(
             f"No historical bars for {pair_u} {iv}. Dukascopy and HistData both returned nothing. "
-            "Prices were not invented."
+            "Prices were not invented.",
+            reason="insufficient_bars",
         )
     _save_bars(pair_u, grain, grain_df, used, cfg)
     frame = _finalize(grain_df, iv, pair_u, used, cfg)
@@ -517,7 +562,7 @@ def _finalize(grain_df: pd.DataFrame, interval: str, pair: str, source: str, cfg
         return grain_df
     out = resample_bars(grain_df, iv)
     if out.empty:
-        raise HistoryError(f"Resample of {pair} {grain} -> {iv} produced no bars")
+        raise HistoryError(f"Resample of {pair} {grain} -> {iv} produced no bars", reason="insufficient_bars")
     _save_bars(pair, iv, out, source, cfg)
     return out
 
@@ -562,7 +607,10 @@ def load_history(
         grain = grain_for(iv)
         grain_df = load_history_csv(history_path(pair, grain, cfg))
         if grain_df.empty:
-            raise HistoryError(f"No cached history for {str(pair).upper()} {iv}. Pull it first.")
+            raise HistoryError(
+                f"No cached history for {str(pair).upper()} {iv}. Pull it first.",
+                reason="insufficient_bars",
+            )
         meta = load_meta(pair, grain, cfg)
         df = _finalize(grain_df, iv, str(pair).upper(), str(meta.get("source") or SOURCE_DUKA), cfg)
     if start is not None:
@@ -570,7 +618,10 @@ def load_history(
     if end is not None:
         df = df.loc[df.index <= _parse_bound(end, default=_now_closed_hour()) + timedelta(hours=1)]
     if df.empty:
-        raise HistoryError(f"Cached {str(pair).upper()} {iv} has no bars in the requested range.")
+        raise HistoryError(
+            f"Cached {str(pair).upper()} {iv} has no bars in the requested range.",
+            reason="insufficient_bars",
+        )
     return df
 
 
@@ -601,6 +652,7 @@ def _pull_dukascopy(
     rows: list[pd.DataFrame] = []
     errors = 0
     failed: list[datetime] = []
+    causes: list[BaseException] = []
     done = 0
     lock = threading.Lock()
     last_emit = 0.0
@@ -610,11 +662,13 @@ def _pull_dukascopy(
         try:
             blob = fetch_hour(hour) if fetch_hour is not None else _download_bi5(pair, hour)
             bars = ticks_to_bars(parse_bi5(blob, hour, point), rule) if blob else _empty_bars()
-        except Exception:
+        except Exception as exc:
             bars = _empty_bars()
             with lock:
                 errors += 1
                 failed.append(hour)
+                if len(causes) < 3:
+                    causes.append(exc)
         with lock:
             done += 1
             if bars is not None and not bars.empty:
@@ -643,7 +697,9 @@ def _pull_dukascopy(
             try:
                 blob = _download_bi5(pair, hour)
                 bars = ticks_to_bars(parse_bi5(blob, hour, point), rule) if blob else _empty_bars()
-            except Exception:
+            except Exception as exc:
+                if len(causes) < 3:
+                    causes.append(exc)
                 continue
             if bars is not None and not bars.empty:
                 rows.append(bars)
@@ -653,7 +709,20 @@ def _pull_dukascopy(
         fresh = fresh[~fresh.index.duplicated(keep="last")].sort_index()
     merged = _merge(existing, fresh)
     if merged.empty and errors and fetch_hour is None:
-        raise HistoryError(f"Dukascopy downloads failed for {pair} ({errors} hours errored, 0 bars)")
+        first = causes[0] if causes else None
+        detail = ""
+        if first is not None:
+            detail = " ".join(str(first).split()).strip() or first.__class__.__name__
+        reason = getattr(first, "reason", None) if first is not None else "download"
+        if reason not in _REASON_LABELS:
+            reason = _infer_failure_reason(first, detail) if first is not None else "download"
+        if reason not in _REASON_LABELS:
+            reason = "download"
+        tail = f"{detail} " if detail else ""
+        raise HistoryError(
+            f"Dukascopy {pair}: {tail}({errors} hours failed, 0 bars)",
+            reason=str(reason),
+        )
     if not merged.empty:
         _save_bars(pair, grain, merged, SOURCE_DUKA, cfg)
     return merged
@@ -692,9 +761,9 @@ def _download_bi5(pair: str, hour: datetime) -> bytes | None:
             last_status = "network"
         time.sleep(0.4 * (attempt + 1))
     if last_status == "network":
-        raise HistoryError(f"Dukascopy unreachable for {url}")
+        raise HistoryError(f"Dukascopy unreachable for {url}", reason="download")
     if last_status not in (None, 404, 200):
-        raise HistoryError(f"Dukascopy HTTP {last_status} for {url}")
+        raise HistoryError(f"Dukascopy HTTP {last_status} for {url}", reason="download")
     return None
 
 
@@ -710,7 +779,7 @@ def _pull_histdata(
 ) -> pd.DataFrame:
     months = _iter_months(start, end)
     if not months:
-        raise HistoryError("HistData range is empty")
+        raise HistoryError("HistData range is empty", reason="insufficient_bars")
     parts: list[pd.DataFrame] = []
     for i, (year, month) in enumerate(months, start=1):
         _emit(
@@ -731,14 +800,14 @@ def _pull_histdata(
         if not m1.empty:
             parts.append(m1)
     if not parts:
-        raise HistoryError(f"HistData returned no minute bars for {pair}")
+        raise HistoryError(f"HistData returned no minute bars for {pair}", reason="insufficient_bars")
     m1 = pd.concat(parts)
     m1 = m1[~m1.index.duplicated(keep="last")].sort_index()
     m1 = m1.loc[(m1.index >= pd.Timestamp(start)) & (m1.index <= pd.Timestamp(end) + pd.Timedelta(hours=1))]
     rule = "15min" if grain == GRAIN_15M else "1h"
     bars = resample_bars(m1, "15m" if rule == "15min" else "1h")
     if bars.empty:
-        raise HistoryError(f"HistData resample produced no {grain} bars for {pair}")
+        raise HistoryError(f"HistData resample produced no {grain} bars for {pair}", reason="insufficient_bars")
     _save_bars(pair, grain, bars, SOURCE_HIST, cfg)
     return bars
 
@@ -772,7 +841,7 @@ def _download_histdata_month(pair: str, year: int, month: int) -> bytes | None:
                 headers={"Referer": page},
             )
     except Exception as exc:
-        raise HistoryError(f"HistData request failed ({exc})") from exc
+        raise HistoryError(f"HistData request failed ({exc})", reason="download") from exc
     if posted.status_code != 200 or not posted.content:
         return None
     if posted.content[:1] == b"<":
@@ -782,11 +851,14 @@ def _download_histdata_month(pair: str, year: int, month: int) -> bytes | None:
 
 def _zip_or_text(blob: bytes) -> str:
     if blob[:2] == b"PK":
-        with ZipFile(BytesIO(blob)) as zf:
-            names = [n for n in zf.namelist() if not n.endswith("/")]
-            if not names:
-                return ""
-            return zf.read(names[0]).decode("utf-8", errors="replace")
+        try:
+            with ZipFile(BytesIO(blob)) as zf:
+                names = [n for n in zf.namelist() if not n.endswith("/")]
+                if not names:
+                    return ""
+                return zf.read(names[0]).decode("utf-8", errors="replace")
+        except Exception as exc:
+            raise HistoryError(f"HistData zip could not be decoded ({exc})", reason="decode") from exc
     return blob.decode("utf-8", errors="replace")
 
 

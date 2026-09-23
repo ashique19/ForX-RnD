@@ -49,7 +49,11 @@ SignalFn = Callable[[str, pd.Timestamp, pd.DataFrame], str]
 
 
 class ReplayError(RuntimeError):
-    """Replay cannot run (not enough history, bad clock move)."""
+    """Replay cannot run (not enough history, train failure, bad clock move)."""
+
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class LookaheadError(ReplayError):
@@ -61,7 +65,7 @@ class ReplayClock:
 
     def __init__(self, frame: pd.DataFrame, as_of: object | None = None) -> None:
         if frame is None or frame.empty:
-            raise ReplayError("replay frame is empty")
+            raise ReplayError("replay frame is empty", reason="insufficient_bars")
         ordered = frame.sort_index()
         ordered = ordered[~ordered.index.duplicated(keep="last")]
         self.frame = ordered
@@ -458,13 +462,13 @@ def run_replay(
     labels that are ready at the clock, or from a causal SMA.
     """
     if df is None or df.empty:
-        raise ReplayError("no bars to replay")
+        raise ReplayError("no bars to replay", reason="insufficient_bars")
     pair_u = str(pair).upper()
     frame = df.sort_index()
     frame = frame[~frame.index.duplicated(keep="last")]
     for col in ("Open", "High", "Low", "Close"):
         if col not in frame.columns:
-            raise ReplayError(f"history is missing {col}")
+            raise ReplayError(f"history is missing {col}", reason="insufficient_bars")
     cfg = cfg or {}
     rc = replay_cfg(cfg)
     wf = dict(cfg.get("walk_forward") or {})
@@ -509,12 +513,13 @@ def run_replay(
         feats = feats.dropna(axis=1, how="all").dropna(axis=0, how="any")
         labels = build_labels(frame, cfg)
         if feats.empty:
-            raise ReplayError(f"Not enough bars to build features for {pair_u}")
+            raise ReplayError(f"Not enough bars to build features for {pair_u}", reason="insufficient_bars")
         first_i = _first_decision_index(feats.index, frame.index, horizon, min_train)
         if first_i is None:
             raise ReplayError(
                 f"Not enough settled labels for {pair_u} (need {min_train} trainable rows, horizon {horizon}). "
-                "Pull a longer range. No prices were invented."
+                "Pull a longer range. No prices were invented.",
+                reason="insufficient_bars",
             )
 
     n = len(frame)
@@ -851,8 +856,11 @@ def _predict_window(
         )
         pred = _attach_policy_columns(pred, x_te, ohlcv, cfg, pair)
         pred["pred"] = apply_signal_filters(pred, cfg)
-    except Exception:
-        return None
+    except ReplayError:
+        raise
+    except Exception as exc:
+        detail = " ".join(str(exc).split()).strip() or exc.__class__.__name__
+        raise ReplayError(f"Train failed ({model_type}): {detail}", reason="train") from exc
     return pred
 
 

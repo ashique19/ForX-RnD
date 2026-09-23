@@ -12,6 +12,7 @@ import pytest
 
 from forex_lab.config_loader import load_config
 from forex_lab.history import (
+    HistoryError,
     dukascopy_url,
     parse_bi5,
     parse_histdata_text,
@@ -235,6 +236,9 @@ def test_dukascopy_bi5_roundtrip_keeps_spread():
 
     blob = lzma.compress(rec(0, 1.10020, 1.10000) + rec(1_800_000, 1.10100, 1.10080))
     ticks = parse_bi5(blob, hour, point)
+    with pytest.raises(HistoryError, match="decompressed") as bad:
+        parse_bi5(b"this is not lzma", hour, point)
+    assert bad.value.reason == "decode"
     assert len(ticks) == 2
     bars = ticks_to_bars(ticks, "1h")
     assert len(bars) == 1

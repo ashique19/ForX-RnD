@@ -16,33 +16,62 @@ function pct(job: ReplayJob | null): number {
   return Math.max(0, Math.min(100, Math.round(raw * 100)));
 }
 
+const REASON_LABEL: Record<string, string> = {
+  download: "Download failed",
+  decode: "Decode failed",
+  insufficient_bars: "Not enough bars",
+  train: "Train failed",
+  error: "Failed",
+};
+
+/** Sentence shown on the button and in the modal. Never a bare "failed". */
+export function failureText(job: ReplayJob | null, caught?: string | null): string | null {
+  if (job?.status === "error") {
+    const detail = (job.error || job.message || "").trim();
+    const label = REASON_LABEL[job.reason || ""] || "";
+    if (detail && label && !detail.toLowerCase().includes(label.toLowerCase())) return `${label}: ${detail}`;
+    if (detail) return detail;
+    if (label) return `${label}: the job ended without an error sentence.`;
+    return "Historic train failed, and the job status had no reason.";
+  }
+  const text = (caught || "").trim();
+  return text || null;
+}
+
 export function ReplayTrainButton({ pair, interval }: { pair: string; interval: string }) {
   const [open, setOpen] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <>
       <button
         ref={buttonRef}
-        className="btn replay-launch"
+        className={failure ? "btn replay-launch has-fail" : "btn replay-launch"}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls="replay-dialog"
         aria-label={pair ? `Replay train Active ${pair}` : "Replay train"}
         disabled={!pair}
-        title={pair ? `Active ${pair}` : "Choose one Active pair"}
+        title={failure || (pair ? `Active ${pair}` : "Choose one Active pair")}
         onClick={() => setOpen(true)}
       >
         Replay train
         {pair ? <span className="replay-active">{pair}</span> : null}
       </button>
+      {failure && !open ? (
+        <p className="replay-launch-error" role="alert">
+          {failure}
+        </p>
+      ) : null}
       <ReplayModal
         open={open}
         onClose={() => setOpen(false)}
         pair={pair}
         interval={interval || "1h"}
         returnFocus={buttonRef}
+        onFailure={setFailure}
       />
     </>
   );
@@ -54,12 +83,14 @@ function ReplayModal({
   pair,
   interval,
   returnFocus,
+  onFailure,
 }: {
   open: boolean;
   onClose: () => void;
   pair: string;
   interval: string;
   returnFocus: RefObject<HTMLButtonElement | null>;
+  onFailure: (text: string | null) => void;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -108,29 +139,39 @@ function ReplayModal({
           setJob(next);
           if (next.status === "done" || next.status === "error") {
             setRunning(false);
-            if (next.status === "error") setError(next.error || next.message || "Replay failed");
+            if (next.status === "error") {
+              const text = failureText(next);
+              setError(text);
+              onFailure(text);
+            } else {
+              onFailure(null);
+            }
           }
         })
         .catch((err: unknown) => {
           if (cancel) return;
           setRunning(false);
-          setError(err instanceof Error ? err.message : "Replay status failed");
+          const text = err instanceof Error && err.message.trim() ? err.message.trim() : "Job status request failed.";
+          setError(text);
+          onFailure(text);
         });
     }, 1000);
     return () => {
       cancel = true;
       window.clearInterval(id);
     };
-  }, [job]);
+  }, [job, onFailure]);
 
   if (!open) return null;
 
   const busy = running || job?.status === "running";
   const progress = pct(job);
   const chart = job?.status === "done" && job.report?.equity_png ? `${job.report.equity_png}?t=${job.job_id}` : null;
+  const shownFailure = failureText(job, error);
 
   async function onRun() {
     setError(null);
+    onFailure(null);
     setJob(null);
     setRunning(true);
     try {
@@ -144,11 +185,15 @@ function ReplayModal({
       setJob(next);
       if (next.status === "error") {
         setRunning(false);
-        setError(next.error || next.message || "Replay failed");
+        const text = failureText(next);
+        setError(text);
+        onFailure(text);
       }
     } catch (err) {
       setRunning(false);
-      setError(err instanceof Error ? err.message : "Replay failed");
+      const text = err instanceof Error && err.message.trim() ? err.message.trim() : "Historic train could not be started.";
+      setError(text);
+      onFailure(text);
     }
   }
 
@@ -206,8 +251,17 @@ function ReplayModal({
               <span style={{ width: `${progress}%` }} />
             </div>
           ) : null}
-          {job?.message ? <p className="replay-msg">{job.message}{job.as_of_dhaka ? ` · ${job.as_of_dhaka}` : ""}</p> : null}
-          {error ? <p className="replay-msg bad">{error}</p> : null}
+          {job?.status !== "error" && job?.message ? (
+            <p className="replay-msg">
+              {job.message}
+              {job.as_of_dhaka ? ` · ${job.as_of_dhaka}` : ""}
+            </p>
+          ) : null}
+          {shownFailure ? (
+            <p className="replay-msg bad" role="alert">
+              {shownFailure}
+            </p>
+          ) : null}
           {job?.status === "done" && job.promotion_line ? <p className="replay-msg">{job.promotion_line}</p> : null}
           {chart ? <img className="replay-chart" alt={`${pair} equity and drawdown`} src={chart} /> : null}
           {job?.status === "done" && job.report ? (

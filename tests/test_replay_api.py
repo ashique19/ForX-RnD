@@ -164,3 +164,51 @@ def test_historic_train_is_one_active_pair(client: TestClient, monkeypatch: pyte
     done = wait_job(first.json()["job_id"], timeout=10)
     assert done["status"] == "done"
     assert calls == ["EURUSD"]
+
+
+def test_job_status_names_the_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    from forex_lab.history import HistoryError, explain_failure
+    from forex_lab.replay import ReplayError
+    from api.replayjob import wait_job
+
+    blank_reason, blank_text = explain_failure(RuntimeError())
+    assert blank_text.strip()
+    assert blank_reason == "error"
+    assert "RuntimeError" in blank_text
+
+    def boom(*_a, **_k):
+        raise HistoryError("Dukascopy unreachable for https://datafeed.dukascopy.com/example", reason="download")
+
+    monkeypatch.setattr("api.replayjob.pull_history", boom)
+    started = client.post("/history/pull", json={"pair": "EURUSD", "interval": "1h", "start": "2015-01-05"})
+    assert started.status_code == 200
+    done = wait_job(started.json()["job_id"], timeout=10)
+    assert done["status"] == "error"
+    assert done["reason"] == "download"
+    assert done["error"].startswith("Download failed")
+    assert "unreachable" in done["error"]
+    assert done["message"] == done["error"]
+
+    def no_bars(*_a, **_k):
+        raise ReplayError("Not enough settled labels for EURUSD (need 500 trainable rows).", reason="insufficient_bars")
+
+    monkeypatch.setattr("api.replayjob.history_status", lambda *_a, **_k: {"stale": False, "source": "dukascopy", "rows": 2, "bid_ask": True})
+    monkeypatch.setattr("api.replayjob.load_meta", lambda *_a, **_k: {"source": "dukascopy"})
+    monkeypatch.setattr("api.replayjob.load_history", lambda *_a, **_k: pd.DataFrame({"Open": [1.0]}))
+    monkeypatch.setattr("api.replayjob.run_replay", no_bars)
+    replay = client.post("/replay/train", json={"pair": "GBPUSD", "interval": "1h", "pull": False})
+    assert replay.status_code == 200
+    trained = wait_job(replay.json()["job_id"], timeout=10)
+    assert trained["reason"] == "insufficient_bars"
+    assert trained["error"].startswith("Not enough bars")
+    assert "500" in trained["error"]
+
+    def train_blew(*_a, **_k):
+        raise ReplayError("Train failed (xgboost): feature mismatch", reason="train")
+
+    monkeypatch.setattr("api.replayjob.run_replay", train_blew)
+    again = client.post("/replay/train", json={"pair": "USDJPY", "interval": "1h", "pull": False})
+    finished = wait_job(again.json()["job_id"], timeout=10)
+    assert finished["reason"] == "train"
+    assert "feature mismatch" in finished["error"]
+    assert finished["error"].strip()

@@ -331,6 +331,8 @@ export interface ReplayJob {
   message: string | null;
   as_of_dhaka: string | null;
   error: string | null;
+  /** download | decode | insufficient_bars | train | error, set when status is error. */
+  reason?: string | null;
   calendar_note: string | null;
   promotion_line: string | null;
   source: string | null;

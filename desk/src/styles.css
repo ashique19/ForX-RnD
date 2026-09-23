@@ -896,6 +896,16 @@
       font-weight: 650;
       color: var(--muted);
     }
+    .desk-bar .replay-launch.has-fail {
+      border-color: #b42318;
+    }
+    .replay-launch-error {
+      flex: 1 0 100%;
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #b42318;
+    }
     .active-tag {
       margin-left: 6px;
       font-size: 10px;

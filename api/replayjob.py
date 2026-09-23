@@ -17,6 +17,7 @@ from typing import Any
 
 from forex_lab.history import (
     HistoryError,
+    explain_failure,
     history_status,
     load_history,
     load_meta,
@@ -187,8 +188,9 @@ def _start(
             "fraction": 0.0,
             "message": "Starting",
             "as_of_dhaka": None,
-            "error": None,
-            "calendar_note": CALENDAR_ASOF_GAP,
+        "error": None,
+        "reason": None,
+        "calendar_note": CALENDAR_ASOF_GAP,
             "promotion_line": None,
             "source": None,
             "bid_ask": None,
@@ -276,10 +278,9 @@ def _worker(
             report=_links(job_id),
             as_of_dhaka=result.get("end_dhaka"),
         )
-    except (HistoryError, ReplayError, ReplayJobError, OSError, ValueError) as exc:
-        _update(job_id, folder, status="error", phase="error", error=str(exc), message=str(exc))
-    except Exception as exc:  # noqa: BLE001 — surface it on the job, do not invent a scoreboard
-        _update(job_id, folder, status="error", phase="error", error=str(exc), message=str(exc))
+    except Exception as exc:  # noqa: BLE001 — surface the reason; do not invent a scoreboard
+        reason, text = explain_failure(exc)
+        _update(job_id, folder, status="error", phase="error", error=text, message=text, reason=reason)
 
 
 def _on_progress(job_id: str, folder: Path, payload: dict[str, Any]) -> None:

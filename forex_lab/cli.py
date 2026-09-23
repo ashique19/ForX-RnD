@@ -127,7 +127,7 @@ def cmd_retrain(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 def cmd_history(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     """Pull Dukascopy (or HistData) OHLC into data/history. Does not write synthetic prices."""
-    from forex_lab.history import HistoryError, pull_history
+    from forex_lab.history import HistoryError, explain_failure, pull_history
 
     def _progress(payload: dict[str, Any]) -> None:
         msg = payload.get("message")
@@ -145,7 +145,8 @@ def cmd_history(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
             progress=_progress,
         )
     except HistoryError as exc:
-        safe_print(f"[history] failed: {exc}")
+        _reason, text = explain_failure(exc)
+        safe_print(f"[history] failed: {text}")
         return 1
     safe_print(
         f"[history] {result['pair']} {result['interval']}: {result['rows']} bars "
@@ -156,7 +157,7 @@ def cmd_history(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 def cmd_replay(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     """Walk-forward replay train + scoreboard. Paper books only."""
-    from forex_lab.history import HistoryError, history_status, load_history, load_meta, pull_history
+    from forex_lab.history import HistoryError, explain_failure, history_status, load_history, load_meta, pull_history
     from forex_lab.replay import ReplayError, run_replay
 
     pair = str(args.pair).upper()
@@ -199,7 +200,8 @@ def cmd_replay(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
             progress=_progress,
         )
     except (HistoryError, ReplayError) as exc:
-        safe_print(f"[replay] failed: {exc}")
+        _reason, text = explain_failure(exc)
+        safe_print(f"[replay] failed: {text}")
         return 1
     safe_print(f"[replay] {result.get('promotion_line')}")
     files = result.get("files") or {}
