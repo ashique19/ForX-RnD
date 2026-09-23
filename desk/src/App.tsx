@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability } from "./api";
 import type { AlertItem, Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
-import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
 import { Placeholder } from "./components/Placeholder";
@@ -61,7 +60,6 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
-  const [auxOpen, setAuxOpen] = useState(false);
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
   const rowsRef = useRef<BoardRow[]>([]);
   const retryLock = useRef(false);
@@ -355,7 +353,6 @@ export function App() {
                   setTick((n) => n + 1);
                 }}
               />
-              <AuxHelp open={auxOpen} onOpenChange={setAuxOpen} />
             </div>
             <div className="right-col">
               <SignalBrief
