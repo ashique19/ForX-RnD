@@ -101,7 +101,7 @@ export function LearningsPanel() {
         {!feed && error ? <p className="learn-empty">{error}</p> : null}
         {loadedEmpty ? (
           <p className="learn-empty">
-            No learnings yet — log paper trades and run the daily digest / pipeline to build history.
+            No learnings yet — closed paper trades, retrain verdicts, and gate screens show up here once they are stored.
           </p>
         ) : null}
         {feed?.items.map((item) => (

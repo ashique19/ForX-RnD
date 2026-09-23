@@ -49,8 +49,8 @@ def test_empty_when_nothing_is_stored(tmp_path: Path):
     assert present["paper"] is False
     assert present["digest"] is False
     assert present["retrain"] is False
-    assert present["awareness"] is False
     assert present["gate_screen"] is False
+    assert "awareness" not in present
 
 
 def test_paper_outcome_and_scoring_note_are_real(tmp_path: Path):
@@ -116,7 +116,7 @@ def test_paper_outcome_and_scoring_note_are_real(tmp_path: Path):
     assert not any(row["detail"].startswith("Paper lookback only") for row in notes)
     assert not any(row["detail"].startswith("News remains context only") for row in notes)
     assert payload["latest_at"] == top["at"]
-    assert all(row["source"] in {"paper", "digest", "model", "awareness"} for row in payload["items"])
+    assert all(row["source"] in {"paper", "digest", "model"} for row in payload["items"])
 
 
 def test_open_pending_is_not_a_learning(tmp_path: Path):
@@ -139,49 +139,153 @@ def test_open_pending_is_not_a_learning(tmp_path: Path):
     assert payload["items"] == []
 
 
-def test_digest_summary_and_flip_skip_when_awareness_has_it(tmp_path: Path):
+def test_awareness_noise_is_absent_and_decision_cards_remain(tmp_path: Path):
+    """STALE, MISSING, and routine flips never become learning cards."""
+    journal = {
+        "positions": [],
+        "fills": [],
+        "closed": [
+            {
+                "id": "pos_ok",
+                "pair": "EURUSD",
+                "side": "BUY",
+                "outcome": "RIGHT",
+                "exit_reason": "tp",
+                "exit_time": "2026-09-22 11:00:00 UTC",
+                "session": "london",
+                "validity_at_entry": "OK",
+            }
+        ],
+    }
     digest = {
         "generated_at": "2026-09-22 18:00:00 Asia/Dhaka",
         "paper": {"right": 1, "wrong": 2, "n_scored": 3, "hit_rate": 1 / 3},
         "flips": [
             {
                 "pair": "EURUSD",
-                "from": "HOLD",
-                "to": "BUY",
-                "message": "EURUSD HOLD → BUY",
+                "from": "SELL",
+                "to": "HOLD",
+                "message": "EURUSD SELL → HOLD",
                 "when": "2026-09-22 16:00:00 Asia/Dhaka",
             }
         ],
-        "awareness": {"n_unhealthy": 1, "issues": [{"source": "news"}]},
-        "freshness": [],
+        "awareness": {"n_unhealthy": 2, "issues": [{"source": "ohlcv"}, {"source": "news"}]},
+        "freshness": [{"pair": "GBPUSD", "validity": "STALE"}],
     }
     alerts = {
         "alerts": [
             {
-                "id": "a1",
+                "id": "stale",
+                "kind": "stale",
+                "pair": "EURUSD",
+                "timeframe": "1h",
+                "message": "EURUSD data STALE",
+                "created_at": "2026-09-22T08:00:00Z",
+            },
+            {
+                "id": "missing",
+                "kind": "missing",
+                "pair": "GBPUSD",
+                "timeframe": "1h",
+                "message": "GBPUSD data MISSING",
+                "created_at": "2026-09-22T08:05:00Z",
+            },
+            {
+                "id": "flip",
                 "kind": "flip",
                 "pair": "EURUSD",
                 "timeframe": "1h",
-                "message": "EURUSD HOLD → BUY",
+                "message": "EURUSD HOLD → SELL",
                 "created_at": "2026-09-22T10:00:00Z",
                 "from_value": "HOLD",
-                "to_value": "BUY",
-            }
+                "to_value": "SELL",
+            },
         ]
     }
+    (tmp_path / "paper.json").write_text(json.dumps(journal), encoding="utf-8")
     (tmp_path / "digest.json").write_text(json.dumps(digest), encoding="utf-8")
     (tmp_path / "alerts.json").write_text(json.dumps(alerts), encoding="utf-8")
-    payload = collect_learnings(_cfg(tmp_path), reports=())
+    store = tmp_path / "champion"
+    store.mkdir()
+    (store / "EURUSD_history.jsonl").write_text(
+        json.dumps(
+            {
+                "verdict": "null",
+                "promote": False,
+                "deltas": {"profit_factor": -0.01},
+                "promoted_at": "2026-09-21T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    screen = tmp_path / "gate_screen.md"
+    screen.write_text(
+        "**Takeaway (not a live edge):**\n- **Gates** cut trades. Profit factor fell.\n",
+        encoding="utf-8",
+    )
+    cfg = _cfg(tmp_path)
+    cfg["board"]["alerts"]["persist_file"] = str(tmp_path / "alerts.json")
+    payload = collect_learnings(cfg, reports=(screen,))
     titles = [row["title"] for row in payload["items"]]
-    assert titles.count("EURUSD flipped HOLD → BUY") == 1
-    flip = next(row for row in payload["items"] if row["title"].startswith("EURUSD flipped"))
-    assert flip["source"] == "awareness"
+    blob = " ".join(f"{row['title']} {row['detail']}" for row in payload["items"])
+    assert "EURUSD BUY paper RIGHT" in titles
+    assert "EURUSD retrain null" in titles
+    assert "Edge gate · Gates" in titles
+    assert "Daily digest" in titles
     summary = next(row for row in payload["items"] if row["title"] == "Daily digest")
     assert summary["source"] == "digest"
     assert "1 RIGHT / 2 WRONG" in summary["detail"]
-    assert "1 signal flip" in summary["detail"]
-    assert "1 awareness issue" in summary["detail"]
     assert "not a live edge" in summary["detail"]
+    assert "signal flip" not in summary["detail"]
+    assert "awareness" not in summary["detail"].lower()
+    assert all(row["source"] in {"paper", "digest", "model"} for row in payload["items"])
+    assert "data STALE" not in blob
+    assert "data MISSING" not in blob
+    assert "flipped" not in blob.lower()
+    assert "SELL → HOLD" not in blob
+    assert "HOLD → SELL" not in blob
+
+
+def test_digest_without_scored_paper_is_omitted(tmp_path: Path):
+    digest = {
+        "generated_at": "2026-09-23 08:00:00 Asia/Dhaka",
+        "paper": {"right": 0, "wrong": 0, "n_scored": 0},
+        "flips": [
+            {
+                "pair": "USDJPY",
+                "from": "HOLD",
+                "to": "SELL",
+                "message": "USDJPY HOLD → SELL",
+                "when": "2026-09-23 07:00:00 Asia/Dhaka",
+            }
+        ],
+        "awareness": {"n_unhealthy": 1, "issues": [{"source": "news"}]},
+        "freshness": [{"pair": "USDJPY", "validity": "MISSING"}],
+    }
+    (tmp_path / "digest.json").write_text(json.dumps(digest), encoding="utf-8")
+    (tmp_path / "alerts.json").write_text(
+        json.dumps(
+            {
+                "alerts": [
+                    {
+                        "id": "s",
+                        "kind": "stale",
+                        "pair": "EURUSD",
+                        "message": "EURUSD data STALE",
+                        "created_at": "2026-09-23T01:00:00Z",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = collect_learnings(_cfg(tmp_path), reports=())
+    assert payload["items"] == []
+    assert payload["feeds"]
+    digest_feed = next(row for row in payload["feeds"] if row["id"] == "digest")
+    assert digest_feed["present"] is True
+    assert digest_feed["count"] == 0
 
 
 def test_retrain_history_is_chronological(tmp_path: Path):

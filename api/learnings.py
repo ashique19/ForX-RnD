@@ -1,7 +1,10 @@
 """Aggregate stored learnings for the Decision desk.
 
-Reads artifacts the lab already writes. Missing files are omitted.
-Nothing here is synthesized, scored, or backfilled.
+Only artifacts that can change later buy/sell/hold suggestions: paper
+outcomes and scoring notes, scored digest snapshots, champion/challenger
+verdicts, and edge-gate takeaways. Alert-strip noise (STALE, MISSING,
+routine flips) is left on the board. Missing files are omitted. Nothing
+here is synthesized.
 """
 from __future__ import annotations
 
@@ -18,13 +21,10 @@ from forex_lab.digest import DEFAULT_PERSIST, digest_cfg
 from forex_lab.paths import project_root, resolve_under_root
 from forex_lab.retrain import retrain_cfg
 from forex_lab.score import journal_aggregates, normalize_outcome
-from forex_lab.ui.alerts import persist_path
 
 SOURCE_PAPER = "paper"
 SOURCE_DIGEST = "digest"
 SOURCE_MODEL = "model"
-SOURCE_AWARENESS = "awareness"
-SOURCES = (SOURCE_PAPER, SOURCE_DIGEST, SOURCE_MODEL, SOURCE_AWARENESS)
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
@@ -68,15 +68,11 @@ def collect_learnings(
     items: list[dict[str, Any]] = []
     feeds: list[dict[str, Any]] = []
 
-    awareness, awareness_feed, flip_keys = _awareness_items(cfg)
-    items.extend(awareness)
-    feeds.append(awareness_feed)
-
     paper, paper_feed = _paper_items(cfg)
     items.extend(paper)
     feeds.append(paper_feed)
 
-    digest, digest_feed = _digest_items(cfg, flip_keys)
+    digest, digest_feed = _digest_items(cfg)
     items.extend(digest)
     feeds.append(digest_feed)
 
@@ -321,10 +317,8 @@ def _digest_path(cfg: dict[str, Any]) -> Path:
     return resolve_under_root(rel)
 
 
-def _digest_items(
-    cfg: dict[str, Any],
-    flip_keys: set[str],
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _digest_items(cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Scored paper snapshot only. Flips and awareness counts stay off this feed."""
     path = _digest_path(cfg)
     raw, err = _read_json(path)
     present = bool(path.exists() and path.stat().st_size > 0) if path.exists() else False
@@ -335,76 +329,26 @@ def _digest_items(
         return [], _feed("digest", "Digest", SOURCE_DIGEST, path, present=True, count=0, error="no timestamp")
     at = _as_utc(at)
     paper = raw.get("paper") if isinstance(raw.get("paper"), dict) else {}
-    flips = [row for row in (raw.get("flips") or []) if isinstance(row, dict)]
-    awareness = raw.get("awareness") if isinstance(raw.get("awareness"), dict) else {}
-    freshness = [row for row in (raw.get("freshness") or []) if isinstance(row, dict)]
-    parts: list[str] = []
     try:
         n_scored = int(paper.get("n_scored") or 0)
     except (TypeError, ValueError):
         n_scored = 0
-    if n_scored:
-        parts.append(f"{paper.get('right', 0)} RIGHT / {paper.get('wrong', 0)} WRONG in the digest window")
-    if flips:
-        parts.append(f"{len(flips)} signal flip" + ("" if len(flips) == 1 else "s"))
-    try:
-        n_issues = int(awareness.get("n_unhealthy") or 0)
-    except (TypeError, ValueError):
-        n_issues = 0
-    if n_issues:
-        parts.append(f"{n_issues} awareness issue" + ("" if n_issues == 1 else "s"))
-    weak = [
-        row
-        for row in freshness
-        if str(row.get("validity") or "").upper() not in {"", "OK", "CLOSED"}
-    ]
-    if weak and not parts:
-        parts.append(f"{len(weak)} pair" + ("" if len(weak) == 1 else "s") + " not OK on freshness")
-    seq = _Seq()
-    items: list[dict[str, Any]] = []
-    if parts:
-        items.append(
-            _stamp(
-                cfg=cfg,
-                seq=seq,
-                ident=_hid("digest", raw.get("generated_at"), "|".join(parts)),
-                title="Daily digest",
-                detail=". ".join(parts) + ". Research snapshot — not a live edge.",
-                at=at,
-                source=SOURCE_DIGEST,
-            )
-        )
-    for flip in flips:
-        key = _flip_key(flip.get("pair"), flip.get("from"), flip.get("to"))
-        if key and key in flip_keys:
-            continue
-        when = parse_ts(flip.get("when")) or at
-        pair = str(flip.get("pair") or "?").upper()
-        frm = str(flip.get("from") or "").upper()
-        to = str(flip.get("to") or "").upper()
-        title = f"{pair} flipped {frm} → {to}".strip()
-        detail = str(flip.get("message") or "").strip() or title
-        items.append(
-            _stamp(
-                cfg=cfg,
-                seq=seq,
-                ident=_hid("digest-flip", pair, frm, to, flip.get("when")),
-                title=title,
-                detail=detail,
-                at=when,
-                source=SOURCE_DIGEST,
-            )
-        )
-    return items, _feed("digest", "Digest", SOURCE_DIGEST, path, present=True, count=len(items))
-
-
-def _flip_key(pair: object, frm: object, to: object) -> str:
-    left = str(pair or "").upper().strip()
-    a = str(frm or "").upper().strip()
-    b = str(to or "").upper().strip()
-    if not left or not a or not b:
-        return ""
-    return f"{left}|{a}|{b}"
+    if n_scored <= 0:
+        return [], _feed("digest", "Digest", SOURCE_DIGEST, path, present=True, count=0)
+    detail = (
+        f"{paper.get('right', 0)} RIGHT / {paper.get('wrong', 0)} WRONG in the digest window. "
+        "Research snapshot — not a live edge."
+    )
+    item = _stamp(
+        cfg=cfg,
+        seq=_Seq(),
+        ident=_hid("digest", raw.get("generated_at"), detail),
+        title="Daily digest",
+        detail=detail,
+        at=at,
+        source=SOURCE_DIGEST,
+    )
+    return [item], _feed("digest", "Digest", SOURCE_DIGEST, path, present=True, count=1)
 
 
 def _retrain_store(cfg: dict[str, Any]) -> Path:
@@ -634,72 +578,3 @@ def _split_emphasis(body: str) -> tuple[str, str]:
             rest = body[end + 2 :].strip()
             return label, rest or label
     return "", body
-
-
-def _awareness_items(
-    cfg: dict[str, Any],
-) -> tuple[list[dict[str, Any]], dict[str, Any], set[str]]:
-    path = persist_path(cfg)
-    raw, err = _read_json(path)
-    present = bool(path.exists() and path.stat().st_size > 0) if path.exists() else False
-    if err or not isinstance(raw, dict):
-        return [], _feed("awareness", "Awareness", SOURCE_AWARENESS, path, present=present, count=0, error=err), set()
-    alerts = [row for row in (raw.get("alerts") or []) if isinstance(row, dict)]
-    fallback = _mtime(path)
-    seq = _Seq()
-    items: list[dict[str, Any]] = []
-    keys: set[str] = set()
-    for alert in alerts:
-        kind = str(alert.get("kind") or "").strip().lower()
-        if not kind:
-            continue
-        at = parse_ts(alert.get("created_at")) or fallback
-        if at is None:
-            continue
-        pair = str(alert.get("pair") or "").upper()
-        frm = str(alert.get("from_value") or "")
-        to = str(alert.get("to_value") or "")
-        message = str(alert.get("message") or "").strip()
-        title = _awareness_title(kind, pair, frm, to, message)
-        if not title:
-            continue
-        if kind == "flip":
-            key = _flip_key(pair, frm, to)
-            if key:
-                keys.add(key)
-        detail = message or title
-        tf = str(alert.get("timeframe") or "").strip()
-        if tf and tf.lower() not in detail.lower():
-            detail = f"{tf} · {detail}"
-        items.append(
-            _stamp(
-                cfg=cfg,
-                seq=seq,
-                ident=_hid("awareness", alert.get("id") or kind, pair, frm, to, alert.get("created_at")),
-                title=title,
-                detail=detail,
-                at=at,
-                source=SOURCE_AWARENESS,
-            )
-        )
-    return items, _feed(
-        "awareness",
-        "Awareness",
-        SOURCE_AWARENESS,
-        path,
-        present=True,
-        count=len(items),
-    ), keys
-
-
-def _awareness_title(kind: str, pair: str, frm: str, to: str, message: str) -> str:
-    who = pair or "Desk"
-    if kind == "flip" and frm and to:
-        return f"{who} flipped {frm} → {to}"
-    if kind == "stale":
-        return f"{who} data STALE"
-    if kind == "missing":
-        return f"{who} data MISSING"
-    if kind == "event":
-        return message or f"{who} event window"
-    return message or f"{who} {kind}"
