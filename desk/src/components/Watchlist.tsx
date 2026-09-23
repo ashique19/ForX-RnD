@@ -247,6 +247,7 @@ function WatchlistPanel({
                   className={row.pair === selected ? "selected" : undefined}
                   tabIndex={0}
                   aria-current={row.pair === selected ? "true" : undefined}
+                  aria-label={row.pair === selected ? `Active ${row.pair}` : row.pair}
                   onClick={() => onSelect(row)}
                   onKeyDown={(event) => {
                     if (event.target !== event.currentTarget) return;
@@ -255,7 +256,10 @@ function WatchlistPanel({
                     onSelect(row);
                   }}
                 >
-                  <td className="pair">{row.pair}</td>
+                  <td className="pair">
+                    {row.pair}
+                    {row.pair === selected ? <span className="active-tag">Active</span> : null}
+                  </td>
                   <td><span className="tf-pill">{row.tf}</span></td>
                   <td>
                     <span className={`sig ${sigClass}`}>

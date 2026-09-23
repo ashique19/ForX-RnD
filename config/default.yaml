@@ -288,6 +288,26 @@ retrain:
   train_on_promote: true     # refresh production joblib only when seeding/promoting
   write_report: false        # leave reports/latest_report.md unless true
 
+# Historic walk-forward replay (Decision desk "Replay train" + `python -m forex_lab replay`).
+# One Active pair per pull/replay. The watchlist is not downloaded as a batch.
+# Pulls Dukascopy bid/ask OHLC into data/history/ (gitignored). HistData M1 is the
+# fallback and has no bid/ask — fills then use spread_pips + slippage_pips.
+# ReplayClock paper books live under data/replay/ and do not touch broker.store.
+# The event-window gate is NOT applied: the desk calendar is the current week,
+# not a point-in-time history back to `start`. Bar features and fills are causal.
+# Promotion uses the same retrain gate (PF / total return / max DD / min_trades).
+# trades/hour is reported only — live has no trades/hour gate.
+# min_confidence is the signals filter (and gates.min_confidence when gates.enabled).
+replay:
+  start: "2015-01-01"
+  slippage_pips: 0.0         # adverse ticks on bid/ask fills; added to spread_pips when no bid/ask
+  use_bid_ask: true
+  history_dir: data/history
+  store_dir: data/replay
+  workers: 8
+  source: auto               # auto | dukascopy | histdata
+  # step_bars / train_bars / min_train_bars default to walk_forward when omitted
+
 # Paths (relative to project root)
 paths:
   data_dir: data

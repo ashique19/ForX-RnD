@@ -327,7 +327,7 @@ export function SignalBrief({
           {expanded ? "Signal brief" : collapsedTitle}
         </h2>
         {expanded ? (
-          <span className="meta">{pairLabel ? `${pairLabel} · selected` : "selected"}</span>
+          <span className="meta">{pairLabel ? `${pairLabel} · Active` : "Active"}</span>
         ) : (
           <BriefMetrics suggestion={focus} chartInterval={chartInterval} />
         )}
