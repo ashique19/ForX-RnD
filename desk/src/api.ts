@@ -265,9 +265,9 @@ export const api = {
     return request<CalendarFeed>(`/calendar${q ? `?${q}` : ""}`, { cache: "no-store" });
   },
   portfolio: () => request<PortfolioFeed>("/portfolio", { cache: "no-store" }),
-  setAutoPaper: (enabled: boolean) =>
+  setAutoPaper: (body: { enabled?: boolean; max_opens_per_hour?: number }) =>
     request<PortfolioFeed>("/portfolio/auto", {
       method: "POST",
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify(body),
     }),
 };

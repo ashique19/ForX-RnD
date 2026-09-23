@@ -1476,6 +1476,34 @@
       user-select: none;
     }
     .auto-toggle input { accent-color: var(--blue); cursor: pointer; }
+    .auto-rate {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .auto-rate input {
+      width: 3.4rem;
+      padding: 3px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .port-rate {
+      margin: 0;
+      padding: 6px 12px;
+      background: var(--amber-bg);
+      color: #b54708;
+      font-size: 12px;
+      font-weight: 600;
+      border-bottom: 1px solid #fedf89;
+    }
     table.port .chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
     .placeholder .log {
       margin-top: 12px;

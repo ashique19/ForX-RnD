@@ -62,11 +62,27 @@ function TradeTable({ rows }: { rows: PortfolioRow[] }) {
   );
 }
 
+function parseCap(raw: string): number | null {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const n = Number(text);
+  if (n > 99) return null;
+  return n;
+}
+
 export function PortfolioPanel() {
   const [feed, setFeed] = useState<PortfolioFeed | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [capDraft, setCapDraft] = useState("3");
+  const [capFocused, setCapFocused] = useState(false);
+  const capFromFeed = feed?.max_opens_per_hour;
+
+  useEffect(() => {
+    if (capFocused || busy || capFromFeed == null) return;
+    setCapDraft(String(capFromFeed));
+  }, [capFromFeed, capFocused, busy]);
 
   useEffect(() => {
     let cancel = false;
@@ -109,11 +125,32 @@ export function PortfolioPanel() {
   async function toggleAuto(enabled: boolean) {
     setBusy(true);
     try {
-      const next = await api.setAutoPaper(enabled);
+      const next = await api.setAutoPaper({ enabled });
       setFeed(next);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update auto paper");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function commitCap() {
+    const nextCap = parseCap(capDraft);
+    const current = feed?.max_opens_per_hour ?? 3;
+    if (nextCap == null) {
+      setCapDraft(String(current));
+      return;
+    }
+    if (nextCap === current) return;
+    setBusy(true);
+    try {
+      const next = await api.setAutoPaper({ max_opens_per_hour: nextCap });
+      setFeed(next);
+      setError(null);
+    } catch (err) {
+      setCapDraft(String(current));
+      setError(err instanceof Error ? err.message : "Could not update the hourly cap");
     } finally {
       setBusy(false);
     }
@@ -138,6 +175,28 @@ export function PortfolioPanel() {
           />
           Auto paper
         </label>
+        <label className="auto-rate">
+          Max opens / hour
+          <input
+            type="number"
+            min={0}
+            max={99}
+            step={1}
+            inputMode="numeric"
+            aria-label="Max auto opens per hour"
+            value={capDraft}
+            disabled={busy || !feed}
+            onFocus={() => setCapFocused(true)}
+            onChange={(e) => setCapDraft(e.target.value)}
+            onBlur={() => {
+              setCapFocused(false);
+              void commitCap();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+          />
+        </label>
         <button className="btn" type="button" onClick={() => setReloadKey((n) => n + 1)} disabled={busy}>
           {busy ? "Refreshing…" : "Refresh"}
         </button>
@@ -145,9 +204,16 @@ export function PortfolioPanel() {
       <p className="port-note">
         {autoOn
           ? "Auto opens when a watched brief flips to BUY or SELL (not the first reading). Closes on stop, target, duration, or the opposite signal. Fills use the cached last close."
-          : "Auto is paused. Open paper trades stay in this book until you close them from the signal brief."}
+          : "Auto is paused. Open paper trades stay in this book until you close them from the signal brief. Pausing stops every auto open and close."}
+        {" "}
+        The hourly cap is one shared budget for every pair and applies to auto opens only. Per-pair caps can come later.
         {feed?.generated_at_dhaka ? ` Updated ${feed.generated_at_dhaka}.` : ""}
       </p>
+      {feed?.rate_status ? (
+        <p className="port-rate" role="status">
+          {feed.rate_status}
+        </p>
+      ) : null}
       {error ? <p className="port-error">{error}</p> : null}
       {feed?.auto_errors?.length ? (
         <p className="port-error">Auto skipped {feed.auto_errors.map((item) => item.pair).filter(Boolean).join(", ") || "a pair"}.</p>

@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.learnings import collect_learnings
-from api.paperdesk import human_duration, portfolio_payload, run_auto_paper, set_auto_enabled
+from api.paperdesk import human_duration, portfolio_payload, run_auto_paper, set_auto_enabled, set_auto_settings
 from forex_lab.ui.board import BoardRow
 
 
@@ -288,3 +288,147 @@ def test_http_portfolio_toggle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     on = client.post("/portfolio/auto", json={"enabled": True})
     assert on.status_code == 200
     assert on.json()["auto_enabled"] is True
+    assert on.json()["max_opens_per_hour"] == 3
+    assert on.json()["opens_this_hour"] == 0
+    assert on.json()["rate_limited"] is False
+    assert on.json()["rate_status"] is None
+
+    missing = client.post("/portfolio/auto", json={})
+    assert missing.status_code == 400
+    too_high = client.post("/portfolio/auto", json={"max_opens_per_hour": 100})
+    assert too_high.status_code == 422
+
+    capped = client.post("/portfolio/auto", json={"max_opens_per_hour": 5})
+    assert capped.status_code == 200
+    assert capped.json()["max_opens_per_hour"] == 5
+    assert client.get("/portfolio", params={"sync": "false"}).json()["max_opens_per_hour"] == 5
+
+    paused = client.post("/portfolio/auto", json={"enabled": False, "max_opens_per_hour": 0})
+    assert paused.status_code == 200
+    body = paused.json()
+    assert body["auto_enabled"] is False
+    assert body["max_opens_per_hour"] == 0
+    assert body["rate_status"] == "Rate-limited: 0/0 opens this hour"
+
+
+def _reenter(cfg: dict, when: datetime) -> dict:
+    return run_auto_paper(cfg, rows=[_row()], now=when)
+
+
+def _arm(cfg: dict, when: datetime) -> None:
+    run_auto_paper(cfg, rows=[_row("HOLD")], now=when)
+
+
+def _stop_out(cfg: dict, when: datetime) -> dict:
+    return run_auto_paper(cfg, rows=[_row()], now=when)
+
+
+def test_hourly_cap_skips_auto_open_and_retries_after_the_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+    set_auto_settings(max_opens_per_hour=3, cfg=cfg)
+
+    last_entry = T0
+    for i in range(3):
+        slot = T0 + timedelta(minutes=i * 2)
+        _arm(cfg, slot)
+        opened = _reenter(cfg, slot + timedelta(seconds=1))
+        assert opened["events"] == ["EURUSD open BUY"]
+        last_entry = slot + timedelta(seconds=1)
+        _install(monkeypatch, store, _suggest(), 1.08)
+        stopped = _stop_out(cfg, slot + timedelta(seconds=30))
+        assert stopped["events"] == ["EURUSD close sl"]
+        _install(monkeypatch, store, _suggest(), 1.10)
+
+    slot = T0 + timedelta(minutes=8)
+    _arm(cfg, slot)
+    blocked = _reenter(cfg, slot + timedelta(seconds=1))
+    assert blocked["events"] == ["EURUSD skip rate"]
+    book = portfolio_payload(cfg, sync=False, now=slot + timedelta(seconds=1))
+    assert book["open"] == []
+    assert book["opens_this_hour"] == 3
+    assert book["max_opens_per_hour"] == 3
+    assert book["rate_limited"] is True
+    assert book["rate_status"] == "Rate-limited: 3/3 opens this hour"
+    assert len(book["closed"]) == 3
+
+    still = _reenter(cfg, slot + timedelta(minutes=1))
+    assert still["events"] == ["EURUSD skip rate"]
+
+    set_auto_enabled(False, cfg)
+    paused = _reenter(cfg, slot + timedelta(minutes=2))
+    assert paused["events"] == []
+    paused_book = portfolio_payload(cfg, sync=False, now=slot + timedelta(minutes=2))
+    assert paused_book["auto_enabled"] is False
+    assert paused_book["rate_status"] == "Rate-limited: 3/3 opens this hour"
+    assert paused_book["opens_this_hour"] == 3
+    set_auto_enabled(True, cfg)
+
+    later = last_entry + timedelta(minutes=60, seconds=5)
+    _install(monkeypatch, store, _suggest(), 1.11)
+    opened = _reenter(cfg, later)
+    assert opened["events"] == ["EURUSD open BUY"]
+    book = portfolio_payload(cfg, sync=False, now=later)
+    assert book["opens_this_hour"] == 1
+    assert book["rate_limited"] is False
+    assert book["rate_status"] is None
+    assert book["open"][0]["entry_price"] == pytest.approx(1.11)
+    assert book["open"][0]["source"] == "auto"
+
+
+def test_manual_orders_do_not_spend_the_auto_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    set_auto_settings(max_opens_per_hour=1, cfg=cfg)
+    row = _row(confidence=0.5)
+    monkeypatch.setenv("FORX_PAPER_STORE", str(store))
+    monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: row)
+    monkeypatch.setattr("api.paperdesk.load_cached_ohlcv", lambda *_a, **_k: _frame(1.101))
+    monkeypatch.setattr("api.paperdesk.paper_submit_risk_defaults", lambda *_a, **_k: (1.09, 1.12))
+    from api.paperdesk import paper_order
+
+    paper_order("EURUSD", "BUY", cfg=cfg)
+    paper_order("EURUSD", "CLOSE", cfg=cfg)
+    book = portfolio_payload(cfg, sync=False, now=T0)
+    assert book["opens_this_hour"] == 0
+    assert book["rate_limited"] is False
+    assert book["closed"][0]["source"] == "manual"
+
+    _install(monkeypatch, store, _suggest(), 1.10)
+    _arm(cfg, T0 + timedelta(minutes=1))
+    opened = _reenter(cfg, T0 + timedelta(minutes=2))
+    assert opened["events"] == ["EURUSD open BUY"]
+    _install(monkeypatch, store, _suggest(), 1.08)
+    assert _stop_out(cfg, T0 + timedelta(minutes=3))["events"] == ["EURUSD close sl"]
+
+    _install(monkeypatch, store, _suggest(), 1.10)
+    _arm(cfg, T0 + timedelta(minutes=4))
+    blocked = _reenter(cfg, T0 + timedelta(minutes=5))
+    assert blocked["events"] == ["EURUSD skip rate"]
+    assert portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=5))["opens_this_hour"] == 1
+
+    paper_order("EURUSD", "SELL", cfg=cfg)
+    book = portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=6))
+    assert book["open"][0]["source"] == "manual"
+    assert book["open"][0]["trigger"] == "SELL"
+    assert book["opens_this_hour"] == 1
+    assert book["rate_status"] == "Rate-limited: 1/1 opens this hour"
+
+
+def test_opposite_close_still_runs_when_the_hourly_cap_is_full(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+    set_auto_settings(max_opens_per_hour=1, cfg=cfg)
+    _arm(cfg, T0)
+    assert _reenter(cfg, T0 + timedelta(seconds=1))["events"] == ["EURUSD open BUY"]
+    _install(monkeypatch, store, _suggest(signal="SELL"), 1.10)
+    flipped = run_auto_paper(cfg, rows=[_row("SELL")], now=T0 + timedelta(minutes=2))
+    assert flipped["events"] == ["EURUSD close opposite", "EURUSD skip rate"]
+    book = portfolio_payload(cfg, sync=False, now=T0 + timedelta(minutes=2))
+    assert book["open"] == []
+    assert book["closed"][0]["exit_reason"] == "opposite"
+    assert book["closed"][0]["outcome"] == "FLAT"
+    assert book["opens_this_hour"] == 1
+    assert book["rate_status"] == "Rate-limited: 1/1 opens this hour"

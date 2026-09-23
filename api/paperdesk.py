@@ -211,6 +211,25 @@ def _as_utc(now: datetime | None) -> datetime:
     return now.astimezone(timezone.utc)
 
 
+def _auto_opens_in_window(broker: PaperBroker, now: datetime) -> int:
+    """Auto opens whose entry time falls in the last 60 minutes.
+
+    One shared budget for every pair. Manual fills are not counted.
+    A row with no parseable entry time does not count.
+    """
+    cutoff = _as_utc(now) - timedelta(minutes=60)
+    count = 0
+    rows = list(broker.list_positions()) + list(broker.list_closed())
+    for row in rows:
+        if str(row.get("source") or "") != "auto":
+            continue
+        opened = parse_ts(row.get("entry_time"))
+        if opened is None or opened < cutoff:
+            continue
+        count += 1
+    return count
+
+
 def _f(value: object) -> float | None:
     if value is None:
         return None
@@ -420,21 +439,29 @@ def _auto_one(
             closed_opposite = reason == "opposite"
             pos = None
     flipped = symbol in seen and seen.get(symbol) != live
-    pending_fill = pos is None and allowed and bool(live) and price is None and (flipped or closed_opposite)
-    if pos is None and allowed and live and price is not None and (flipped or closed_opposite):
-        _open_auto(
-            broker,
-            row,
-            cfg,
-            suggestion,
-            side=live,
-            price=price,
-            entry_bar=entry_bar,
-            when=when,
-        )
-        events.append(f"{symbol} open {live}")
+    want_open = pos is None and allowed and bool(live) and (flipped or closed_opposite)
+    pending_fill = want_open and price is None
+    rate_blocked = False
+    if want_open and price is not None:
+        cap = int(broker.read_auto()["max_opens_per_hour"])
+        if _auto_opens_in_window(broker, clock) >= cap:
+            # Leave ``seen`` unchanged so the flip retries when the hour frees a slot.
+            rate_blocked = True
+            events.append(f"{symbol} skip rate")
+        else:
+            _open_auto(
+                broker,
+                row,
+                cfg,
+                suggestion,
+                side=str(live),
+                price=price,
+                entry_bar=entry_bar,
+                when=when,
+            )
+            events.append(f"{symbol} open {live}")
     # A flip we could not fill stays unseen so the next cadence can retry.
-    if allowed and not pending_fill:
+    if allowed and not pending_fill and not rate_blocked:
         seen[symbol] = live or ""
     return events
 
@@ -449,6 +476,11 @@ def run_auto_paper(
 
     First sight of a BUY/SELL is recorded and not filled. A later change into
     BUY or SELL (or an opposite close) is the flip that trades.
+
+    Auto opens share one rolling 60-minute budget (``max_opens_per_hour``).
+    Stops, targets, duration, and opposite closes still run at the cap.
+    The follow-up open waits. Manual orders are outside this budget.
+    Per-pair caps are not implemented.
     """
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
@@ -475,13 +507,23 @@ def run_auto_paper(
         return {"events": events, "errors": errors, "auto_enabled": True}
 
 
-def set_auto_enabled(enabled: bool, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+def set_auto_settings(
+    *,
+    enabled: bool | None = None,
+    max_opens_per_hour: int | None = None,
+    cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Persist the pause switch and/or the shared hourly auto-open cap."""
     desk = _desk()
     cfg = cfg if cfg is not None else desk.app_config()
     with _PAPER_LOCK:
         broker = _paper(cfg)
         broker.reload()
-        return broker.write_auto(enabled=bool(enabled))
+        return broker.write_auto(enabled=enabled, max_opens_per_hour=max_opens_per_hour)
+
+
+def set_auto_enabled(enabled: bool, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    return set_auto_settings(enabled=bool(enabled), cfg=cfg)
 
 
 def _row_view(
@@ -590,13 +632,20 @@ def portfolio_payload(
         closed_rows = [
             _row_view(row, cfg, now=clock, mark=None) for row in reversed(closed_src[-_CLOSED_LIMIT:])
         ]
+        opens_this_hour = _auto_opens_in_window(broker, clock)
+        cap = int(auto["max_opens_per_hour"])
     try:
         refresh = int(desk.load_wl(cfg).refresh_seconds)
     except Exception:
         refresh = int((cfg.get("board") or {}).get("realtime_seconds") or 60)
+    rate_limited = opens_this_hour >= cap
     return {
         "timezone": timezone_name(cfg),
         "auto_enabled": bool(auto["enabled"]),
+        "max_opens_per_hour": cap,
+        "opens_this_hour": opens_this_hour,
+        "rate_limited": rate_limited,
+        "rate_status": (f"Rate-limited: {opens_this_hour}/{cap} opens this hour" if rate_limited else None),
         "refresh_seconds": max(60, refresh),
         "generated_at_dhaka": fmt_display(clock, cfg, seconds=True),
         "open": open_rows,

@@ -18,7 +18,7 @@ from forex_lab.clock import fmt_display, timezone_name
 from forex_lab.ui.watchlist import WatchlistError, normalize_pair
 
 from api import __version__ as api_version
-from forex_lab.broker import BrokerError
+from forex_lab.broker import MAX_OPENS_PER_HOUR, BrokerError
 
 from api.consensus import ConsensusError, ensure_consensus, read_consensus
 from api.deskdata import (
@@ -35,7 +35,7 @@ from api.deskdata import (
     watchlist_json,
 )
 from api.learnings import MAX_LIMIT, learnings_payload
-from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_enabled
+from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_settings
 from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
 from forex_lab.ui.model_build import model_build_status
 from forex_lab.ui.pipeline import run_retrain
@@ -105,7 +105,8 @@ class ReplayTrainBody(BaseModel):
 
 
 class PaperAutoBody(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    max_opens_per_hour: int | None = Field(default=None, ge=0, le=MAX_OPENS_PER_HOUR)
 
 
 def create_app() -> FastAPI:
@@ -272,8 +273,11 @@ def create_app() -> FastAPI:
 
     @app.post("/portfolio/auto")
     def post_portfolio_auto(body: PaperAutoBody) -> dict:
-        set_auto_enabled(body.enabled)
-        return portfolio_payload(sync=bool(body.enabled))
+        if body.enabled is None and body.max_opens_per_hour is None:
+            raise HTTPException(status_code=400, detail="enabled or max_opens_per_hour is required")
+        set_auto_settings(enabled=body.enabled, max_opens_per_hour=body.max_opens_per_hour)
+        # Pausing freezes the book. A cap-only change still runs the auto step.
+        return portfolio_payload(sync=body.enabled is not False)
 
     @app.post("/paper/order")
     def post_paper_order(body: PaperOrderBody) -> dict:

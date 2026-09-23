@@ -105,6 +105,18 @@ def make_broker(cfg: dict[str, Any] | None = None, *, path: Path | None = None) 
     return PaperBroker(store, default_size=size, cfg=cfg or {})
 
 
+DEFAULT_OPENS_PER_HOUR = 3
+MAX_OPENS_PER_HOUR = 99
+
+
+def _clamp_opens_per_hour(value: object, default: int = DEFAULT_OPENS_PER_HOUR) -> int:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(MAX_OPENS_PER_HOUR, n))
+
+
 def _now_label() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -188,20 +200,29 @@ class PaperBroker(BrokerPort):
         self._state = self._load()
 
     def read_auto(self) -> dict[str, Any]:
-        """Paper-only auto switch. Missing key means enabled — old journals stay on."""
+        """Paper-only auto switch. Missing key means enabled — old journals stay on.
+
+        ``max_opens_per_hour`` defaults to 3 when the journal has no setting.
+        The cap is one shared budget for every pair.
+        """
         auto = self._state.get("auto")
         if not isinstance(auto, dict):
             auto = {}
         seen_raw = auto.get("seen") if isinstance(auto.get("seen"), dict) else {}
         seen = {str(k).upper(): "" if v is None else str(v) for k, v in seen_raw.items()}
         enabled = auto.get("enabled", True)
-        return {"enabled": bool(enabled), "seen": seen}
+        return {
+            "enabled": bool(enabled),
+            "seen": seen,
+            "max_opens_per_hour": _clamp_opens_per_hour(auto.get("max_opens_per_hour", DEFAULT_OPENS_PER_HOUR)),
+        }
 
     def write_auto(
         self,
         *,
         enabled: bool | None = None,
         seen: dict[str, str] | None = None,
+        max_opens_per_hour: int | None = None,
     ) -> dict[str, Any]:
         """Persist auto flags without touching open or closed rows."""
         auto = self._state.get("auto")
@@ -211,6 +232,8 @@ class PaperBroker(BrokerPort):
             auto["enabled"] = bool(enabled)
         if seen is not None:
             auto["seen"] = {str(k).upper(): "" if v is None else str(v) for k, v in seen.items()}
+        if max_opens_per_hour is not None:
+            auto["max_opens_per_hour"] = _clamp_opens_per_hour(max_opens_per_hour)
         self._state["auto"] = auto
         self._save()
         return self.read_auto()
