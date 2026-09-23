@@ -535,3 +535,17 @@ def test_stale_gate_blocks_the_cross(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert book["block_status"] == "Gated"
     opened = run_auto_paper(cfg, rows=[_row(confidence=0.90)], now=T0 + timedelta(minutes=3))
     assert opened["events"] == ["EURUSD open BUY"]
+
+
+def test_stale_raw_signal_is_gated_when_the_brief_hides_the_side(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+    hidden = _row("HOLD", validity="STALE", confidence=0.90)
+    hidden.raw_signal = "SELL"
+    gated = run_auto_paper(cfg, rows=[hidden], now=T0)
+    assert gated["events"] == []
+    assert "gated" in gated["blocks"]
+    book = portfolio_payload(cfg, sync=True, rows=[hidden], now=T0 + timedelta(minutes=1))
+    assert book["open"] == []
+    assert book["block_status"] == "Gated"

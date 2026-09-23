@@ -366,6 +366,17 @@ def _eligible_side(live: str | None, pct: int | None, min_confidence: int) -> st
     return ""
 
 
+def _directional_side(row: Any, live: str | None) -> str | None:
+    """BUY/SELL from the brief, including a side the stale flash has hidden."""
+    if live in {"BUY", "SELL"}:
+        return live
+    for attr in ("raw_signal", "buy_sell"):
+        side = str(getattr(row, attr, "") or "").upper()
+        if side in {"BUY", "SELL"}:
+            return side
+    return None
+
+
 def _block_status(
     *,
     enabled: bool,
@@ -466,10 +477,11 @@ def _auto_one(
     allowed = paper_submit_allowed(getattr(row, "validity", None), row, cfg)
     pct = _confidence_pct(suggestion, row)
     eligible = _eligible_side(live, pct, min_confidence) if allowed else ""
+    directional = _directional_side(row, live)
     if not trade:
-        if live and not allowed:
+        if directional and not allowed:
             blocks.append("gated")
-        elif live and allowed and not eligible and position_for_pair(broker, symbol) is None:
+        elif directional and allowed and not eligible and position_for_pair(broker, symbol) is None:
             blocks.append("below")
         return []
     when = _stamp(now)
@@ -494,9 +506,9 @@ def _auto_one(
     want_open = pos is None and allowed and bool(eligible) and crossed
     pending_fill = want_open and price is None
     rate_blocked = False
-    if live and not allowed:
+    if directional and not allowed:
         blocks.append("gated")
-    elif live and allowed and not eligible and pos is None:
+    elif directional and allowed and not eligible and pos is None:
         blocks.append("below")
     if want_open and price is not None:
         cap = int(broker.read_auto()["max_opens_per_hour"])
