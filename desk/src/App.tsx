@@ -217,7 +217,7 @@ export function App() {
   return (
     <>
       <TopNav mode={mode} onMode={setMode} />
-      <main className={mode === "decision" ? "app" : "app single"}>
+      <main className={mode === "decision" ? (noticeLeft > 0 ? "app has-notice" : "app") : "app single"}>
         {mode !== "decision" ? (
           <Placeholder mode={mode} pair={selected} />
         ) : (
