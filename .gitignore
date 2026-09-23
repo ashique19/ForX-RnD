@@ -7,6 +7,8 @@ __pycache__/
 dist/
 build/
 .install_write_probe
+# how a cache was filled: yfinance or resampled_from_1h (not a price file)
+data/*.source
 # extra-pair caches; EURUSD_1h.csv is the committed demo set
 data/GBPUSD_*.csv
 data/USDJPY_*.csv

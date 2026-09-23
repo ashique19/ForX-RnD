@@ -25,7 +25,13 @@ from forex_lab.calendar import (
 from forex_lab.chart_indicators import chart_indicators_aligned, chart_price_digits, empty_indicators
 from forex_lab.clock import fmt_display, parse_ts, timezone_name, timezone_tag
 from forex_lab.config_loader import load_config, pip_size_for_pair
-from forex_lab.data import load_cached_ohlcv, try_yfinance_refresh
+from forex_lab.data import (
+    SOURCE_RESAMPLED_FROM_1H,
+    SOURCE_YFINANCE,
+    ensure_interval_ohlcv,
+    load_cached_ohlcv,
+    try_yfinance_refresh,
+)
 from forex_lab.features import true_range_atr
 from forex_lab.freshness import (
     DEFAULT_STALE_BARS,
@@ -36,6 +42,7 @@ from forex_lab.freshness import (
     VALIDITY_STALE,
     assess_ohlcv,
     board_cfg,
+    format_failure_reason,
     fx_session_open,
     interval_seconds,
     is_rate_limited_reason,
@@ -854,6 +861,13 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     elif validity == VALIDITY_STALE:
         chip = "STALE"
         tone = "stale"
+    elif (
+        str(row.status) == "need_train"
+        and now_px is not None
+        and validity not in {VALIDITY_MISSING, VALIDITY_ERROR}
+    ):
+        chip = "need Train"
+        tone = "miss"
     elif validity in {VALIDITY_MISSING, VALIDITY_ERROR} or str(row.status) in {"need_fetch", "need_train"}:
         chip = "MISSING"
         tone = "miss"
@@ -863,6 +877,16 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     else:
         chip = flashed if flashed in {"HOLD", "—"} else "—"
         tone = "miss"
+    raw_reason = str(getattr(row, "validity_reason", "") or "").strip()
+    failed = validity in {VALIDITY_MISSING, VALIDITY_ERROR} or str(getattr(row, "status", "") or "") == "need_fetch"
+    if failed:
+        shown_reason = format_failure_reason(
+            interval,
+            raw_reason or "no OHLCV cache",
+            last_ok=getattr(row, "last_fetch_at", None),
+        )
+    else:
+        shown_reason = raw_reason
     rationale = str(getattr(row, "rationale", "") or "").strip()
     if not rationale:
         rationale = str(getattr(row, "signal_details", "") or "").strip()
@@ -874,6 +898,15 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     duration = _duration_text(interval, horizon if stop is not None else None)
     if not duration:
         duration = gap or "no barriers"
+    scenario = _scenario(pair, interval, row, stop=stop, target=target, live_signal=signal)
+    if failed and shown_reason:
+        last_model = str(getattr(row, "raw_signal", "") or "").upper()
+        if last_model in {"BUY", "SELL", "HOLD"}:
+            scenario = f"{shown_reason.rstrip('.')}. Last model {last_model} is not a live call."
+        else:
+            scenario = shown_reason
+    elif str(getattr(row, "status", "") or "") == "need_train" and "not copied" in shown_reason:
+        scenario = shown_reason
     return {
         "interval": interval,
         "tf": tf_label(interval),
@@ -881,6 +914,7 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         "chip": chip,
         "tone": tone,
         "validity": validity,
+        "validity_reason": shown_reason,
         "status": str(getattr(row, "status", "") or ""),
         "now": now_px,
         "now_text": price_text(pair, now_px) if now_px is not None else "—",
@@ -890,7 +924,7 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         "target_text": price_text(pair, target) if target is not None else gap,
         "duration": duration,
         "horizon_bars": horizon if stop is not None else None,
-        "scenario": _scenario(pair, interval, row, stop=stop, target=target, live_signal=signal),
+        "scenario": scenario,
         "rationale": rationale,
         "atr_pips": None if atr_pips is None else round(float(atr_pips), 1),
         "raw_signal": None if not getattr(row, "raw_signal", None) else str(row.raw_signal),
@@ -1088,7 +1122,14 @@ def _note_failed_refresh(row: Any, reason: str) -> None:
     has_bar = str(getattr(row, "last_bar_at", "") or "").strip().lower() not in {"", "n/a", "none"}
     row.validity = VALIDITY_STALE if has_bar else VALIDITY_ERROR
     prev = str(getattr(row, "validity_reason", "") or "").strip()
-    row.validity_reason = f"{note}. {prev}".strip() if prev else note
+    if has_bar:
+        row.validity_reason = f"{note}. {prev}".strip() if prev else note
+    else:
+        row.validity_reason = format_failure_reason(
+            str(getattr(row, "timeframe", "") or ""),
+            note if not prev else f"{note}. {prev}",
+            last_ok=getattr(row, "last_fetch_at", None),
+        )
     flashed = str(getattr(row, "buy_sell", "") or "").upper()
     if flashed in {"BUY", "SELL"}:
         row.raw_signal = getattr(row, "raw_signal", None) or row.buy_sell
@@ -1109,6 +1150,54 @@ def _watch_targets(cfg: dict[str, Any]) -> list[tuple[str, str]]:
         seen.add(key)
         out.append(key)
     return out
+
+
+def _hourly_before_daily(targets: list[tuple[str, str]], symbol: str) -> list[tuple[str, str]]:
+    """Refresh 1h before 1d so a missing daily file can be aggregated from 1h."""
+    deferred: list[tuple[str, str]] = []
+    out: list[tuple[str, str]] = []
+    flushed = False
+    for pair, iv in targets:
+        if pair == symbol and iv == DAILY_INTERVAL:
+            deferred.append((pair, iv))
+            continue
+        out.append((pair, iv))
+        if pair == symbol and iv == HOURLY_INTERVAL and not flushed:
+            out.extend(deferred)
+            deferred = []
+            flushed = True
+    out.extend(deferred)
+    return out
+
+
+def expand_active_intervals(
+    targets: list[tuple[str, str]],
+    active: str | None,
+) -> list[tuple[str, str]]:
+    """Heavy H1+D1 fill for the one Active pair. Other pairs stay on their interval."""
+    text = str(active or "").strip()
+    if not text:
+        return targets
+    symbol = normalize_pair(text)
+    out = list(targets)
+    seen = set(out)
+    for iv in (HOURLY_INTERVAL, DAILY_INTERVAL):
+        key = (symbol, iv)
+        if key not in seen:
+            out.append(key)
+            seen.add(key)
+    return _hourly_before_daily(out, symbol)
+
+
+def _decision_intervals(primary: str) -> list[str]:
+    """1h, the requested interval, then 1d. Daily is last so resample can see fresh 1h."""
+    ordered: list[str] = []
+    for iv in (HOURLY_INTERVAL, primary, DAILY_INTERVAL):
+        if iv not in ordered:
+            ordered.append(iv)
+    if DAILY_INTERVAL in ordered:
+        ordered = [iv for iv in ordered if iv != DAILY_INTERVAL] + [DAILY_INTERVAL]
+    return ordered
 
 
 def _dedupe_targets(raw: list[tuple[str, str | None]], cfg: dict[str, Any]) -> list[tuple[str, str]]:
@@ -1165,14 +1254,18 @@ def refresh_watchlist(
     pairs: list[tuple[str, str | None]] | None = None,
     *,
     cfg: dict[str, Any] | None = None,
+    active: str | None = None,
 ) -> dict[str, Any]:
     """Refresh OHLCV for the watchlist (or an explicit pair list).
 
     Market data only. Does not call the research pipeline.
     ``pairs is None`` uses the saved watchlist. An empty list refreshes nothing.
+    ``active`` is the one Decision subject: that pair also gets 1h and 1d.
+    Other pairs stay on the interval they were asked for.
     """
     cfg = cfg if cfg is not None else app_config()
     targets = _watch_targets(cfg) if pairs is None else _dedupe_targets(pairs, cfg)
+    targets = expand_active_intervals(targets, active)
     results = [refresh_one(symbol, interval=iv, cfg=cfg) for symbol, iv in targets]
     updated = any(not item.get("rate_limited") and not item.get("fetch_failed") for item in results)
     hard_fail = [item for item in results if item.get("fetch_failed") and not _yf_rate_limited(item)]
@@ -1216,12 +1309,26 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
     iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
-    fetched, reason = try_yfinance_refresh(symbol, cfg, interval=iv, incremental=True)
+    fetched, source, reason = ensure_interval_ohlcv(
+        symbol,
+        cfg,
+        iv,
+        incremental=True,
+        refresh=try_yfinance_refresh,
+    )
     row = build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=True)
     fetch_failed = fetched is None
     if fetch_failed:
         _note_failed_refresh(row, reason)
     ensure_consensus(symbol, cfg)
+    if source == SOURCE_RESAMPLED_FROM_1H:
+        source_label = SOURCE_RESAMPLED_FROM_1H
+    elif source == SOURCE_YFINANCE:
+        source_label = SOURCE_YFINANCE
+    elif source == "cache":
+        source_label = f"cache ({reason})"
+    else:
+        source_label = f"missing ({reason})"
     return {
         "ok": True,
         "rate_limited": False,
@@ -1231,7 +1338,32 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
         "pair": symbol,
         "interval": iv,
         "row": row_json(row, cfg=cfg),
-        "source": "yfinance" if fetched is not None else f"cache ({reason})",
+        "source": source_label,
+        "cache_source": source,
+        "provider_note": reason if source == SOURCE_RESAMPLED_FROM_1H and reason else None,
+    }
+
+
+def refresh_active_pair(
+    pair: str,
+    *,
+    interval: str | None = None,
+    cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Refresh the Active subject: its interval, plus 1h and 1d.
+
+    1h runs before 1d. Each interval keeps its own rate-limit key.
+    The returned object is the requested interval; ``intervals`` lists the rest.
+    """
+    cfg = cfg if cfg is not None else app_config()
+    symbol = normalize_pair(pair)
+    primary = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
+    results = [refresh_one(symbol, interval=iv, cfg=cfg) for iv in _decision_intervals(primary)]
+    chosen = next(item for item in results if item.get("interval") == primary)
+    return {
+        **chosen,
+        "ensured": [str(item.get("interval") or "") for item in results],
+        "intervals": results,
     }
 
 

@@ -222,6 +222,146 @@ def load_cached_ohlcv(
     return _normalize_ohlcv(df)
 
 
+# A daily cache is usable once it clears the same short-history bar as freshness.
+MIN_CACHE_BARS = 20
+SOURCE_YFINANCE = "yfinance"
+SOURCE_RESAMPLED_FROM_1H = "resampled_from_1h"
+
+
+def cache_source_path(pair: str, cfg: dict[str, Any], interval: str | None = None) -> Path:
+    """Sidecar next to the CSV: ``yfinance`` or ``resampled_from_1h``."""
+    return data_path(pair, cfg, interval).with_suffix(".source")
+
+
+def write_cache_source(pair: str, cfg: dict[str, Any], interval: str, source: str) -> None:
+    path = cache_source_path(pair, cfg, interval)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(source).strip() + "\n", encoding="utf-8")
+
+
+def read_cache_source(pair: str, cfg: dict[str, Any], interval: str | None = None) -> str:
+    path = cache_source_path(pair, cfg, interval)
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def aggregate_hourly_to_daily(frame: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate 1h OHLCV into UTC calendar-day bars.
+
+    Path used when the provider has no usable 1d download. Each day is
+    open=first, high=max, low=min, close=last, volume=sum of the 1h bars
+    already on disk. The current UTC day is kept as a partial bar. No
+    synthetic prices are added.
+    """
+    if frame is None or frame.empty:
+        return pd.DataFrame(columns=REQUIRED_COLS)
+    base = frame.copy()
+    base.index = pd.to_datetime(base.index, utc=True).tz_convert(None)
+    base = base.sort_index()
+    base = base[~base.index.duplicated(keep="last")]
+    daily = (
+        base.resample("1D", label="left", closed="left")
+        .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+        .dropna(subset=["Open", "High", "Low", "Close"])
+    )
+    daily.index.name = "Datetime"
+    return daily[REQUIRED_COLS]
+
+
+def cache_bar_count(pair: str, cfg: dict[str, Any], interval: str | None = None) -> int:
+    try:
+        frame = load_cached_ohlcv(pair, cfg, interval)
+    except Exception:
+        return 0
+    if frame is None or frame.empty:
+        return 0
+    return int(len(frame))
+
+
+def resample_daily_cache_from_hourly(
+    pair: str,
+    cfg: dict[str, Any],
+    *,
+    min_bars: int = MIN_CACHE_BARS,
+) -> tuple[pd.DataFrame | None, str]:
+    """Write ``{PAIR}_1d.csv`` from the 1h cache. Does not call the provider.
+
+    Returns ``(frame, note)``. ``note`` is ``resampled_from_1h`` on success,
+    otherwise why the 1h cache could not fill a daily file.
+    """
+    try:
+        hourly = load_cached_ohlcv(pair, cfg, "1h")
+    except Exception as exc:
+        return None, f"1h cache unreadable ({exc})"
+    if hourly is None or hourly.empty:
+        return None, "no 1h cache to resample"
+    try:
+        daily = aggregate_hourly_to_daily(hourly)
+    except Exception as exc:
+        return None, f"resample failed ({exc})"
+    if daily.empty:
+        return None, "1h cache produced no daily bars"
+    if len(daily) < min_bars:
+        return None, f"1h cache cannot build {min_bars} daily bars (have {len(daily)})"
+    daily.to_csv(data_path(pair, cfg, "1d"))
+    write_cache_source(pair, cfg, "1d", SOURCE_RESAMPLED_FROM_1H)
+    return daily, SOURCE_RESAMPLED_FROM_1H
+
+
+def ensure_interval_ohlcv(
+    pair: str,
+    cfg: dict[str, Any],
+    interval: str | None = None,
+    *,
+    incremental: bool = True,
+    period: str | None = None,
+    refresh=None,
+) -> tuple[pd.DataFrame | None, str, str]:
+    """Fill one OHLCV cache without synthetic prices.
+
+    Prefer a real provider download (``try_yfinance_refresh``). A missing or
+    short **1d** cache that the provider cannot fill is aggregated from the
+    1h cache (see ``aggregate_hourly_to_daily``). An existing usable cache is
+    left untouched when the download fails — it is not replaced by a resample.
+
+    A first fill is a full-period download. Incremental 1d (a few sessions)
+    is shorter than the minimum bar count and would never create the file.
+
+    Returns ``(frame, source, reason)`` where ``source`` is ``yfinance``,
+    ``resampled_from_1h``, ``cache`` (download failed, previous file kept),
+    or ``missing``. ``reason`` is empty on a provider hit, the provider error
+    when daily bars were aggregated from 1h, and the failure text otherwise.
+    """
+    iv = str(interval or cfg.get("interval") or "1h")
+    usable = cache_bar_count(pair, cfg, iv) >= MIN_CACHE_BARS
+    do_refresh = refresh or try_yfinance_refresh
+    fetched, reason = do_refresh(
+        pair,
+        cfg,
+        period=period,
+        interval=iv,
+        incremental=bool(incremental and usable),
+    )
+    if fetched is not None:
+        if isinstance(fetched, pd.DataFrame):
+            write_cache_source(pair, cfg, iv, SOURCE_YFINANCE)
+        return fetched, SOURCE_YFINANCE, ""
+    provider_reason = str(reason or "").strip()
+    if iv == "1d" and not usable:
+        resampled, resample_note = resample_daily_cache_from_hourly(pair, cfg)
+        if resampled is not None:
+            return resampled, SOURCE_RESAMPLED_FROM_1H, provider_reason
+        parts = [part for part in (provider_reason, str(resample_note or "").strip()) if part]
+        return None, "missing", "; ".join(parts) or "no OHLCV cache"
+    if usable:
+        return None, "cache", provider_reason or "refresh failed"
+    return None, "missing", provider_reason or "no OHLCV cache"
+
+
 def load_ohlcv(pair: str, cfg: dict[str, Any], interval: str | None = None) -> pd.DataFrame:
     path = data_path(pair, cfg, interval)
     if not path.exists():

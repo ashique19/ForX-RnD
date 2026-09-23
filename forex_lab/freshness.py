@@ -28,6 +28,14 @@ VALIDITY_MISSING = "MISSING"
 VALIDITY_ERROR = "ERROR"
 VALIDITY_CLOSED = "CLOSED"
 
+# Human labels for a failed Decision horizon. H1/D1 chips stay separate.
+FAILURE_TF_LABEL = {
+    "15m": "15m",
+    "1h": "Hourly",
+    "4h": "4h",
+    "1d": "Daily",
+}
+
 INTERVAL_SECONDS = {
     "15m": 15 * 60,
     "15min": 15 * 60,
@@ -52,6 +60,32 @@ YF_BACKOFF_CAP_S = 600
 
 def board_cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:
     return dict((cfg or {}).get("board") or {})
+
+
+def format_failure_reason(interval: str | None, why: str | None, *, last_ok: str | None = None) -> str:
+    """Explicit desk failure: ``Daily — failed: no OHLCV cache``.
+
+    ``last_ok`` is appended only when it is a real timestamp (Asia/Dhaka
+    when the caller already formatted it). Empty and ``n/a`` are omitted.
+    """
+    key = str(interval or "").strip()
+    label = FAILURE_TF_LABEL.get(key, key or "OHLCV")
+    text = str(why or "").strip().rstrip(".")
+    for suffix in (" — Fetch required", " — fetch required", "; Fetch required"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip().rstrip(".")
+    if not text:
+        text = "no OHLCV cache"
+    prefix = f"{label} — failed:"
+    if text.lower().startswith(prefix.lower()):
+        head = text
+    else:
+        head = f"{prefix} {text}"
+    head = head.rstrip(".")
+    ok = str(last_ok or "").strip()
+    if ok and ok.lower() not in {"n/a", "none", "null"} and "last ok" not in head.lower():
+        return f"{head}. Last OK {ok}."
+    return head
 
 
 def interval_seconds(interval: str | None) -> int:
