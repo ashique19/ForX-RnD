@@ -389,6 +389,70 @@
 
     /* —— Signal brief —— */
     .brief .panel-body { padding: 12px; overflow: auto; }
+    .brief .panel-body[hidden] { display: none; }
+    .brief.is-collapsed .panel-hd {
+      container-type: inline-size;
+      container-name: briefbar;
+      border-bottom: none;
+      gap: 6px;
+      padding: 8px 10px;
+    }
+    .brief.is-collapsed h2,
+    .brief.is-collapsed .btn.icon { flex-shrink: 0; }
+    .brief-toggle .chev {
+      width: 14px;
+      height: 14px;
+      color: var(--faint);
+      transition: transform .15s;
+      flex-shrink: 0;
+    }
+    .brief-toggle .chev.open { transform: rotate(90deg); }
+    .brief-metrics {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 0 1 auto;
+    }
+    .brief-metric {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .brief-metric .lbl {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .brief-metric .val {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .brief-metric .val.stop { color: var(--red); }
+    .brief-metric .val.tgt { color: var(--green); }
+    .brief.is-collapsed .paper-row {
+      flex-wrap: nowrap;
+      flex-shrink: 0;
+    }
+    .brief-collapsed-note {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      align-items: center;
+      padding: 0 10px 8px;
+    }
+    /* Buy/Sell/Close/Lots stay on the collapsed row while the brief is wide
+       enough for one line. Under ~36rem those controls crowd Now/Stop/Target/
+       Duration, so they stay in the expanded brief only. */
+    @container briefbar (max-width: 36rem) {
+      .brief.is-collapsed .paper-row { display: none; }
+    }
     .bias-block {
       container-type: inline-size;
       container-name: bias;
@@ -1083,5 +1147,8 @@
     }
     .watchlist.panel { overflow: visible; }
     .right-col > .brief { flex: 1 1 48%; min-height: 0; }
+    /* Drop the brief's flex share when collapsed so the chart panel grows
+       into the reclaimed height instead of leaving an empty brief column. */
+    .right-col > .brief.is-collapsed { flex: 0 0 auto; }
     .right-col > .chart { flex: 1 1 62%; min-height: 420px; }
     table.wl tbody tr { cursor: pointer; }

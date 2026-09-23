@@ -369,6 +369,7 @@ export function App() {
                 consensus={brief?.consensus ?? null}
                 paper={brief?.paper ?? null}
                 toast={paperToast}
+                chartInterval={chartTf}
                 onRefresh={() => void reload()}
                 onOrder={async (side, size) => {
                   const result = await api.paperOrder(selected, side, size, rowTf);
