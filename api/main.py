@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from forex_lab import __version__ as lab_version
 from forex_lab.clock import fmt_display, timezone_name
@@ -36,7 +36,7 @@ from api.deskdata import (
 )
 from api.learnings import MAX_LIMIT, learnings_payload
 from api.paperdesk import PaperBlocked, paper_order
-from api.replayjob import ReplayJobError, get_job, job_file, start_pull, start_replay
+from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
 
 _ORIGINS = [
     "http://127.0.0.1:5173",
@@ -67,20 +67,38 @@ class RefreshBody(BaseModel):
     pairs: list[RefreshTarget] | None = None
 
 
+def _one_active_pair(value: object) -> str:
+    if isinstance(value, (list, tuple, set)):
+        raise ValueError("Historic pull and replay take one Active pair, not the watchlist.")
+    return str(value)
+
+
 class HistoryPullBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     pair: str = Field(..., min_length=1)
     interval: str | None = "1h"
     start: str | None = "2015-01-01"
     end: str | None = None
     source: str | None = None
 
+    @field_validator("pair", mode="before")
+    @classmethod
+    def single_pair(cls, value: object) -> str:
+        return _one_active_pair(value)
+
 
 class ReplayTrainBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     pair: str = Field(..., min_length=1)
     interval: str | None = None
     start: str | None = "2015-01-01"
     end: str | None = None
     pull: bool = True
+
+    @field_validator("pair", mode="before")
+    @classmethod
+    def single_pair(cls, value: object) -> str:
+        return _one_active_pair(value)
 
 
 def create_app() -> FastAPI:
@@ -230,6 +248,8 @@ def create_app() -> FastAPI:
                 end=body.end,
                 source=body.source,
             )
+        except ReplayBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ReplayJobError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -239,7 +259,7 @@ def create_app() -> FastAPI:
 
     @app.post("/replay/train")
     def post_replay_train(body: ReplayTrainBody) -> dict:
-        """Walk-forward replay for one watchlist pair. Paper books only; live journal untouched."""
+        """Walk-forward replay for the one Active pair. Paper books only; live journal untouched."""
         try:
             return start_replay(
                 app_config(),
@@ -249,6 +269,8 @@ def create_app() -> FastAPI:
                 end=body.end,
                 pull=body.pull,
             )
+        except ReplayBusy as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ReplayJobError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

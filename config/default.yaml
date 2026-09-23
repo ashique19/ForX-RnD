@@ -289,6 +289,7 @@ retrain:
   write_report: false        # leave reports/latest_report.md unless true
 
 # Historic walk-forward replay (Decision desk "Replay train" + `python -m forex_lab replay`).
+# One Active pair per pull/replay. The watchlist is not downloaded as a batch.
 # Pulls Dukascopy bid/ask OHLC into data/history/ (gitignored). HistData M1 is the
 # fallback and has no bid/ask — fills then use spread_pips + slippage_pips.
 # ReplayClock paper books live under data/replay/ and do not touch broker.store.

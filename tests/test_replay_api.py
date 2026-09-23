@@ -29,6 +29,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         return CalendarBundle()
 
     monkeypatch.setattr("api.deskdata.fetch_calendar", _quiet_calendar)
+    from api.replayjob import reset_jobs
+
+    reset_jobs()
     return TestClient(create_app())
 
 
@@ -122,3 +125,42 @@ def test_history_pull_and_bad_pair(client: TestClient, monkeypatch: pytest.Monke
     assert bad.status_code == 400
     missing = client.get("/replay/jobs/nope")
     assert missing.status_code == 404
+
+
+def test_historic_train_is_one_active_pair(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def fake_pull(pair, *_a, **_k):
+        calls.append(str(pair))
+        started.set()
+        assert release.wait(5)
+        return {"source": "dukascopy", "rows": 1, "bid_ask": True}
+
+    monkeypatch.setattr("api.replayjob.pull_history", fake_pull)
+    first = client.post("/history/pull", json={"pair": "EURUSD", "interval": "1h", "start": "2015-01-05"})
+    assert first.status_code == 200
+    assert started.wait(5)
+    again = client.post("/history/pull", json={"pair": "EURUSD", "interval": "1h", "start": "2015-01-05"})
+    assert again.status_code == 200
+    assert again.json()["job_id"] == first.json()["job_id"]
+    other = client.post("/replay/train", json={"pair": "GBPUSD", "interval": "1h", "pull": True})
+    assert other.status_code == 409
+    assert "EURUSD" in other.json()["detail"]
+    assert calls == ["EURUSD"]
+    batch = client.post("/replay/train", json={"pair": "EURUSD,GBPUSD", "interval": "1h"})
+    assert batch.status_code == 400
+    assert "one Active pair" in batch.json()["detail"]
+    listed = client.post("/history/pull", json={"pair": ["EURUSD", "GBPUSD"], "interval": "1h"})
+    assert listed.status_code == 422
+    extra = client.post("/replay/train", json={"pair": "EURUSD", "pairs": ["GBPUSD"]})
+    assert extra.status_code == 422
+    release.set()
+    from api.replayjob import wait_job
+
+    done = wait_job(first.json()["job_id"], timeout=10)
+    assert done["status"] == "done"
+    assert calls == ["EURUSD"]

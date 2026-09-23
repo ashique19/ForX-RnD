@@ -29,10 +29,13 @@ export function ReplayTrainButton({ pair, interval }: { pair: string; interval: 
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls="replay-dialog"
+        aria-label={pair ? `Replay train Active ${pair}` : "Replay train"}
         disabled={!pair}
+        title={pair ? `Active ${pair}` : "Choose one Active pair"}
         onClick={() => setOpen(true)}
       >
         Replay train
+        {pair ? <span className="replay-active">{pair}</span> : null}
       </button>
       <ReplayModal
         open={open}
@@ -175,14 +178,14 @@ function ReplayModal({
             </button>
           </div>
           <p className="replay-pair">
-            <span>Pair</span>
+            <span>Active pair</span>
             <strong>
               {pair || "—"} · {(interval || "1h").toUpperCase()}
             </strong>
           </p>
           <p className="replay-note">
-            Pulls Dukascopy bid/ask history if the cache is missing or stale, then walk-forward paper replay. Times on the
-            scoreboard are Asia/Dhaka.
+            Pulls and replays this pair only. The rest of the watchlist stays idle. Dukascopy bid/ask history is used when
+            the cache is missing or stale. Scoreboard times are Asia/Dhaka.
           </p>
           <div className="replay-fields">
             <label>

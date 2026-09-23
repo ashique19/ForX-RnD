@@ -1,5 +1,8 @@
 """Background history-pull and replay-train jobs.
 
+One Active pair at a time. A request names that pair; it does not walk the
+watchlist, and a second historic pull or replay is refused while one is running.
+
 Live paper (``broker.store``) is never opened here. Each replay job gets its
 own directory under ``data/replay/`` with separate PaperBroker JSON files.
 """
@@ -28,16 +31,38 @@ from api.deskdata import ASSET_ALLOW
 
 _JOBS: dict[str, dict[str, Any]] = {}
 _LOCK = threading.Lock()
+_ACTIVE_ID: str | None = None
 _ID = re.compile(r"^[a-f0-9]{32}$")
+_BATCH = {"ALL", "WATCHLIST", "*", "ANY"}
 
 
 class ReplayJobError(ValueError):
     """Bad pair, interval, or unknown job."""
 
 
-def parse_pair(pair: str) -> str:
+class ReplayBusy(ReplayJobError):
+    """A historic pull or replay is already running for the Active pair."""
+
+
+def reset_jobs() -> None:
+    """Drop in-memory job slots. Tests only."""
+    global _ACTIVE_ID
+    with _LOCK:
+        _ACTIVE_ID = None
+        _JOBS.clear()
+
+
+def parse_pair(pair: object) -> str:
+    """One symbol. Lists, 'ALL', and comma-separated batches are refused."""
+    if isinstance(pair, (list, tuple, set)):
+        raise ReplayJobError("Historic pull and replay take one Active pair, not the watchlist.")
+    text = str(pair or "").strip()
+    if not text or text.upper() in _BATCH:
+        raise ReplayJobError("Historic pull and replay take one Active pair, not the watchlist.")
+    if any(sep in text for sep in (",", ";", "|")):
+        raise ReplayJobError("Historic pull and replay take one Active pair, not a list.")
     try:
-        symbol = normalize_pair(pair)
+        symbol = normalize_pair(text)
     except WatchlistError as exc:
         raise ReplayJobError(str(exc)) from exc
     if symbol not in ASSET_ALLOW:
@@ -132,31 +157,46 @@ def _start(
     pull: bool,
     source: str | None,
 ) -> dict[str, Any]:
-    job_id = uuid.uuid4().hex
-    folder = job_dir(job_id, cfg)
-    folder.mkdir(parents=True, exist_ok=True)
-    status: dict[str, Any] = {
-        "job_id": job_id,
-        "kind": kind,
-        "status": "running",
-        "phase": "pull" if kind == "pull" or pull else "replay",
-        "pair": pair,
-        "interval": interval,
-        "start": start,
-        "end": end,
-        "fraction": 0.0,
-        "message": "Starting",
-        "as_of_dhaka": None,
-        "error": None,
-        "calendar_note": CALENDAR_ASOF_GAP,
-        "promotion_line": None,
-        "source": None,
-        "bid_ask": None,
-        "rows": None,
-        "report": None,
-    }
+    global _ACTIVE_ID
     with _LOCK:
+        current = _running_locked()
+        if current is not None:
+            same = (
+                current.get("pair") == pair
+                and current.get("interval") == interval
+                and current.get("kind") == kind
+            )
+            if same:
+                return _public(current)
+            raise ReplayBusy(
+                f"A historic {current.get('kind')} is already running for {current.get('pair')} "
+                f"{current.get('interval')}. One Active pair at a time."
+            )
+        job_id = uuid.uuid4().hex
+        folder = job_dir(job_id, cfg)
+        folder.mkdir(parents=True, exist_ok=True)
+        status = {
+            "job_id": job_id,
+            "kind": kind,
+            "status": "running",
+            "phase": "pull" if kind == "pull" or pull else "replay",
+            "pair": pair,
+            "interval": interval,
+            "start": start,
+            "end": end,
+            "fraction": 0.0,
+            "message": "Starting",
+            "as_of_dhaka": None,
+            "error": None,
+            "calendar_note": CALENDAR_ASOF_GAP,
+            "promotion_line": None,
+            "source": None,
+            "bid_ask": None,
+            "rows": None,
+            "report": None,
+        }
         _JOBS[job_id] = status
+        _ACTIVE_ID = job_id
     _write(status, folder)
     thread = threading.Thread(
         target=_worker,
@@ -263,7 +303,17 @@ def _links(job_id: str) -> dict[str, str]:
     }
 
 
+def _running_locked() -> dict[str, Any] | None:
+    if _ACTIVE_ID is None:
+        return None
+    job = _JOBS.get(_ACTIVE_ID)
+    if job is None or job.get("status") in {"done", "error"}:
+        return None
+    return job
+
+
 def _update(job_id: str, folder: Path, **fields: Any) -> None:
+    global _ACTIVE_ID
     with _LOCK:
         current = _JOBS.get(job_id)
         if current is None:
@@ -272,6 +322,8 @@ def _update(job_id: str, folder: Path, **fields: Any) -> None:
         for key, value in fields.items():
             if value is not None or key in {"error", "promotion_line", "as_of_dhaka"}:
                 current[key] = value
+        if current.get("status") in {"done", "error"} and _ACTIVE_ID == job_id:
+            _ACTIVE_ID = None
         snapshot = _public(current)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "status.json").write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")

@@ -260,7 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     h = sub.add_parser(
         "history",
-        help="Pull Dukascopy tick->OHLC (HistData fallback) into data/history (gitignored)",
+        help="Pull one pair of Dukascopy tick->OHLC (HistData fallback) into data/history (gitignored)",
+        description="One pair. Does not download the rest of the watchlist.",
     )
     _add_common(h)
     h.add_argument("--interval", default="1h", help="15m | 1h | 4h | 1d")
@@ -270,7 +271,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     rp = sub.add_parser(
         "replay",
-        help="Walk-forward replay train + scoreboard (paper only, does not touch the live journal)",
+        help="Walk-forward replay for one pair (paper only, does not touch the live journal)",
+        description="One Active pair. Does not train the rest of the watchlist.",
     )
     _add_common(rp)
     rp.add_argument("--interval", default="1h", help="15m | 1h | 4h | 1d")
