@@ -264,6 +264,40 @@
     }
     .watchlist { flex: 1; min-height: 0; }
     .watchlist .panel-body { overflow: auto; flex: 1; }
+    .watchlist .panel-body[hidden] { display: none; }
+    /* Collapsed watchlist hugs its header so the chart column picks up the width. */
+    .app:not(.single):has(.watchlist.is-collapsed) {
+      grid-template-columns: max-content minmax(0, 1fr);
+    }
+    .left-col:has(.watchlist.is-collapsed) {
+      width: max-content;
+      max-width: 100%;
+      align-self: start;
+    }
+    .watchlist.is-collapsed {
+      flex: 0 0 auto;
+      width: max-content;
+      max-width: 100%;
+    }
+    .watchlist.is-collapsed .panel-hd {
+      border-bottom: none;
+      width: max-content;
+      max-width: 100%;
+    }
+    .watchlist.is-collapsed .spacer { display: none; }
+    .wl-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 8px;
+      border-radius: 999px;
+      background: var(--blue-bg);
+      border: 1px solid #b2ddff;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
 
     table.wl {
       width: 100%;
@@ -388,14 +422,20 @@
     }
     .brief.is-collapsed h2,
     .brief.is-collapsed .btn.icon { flex-shrink: 0; }
-    .brief-toggle .chev {
+    .brief.is-collapsed h2.brief-pair {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .panel-toggle .chev {
       width: 14px;
       height: 14px;
       color: var(--faint);
       transition: transform .15s;
       flex-shrink: 0;
     }
-    .brief-toggle .chev.open { transform: rotate(90deg); }
+    .panel-toggle .chev.open { transform: rotate(90deg); }
     .brief-metrics {
       display: flex;
       align-items: center;
@@ -768,9 +808,15 @@
       .levels { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 860px) {
-      .app {
+      .app,
+      .app:not(.single):has(.watchlist.is-collapsed) {
         grid-template-columns: 1fr;
         height: auto;
+      }
+      .left-col:has(.watchlist.is-collapsed),
+      .watchlist.is-collapsed,
+      .watchlist.is-collapsed .panel-hd {
+        width: 100%;
       }
       .tf-cards { grid-template-columns: 1fr; }
     }
