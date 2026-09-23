@@ -214,13 +214,12 @@
     .alerts .alert-flip-badge {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
       height: 18px;
       padding: 0 7px;
       border-radius: 999px;
       border: 1px solid #f3d7b0;
       background: transparent;
-      color: #c47a32;
+      color: #b54708;
       font-size: 11px;
       font-weight: 600;
       line-height: 1;
@@ -237,12 +236,10 @@
       font-weight: 800;
     }
     .alerts .alert-flip-dir {
-      width: 0;
-      height: 0;
-      border-top: 3px solid transparent;
-      border-bottom: 3px solid transparent;
-      border-left: 4px solid #e0b07a;
-      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+      color: #d0924a;
     }
     .alerts .alert-sep {
       margin: 0 0.45em;

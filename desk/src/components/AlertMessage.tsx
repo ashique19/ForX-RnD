@@ -5,16 +5,26 @@ import type { AlertItem } from "../types";
 function FlipClause({ clause }: { clause: Extract<AlertClause, { type: "flips" }> }) {
   const badges = flipBadges(clause);
   return (
-    <span
-      className="alert-clause"
-      aria-label={badges.length > 1 ? `${clause.pair} flips, newest to older` : undefined}
-    >
+    <span className="alert-clause">
       {badges.map((badge, index) => (
         <Fragment key={`${badge.change}-${index}`}>
-          {index > 0 ? <span className="alert-flip-dir" aria-hidden="true" /> : null}
+          {index > 0 ? (
+            <span className="alert-flip-dir" aria-hidden="true">
+              <svg viewBox="0 0 8 10" width="8" height="10" focusable="false">
+                <path
+                  d="M1.2 1.2 L6.2 5 L1.2 8.8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+          ) : null}
           <span className={badge.latest ? "alert-flip-badge alert-flip-badge--latest" : "alert-flip-badge"}>
             {badge.pair ? <span className="alert-flip-pair">{badge.pair}</span> : null}
-            <span className="alert-flip-change">{badge.change}</span>
+            <span className="alert-flip-change">{badge.pair ? `\u00A0${badge.change}` : badge.change}</span>
           </span>
         </Fragment>
       ))}
