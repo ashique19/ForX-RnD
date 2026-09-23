@@ -767,6 +767,15 @@
       border-color: var(--red-border);
       color: #b42318;
     }
+    .alerts.api-down { flex-wrap: wrap; }
+    .alerts.api-down .api-down-msg { flex: 1 1 160px; min-width: 0; }
+    .alerts.api-down .api-down-eta {
+      margin-left: auto;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .alerts.api-down .btn { flex-shrink: 0; }
     .wl-remove {
       border: 1px solid var(--border-strong);
       background: var(--surface);

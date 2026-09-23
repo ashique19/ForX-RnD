@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability } from "./api";
 import type { Board, BoardRow, Brief, Mode, Ohlcv } from "./types";
 import { AuxHelp } from "./components/AuxHelp";
 import { ChartPanel } from "./components/ChartPanel";
@@ -35,6 +35,8 @@ export function App() {
   const [chartTf, setChartTf] = useState("1h");
   const [realtime, setRealtime] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState<string | null>(null);
+  const [retryAt, setRetryAt] = useState<number | null>(null);
   const [noticeUntil, setNoticeUntil] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,8 @@ export function App() {
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [auxOpen, setAuxOpen] = useState(false);
   const rowsRef = useRef<BoardRow[]>([]);
+  const retryLock = useRef(false);
+  const attempt = useRef(0);
   const nextNet = useRef(0);
   const polls = useRef(0);
   const extra = useRef(0);
@@ -56,8 +60,31 @@ export function App() {
     return next;
   }, []);
 
+  const beginRetry = useCallback(() => {
+    if (retryLock.current) return;
+    retryLock.current = true;
+    attempt.current += 1;
+    setRetryAt(null);
+    setBusy(true);
+    setTick((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    return subscribeApiReachability((failure) => {
+      if (!failure) {
+        setOffline(null);
+        setRetryAt(null);
+        return;
+      }
+      setOffline(failure.message || "Failed to fetch");
+      setRetryAt(Date.now() + API_RETRY_SECONDS * 1000);
+      setNowMs(Date.now());
+    });
+  }, []);
+
   useEffect(() => {
     let cancel = false;
+    const gen = attempt.current;
     const pair = selected;
     const briefTf = rowTf;
     const iv = chartTf;
@@ -65,7 +92,8 @@ export function App() {
     if (!skipBoard.current) {
       jobs.push(
         loadBoard().catch((err: unknown) => {
-          if (!cancel) setError(err instanceof Error ? err.message : "Decision API is not reachable on port 8000.");
+          if (cancel || isUnreachable(err)) return;
+          setError(err instanceof Error ? err.message : "Decision API is not reachable on port 8000.");
         }),
       );
     } else {
@@ -96,7 +124,9 @@ export function App() {
       );
     }
     Promise.all(jobs).finally(() => {
-      if (!cancel) setBusy(false);
+      if (cancel || gen !== attempt.current) return;
+      retryLock.current = false;
+      setBusy(false);
     });
     return () => {
       cancel = true;
@@ -150,6 +180,7 @@ export function App() {
         }
       }
     } catch (err) {
+      if (isUnreachable(err)) return;
       if (!quiet) {
         const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : 0;
         const payload =
@@ -182,7 +213,7 @@ export function App() {
   }, [selected, chartTf]);
 
   useEffect(() => {
-    if (!realtime || mode !== "decision" || !selected) return;
+    if (!realtime || mode !== "decision" || !selected || offline) return;
     const seconds = Math.max(60, board?.refresh_seconds ?? 60);
     let cancel = false;
     const run = () => {
@@ -194,15 +225,28 @@ export function App() {
       cancel = true;
       window.clearInterval(id);
     };
-  }, [realtime, mode, selected, board?.refresh_seconds, reload]);
+  }, [realtime, mode, selected, board?.refresh_seconds, reload, offline]);
 
   useEffect(() => {
-    if (!noticeUntil) return;
+    if (!noticeUntil && !retryAt) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 250);
     return () => window.clearInterval(id);
-  }, [noticeUntil]);
+  }, [noticeUntil, retryAt]);
+
+  useEffect(() => {
+    if (!offline || retryAt == null || busy) return;
+    if (Date.now() < retryAt) return;
+    beginRetry();
+  }, [offline, retryAt, busy, nowMs, beginRetry]);
 
   const noticeLeft = noticeUntil ? Math.max(0, Math.ceil((noticeUntil - nowMs) / 1000)) : 0;
+  const retryLeft = retryAt == null ? null : Math.max(0, Math.ceil((retryAt - nowMs) / 1000));
+  const reconnecting = Boolean(offline) && (busy || retryLeft == null || retryLeft <= 0);
+  const retryText = !offline
+    ? ""
+    : reconnecting
+      ? "Reconnecting…"
+      : `Retrying in ${retryLeft} ${retryLeft === 1 ? "second" : "seconds"}…`;
 
   const alerts = board?.alerts ?? [];
   const alertClass = error ? "alerts bad" : alerts.length ? "alerts" : "alerts quiet";
@@ -222,10 +266,21 @@ export function App() {
           <Placeholder mode={mode} pair={selected} />
         ) : (
           <>
-            <div className={alertClass} role="status">
-              <span className="tag">{error ? "API" : "Alert"}</span>
-              <span>{alertText}</span>
-            </div>
+            {offline ? (
+              <div className="alerts bad api-down">
+                <span className="tag">API</span>
+                <span className="api-down-msg" role="status">{offline}</span>
+                <span className="api-down-eta">{retryText}</span>
+                <button className="btn primary sm" type="button" onClick={beginRetry} disabled={busy}>
+                  Reconnect
+                </button>
+              </div>
+            ) : (
+              <div className={alertClass} role="status">
+                <span className="tag">{error ? "API" : "Alert"}</span>
+                <span>{alertText}</span>
+              </div>
+            )}
             <div className={noticeLeft > 0 ? "notice-slot active" : "notice-slot"} role="status" aria-live="polite">
               {noticeLeft > 0 ? `Updated from cache · next network refresh in ${noticeLeft}s` : ""}
             </div>
