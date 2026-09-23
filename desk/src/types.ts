@@ -421,6 +421,8 @@ export interface PortfolioFeed {
   rate_status: string | null;
   /** Paused, rate-limited, below threshold, or gated. Null when auto can open. */
   block_status: string | null;
+  /** Short reasons for this pass: the standing block, skipped opens, and API errors. */
+  reasons?: string[];
   /** Watchlist subject auto paper opens and manages. */
   active_pair?: string;
   refresh_seconds: number;

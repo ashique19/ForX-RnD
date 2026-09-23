@@ -613,6 +613,7 @@ def test_stale_gate_blocks_the_cross(tmp_path: Path, monkeypatch: pytest.MonkeyP
     )
     assert book["open"] == []
     assert book["block_status"] == "Gated"
+    assert any("data STALE" in line for line in book["reasons"])
     opened = run_auto_paper(cfg, rows=[_row(confidence=0.90)], now=T0 + timedelta(minutes=3))
     assert opened["events"] == ["EURUSD open BUY"]
 
@@ -893,3 +894,62 @@ def test_legacy_row_without_strategy_id_blocks_only_brief(tmp_path: Path, monkey
     assert brief_rows[0]["source"] == "manual"
     assert len(consensus_rows) == 1
     assert consensus_rows[0]["source"] == "auto"
+
+
+def test_missing_stop_or_target_skips_auto_open_and_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(stop=None, target=None), 1.10)
+    monkeypatch.setattr("api.paperdesk.paper_submit_risk_defaults", lambda *_a, **_k: (None, None))
+    run_auto_paper(cfg, rows=[_row("HOLD")], now=T0)
+    skipped = run_auto_paper(cfg, rows=[_row()], now=T0 + timedelta(minutes=1))
+    assert skipped["events"] == ["EURUSD skip levels"]
+    assert skipped["notices"] == ["EURUSD: Missing stop/target"]
+    book = portfolio_payload(cfg, rows=[_row()], sync=True, now=T0 + timedelta(minutes=2))
+    assert book["open"] == []
+    assert "EURUSD: Missing stop/target" in book["reasons"]
+    monkeypatch.setattr("api.paperdesk.paper_submit_risk_defaults", lambda *_a, **_k: (1.09, 1.12))
+    opened = run_auto_paper(cfg, rows=[_row()], now=T0 + timedelta(minutes=3))
+    assert opened["events"] == ["EURUSD open BUY"]
+
+
+def test_missing_price_is_reported_and_does_not_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+    monkeypatch.setattr("api.paperdesk._price_from_cache", lambda *_a, **_k: (None, ""))
+    run_auto_paper(cfg, rows=[_row("HOLD")], now=T0)
+    skipped = run_auto_paper(cfg, rows=[_row()], now=T0 + timedelta(minutes=1))
+    assert skipped["events"] == ["EURUSD skip price"]
+    assert "EURUSD: No cached price" in skipped["notices"]
+    book = portfolio_payload(cfg, rows=[_row()], sync=False, now=T0 + timedelta(minutes=1))
+    assert book["open"] == []
+
+
+def test_manual_buy_without_stop_or_target_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(stop=None, target=None), 1.10)
+    monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: _row())
+    monkeypatch.setattr("api.paperdesk.paper_submit_risk_defaults", lambda *_a, **_k: (None, None))
+    from api.paperdesk import PaperBlocked, paper_order
+
+    with pytest.raises(PaperBlocked, match="Missing stop/target"):
+        paper_order("EURUSD", "BUY", cfg=cfg)
+    assert portfolio_payload(cfg, sync=False, now=T0)["open"] == []
+
+
+def test_auto_exception_is_an_api_error_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(), 1.10)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("journal locked")
+
+    monkeypatch.setattr("api.paperdesk._auto_one", _boom)
+    book = portfolio_payload(cfg, rows=[_row()], sync=True, now=T0)
+    assert book["open"] == []
+    assert "EURUSD: API error: journal locked" in book["reasons"]

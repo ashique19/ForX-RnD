@@ -122,6 +122,7 @@ export function PortfolioPanel() {
   const [confDraft, setConfDraft] = useState(65);
   const [confDragging, setConfDragging] = useState(false);
   const [strategyFilter, setStrategyFilter] = useState("all");
+  const [formNote, setFormNote] = useState<string | null>(null);
   const capFromFeed = feed?.max_opens_per_hour;
   const confFromFeed = feed?.min_confidence;
 
@@ -190,9 +191,11 @@ export function PortfolioPanel() {
     const current = feed?.min_confidence ?? 65;
     if (!Number.isInteger(value) || value < 50 || value > 90) {
       setConfDraft(current);
+      setFormNote("Minimum confidence must be from 50 to 90");
       return;
     }
     if (value === current) return;
+    setFormNote(null);
     setBusy(true);
     try {
       const next = await api.setAutoPaper({ min_confidence: value });
@@ -225,9 +228,11 @@ export function PortfolioPanel() {
     const current = feed?.max_opens_per_hour ?? 3;
     if (nextCap == null) {
       setCapDraft(String(current));
+      setFormNote("Hourly cap must be a whole number from 0 to 99");
       return;
     }
     if (nextCap === current) return;
+    setFormNote(null);
     setBusy(true);
     try {
       const next = await api.setAutoPaper({ max_opens_per_hour: nextCap });
@@ -247,6 +252,16 @@ export function PortfolioPanel() {
   const closed = (feed?.closed ?? []).filter(matches);
   const autoOn = feed?.auto_enabled !== false;
   const filterName = strategies.find((item) => item.id === strategyFilter)?.name;
+  const reasons =
+    feed?.reasons && feed.reasons.length
+      ? feed.reasons
+      : [
+          feed?.block_status,
+          ...(feed?.auto_errors ?? []).map((item) => {
+            const pair = item.pair ? `${item.pair}: ` : "";
+            return `${pair}API error: ${item.error || "request failed"}`;
+          }),
+        ].filter((line): line is string => Boolean(line));
 
   return (
     <section className="panel portfolio" aria-label="Portfolio">
@@ -324,20 +339,18 @@ export function PortfolioPanel() {
           ? "Each strategy opens when its own confidence crosses the minimum on a clear BUY or SELL (not the first reading, and not again while that side stays eligible). After a close, a new cross can open again. Closes on stop, target, duration, or that strategy's opposite signal. Fills use the cached last close."
           : "Auto is paused. Open paper trades stay until you close the champion book from the signal brief. Pausing stops every auto open and close."}
         {" "}
-        The hourly number is the cap for each strategy book. The confidence minimum is shared. The Decision headline follows the champion. Promoting a champion is manual; auto-promote can come later.
+        The hourly number is the cap for each strategy book. The confidence minimum is shared. A skipped open names the reason above the table (below the minimum, hourly cap, missing stop/target, or an API error). The Decision headline follows the champion. Promoting a champion is manual; auto-promote can come later.
         {" "}
         Auto paper opens and manages {feed?.active_pair || "the active pair"} only. Other open books stay frozen until that pair is active again.
         {feed?.generated_at_dhaka ? ` Updated ${feed.generated_at_dhaka}.` : ""}
       </p>
-      {feed?.block_status ? (
-        <p className="port-rate" role="status">
-          {feed.block_status}
+      {reasons.map((line) => (
+        <p key={line} className={line.includes("API error") ? "port-error" : "port-rate"} role="status">
+          {line}
         </p>
-      ) : null}
+      ))}
+      {formNote ? <p className="port-error" role="status">{formNote}</p> : null}
       {error ? <p className="port-error">{error}</p> : null}
-      {feed?.auto_errors?.length ? (
-        <p className="port-error">Auto skipped {feed.auto_errors.map((item) => item.pair).filter(Boolean).join(", ") || "a pair"}.</p>
-      ) : null}
       {strategies.length ? (
         <div className="compare" aria-label="Strategy comparison, last 7 days">
           {strategies.map((item) => (

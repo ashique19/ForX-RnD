@@ -174,7 +174,10 @@ def _paper_order_impl(
     if price is None:
         raise BrokerError("no cached price — cannot paper-fill")
     frame = load_cached_ohlcv(symbol, cfg, iv)
-    sl, tp = paper_submit_risk_defaults(frame, cfg, action, row.validity)
+    suggestion = desk.suggestion_from_row(row, cfg, ohlcv=frame)
+    sl, tp, _horizon = _brackets(row, cfg, suggestion, side=action, frame=frame)
+    if sl is None or tp is None:
+        raise PaperBlocked("Missing stop/target")
     qty = float(size) if size is not None else float((cfg.get("broker") or {}).get("default_size") or 1.0)
     broker.submit(
         action,
@@ -434,6 +437,32 @@ def _block_status(
     return " · ".join(parts) or None
 
 
+def _reason_lines(
+    block_status: str | None,
+    notices: list[str] | None,
+    errors: list[dict[str, str]] | None,
+) -> list[str]:
+    """Short lines for the desk. One reason per failure, with no blanks."""
+    lines: list[str] = []
+
+    def add(text: str) -> None:
+        cleaned = " ".join(str(text or "").split())
+        if not cleaned or cleaned in lines:
+            return
+        lines.append(cleaned[:180])
+
+    if block_status:
+        add(block_status)
+    for note in notices or []:
+        add(note)
+    for err in errors or []:
+        pair = str(err.get("pair") or "").strip().upper()
+        detail = str(err.get("error") or "request failed").strip() or "request failed"
+        prefix = f"{pair}: " if pair else ""
+        add(f"{prefix}API error: {detail}")
+    return lines
+
+
 def _watch_rows(cfg: dict[str, Any]) -> list[Any]:
     """One board row for the active pair. Inactive pairs are not built here."""
     desk = _desk()
@@ -463,6 +492,54 @@ def _book_event(symbol: str, text: str, strategy_id: str) -> str:
     return f"{symbol} {text} {strategy_id}"
 
 
+def _brackets(
+    row: Any,
+    cfg: dict[str, Any],
+    suggestion: dict[str, Any],
+    *,
+    side: str,
+    frame: Any = None,
+) -> tuple[float | None, float | None, int]:
+    """Stop, target, and horizon for one paper open. Missing levels stay missing."""
+    if frame is None:
+        frame = load_cached_ohlcv(str(row.pair), cfg, str(getattr(row, "timeframe", "") or ""))
+    sl, tp = paper_submit_risk_defaults(frame, cfg, side, str(getattr(row, "validity", "") or ""))
+    if sl is None and suggestion.get("signal") == side:
+        sl = _f(suggestion.get("stop"))
+    if tp is None and suggestion.get("signal") == side:
+        tp = _f(suggestion.get("target"))
+    raw_h = suggestion.get("horizon_bars")
+    try:
+        horizon = int(raw_h) if raw_h else 0
+    except (TypeError, ValueError):
+        horizon = 0
+    return sl, tp, horizon
+
+
+def _note_block(
+    blocked: str | None,
+    *,
+    symbol: str,
+    row: Any,
+    cfg: dict[str, Any],
+    blocks: list[str],
+    notices: list[str],
+) -> None:
+    if not blocked:
+        return
+    blocks.append(blocked)
+    if blocked != "gated":
+        return
+    detail = paper_submit_block_reason(getattr(row, "validity", None), row, cfg) or "Paper open is blocked"
+    notices.append(f"{symbol}: {detail}")
+
+
+def _skip_notice(symbol: str, strategy_id: str, text: str) -> str:
+    if strategy_id == BRIEF:
+        return f"{symbol}: {text}"
+    return f"{symbol} · {strategy_name(strategy_id)}: {text}"
+
+
 def _open_auto(
     broker: PaperBroker,
     row: Any,
@@ -475,18 +552,10 @@ def _open_auto(
     when: str,
     strategy_id: str,
     confidence: float | None,
+    sl: float,
+    tp: float,
+    horizon: int,
 ) -> None:
-    frame = load_cached_ohlcv(str(row.pair), cfg, str(row.timeframe or ""))
-    sl, tp = paper_submit_risk_defaults(frame, cfg, side, str(getattr(row, "validity", "") or ""))
-    if sl is None and suggestion.get("signal") == side:
-        sl = _f(suggestion.get("stop"))
-    if tp is None and suggestion.get("signal") == side:
-        tp = _f(suggestion.get("target"))
-    raw_h = suggestion.get("horizon_bars")
-    try:
-        horizon = int(raw_h) if raw_h else 0
-    except (TypeError, ValueError):
-        horizon = 0
     name = strategy_name(strategy_id)
     qty = float((cfg.get("broker") or {}).get("default_size") or 1.0)
     broker.submit(
@@ -554,6 +623,7 @@ def _auto_one(
     champion: str,
     min_confidence: int,
     blocks: list[str],
+    notices: list[str],
     trade: bool = True,
 ) -> list[str]:
     symbol = str(getattr(row, "pair", "") or "").upper()
@@ -578,8 +648,7 @@ def _auto_one(
             allowed=allowed,
             min_confidence=min_confidence,
         )
-        if blocked:
-            blocks.append(blocked)
+        _note_block(blocked, symbol=symbol, row=row, cfg=cfg, blocks=blocks, notices=notices)
         return []
     when = _stamp(now)
     clock = _as_utc(now)
@@ -606,29 +675,42 @@ def _auto_one(
         known = sid in pair_seen
         crossed = known and bool(eligible) and pair_seen.get(sid) != eligible
         want_open = pos is None and allowed and bool(eligible) and crossed
-        pending_fill = want_open and price is None
-        rate_blocked = False
-        if want_open and price is not None:
+        # A skipped open leaves this book's memory unchanged so the next tick can retry.
+        hold_seen = False
+        if want_open and price is None:
+            hold_seen = True
+            events.append(_book_event(symbol, "skip price", sid))
+            notices.append(_skip_notice(symbol, sid, "No cached price"))
+        elif want_open:
             cap = int(broker.read_auto()["max_opens_per_hour"])
             if _auto_opens_in_window(broker, clock, sid) >= cap:
-                # Leave this book's memory unchanged so the cross retries when a slot frees.
-                rate_blocked = True
+                hold_seen = True
                 events.append(_book_event(symbol, "skip rate", sid))
+                notices.append(_skip_notice(symbol, sid, "Hourly cap"))
             else:
-                _open_auto(
-                    broker,
-                    row,
-                    cfg,
-                    suggestion,
-                    side=eligible,
-                    price=price,
-                    entry_bar=entry_bar,
-                    when=when,
-                    strategy_id=sid,
-                    confidence=_f(view["confidence"]),
-                )
-                events.append(_book_event(symbol, f"open {eligible}", sid))
-        if allowed and not pending_fill and not rate_blocked:
+                sl, tp, horizon = _brackets(row, cfg, suggestion, side=eligible)
+                if sl is None or tp is None:
+                    hold_seen = True
+                    events.append(_book_event(symbol, "skip levels", sid))
+                    notices.append(_skip_notice(symbol, sid, "Missing stop/target"))
+                else:
+                    _open_auto(
+                        broker,
+                        row,
+                        cfg,
+                        suggestion,
+                        side=eligible,
+                        price=price,
+                        entry_bar=entry_bar,
+                        when=when,
+                        strategy_id=sid,
+                        confidence=_f(view["confidence"]),
+                        sl=sl,
+                        tp=tp,
+                        horizon=horizon,
+                    )
+                    events.append(_book_event(symbol, f"open {eligible}", sid))
+        if allowed and not hold_seen:
             pair_seen[sid] = eligible
     blocked = _champion_blocked(
         broker,
@@ -640,8 +722,7 @@ def _auto_one(
         allowed=allowed,
         min_confidence=min_confidence,
     )
-    if blocked:
-        blocks.append(blocked)
+    _note_block(blocked, symbol=symbol, row=row, cfg=cfg, blocks=blocks, notices=notices)
     return events
 
 
@@ -682,6 +763,7 @@ def run_auto_paper(
         champion = normalize_champion(auto.get("champion"))
         if rows is None:
             rows = _watch_rows(cfg)
+        notices: list[str] = []
         if not auto["enabled"]:
             blocks: list[str] = []
             errors: list[dict[str, str]] = []
@@ -697,11 +779,18 @@ def run_auto_paper(
                         champion=champion,
                         min_confidence=min_confidence,
                         blocks=blocks,
+                        notices=notices,
                         trade=False,
                     )
                 except Exception as exc:
                     errors.append({"pair": pair.upper(), "error": str(exc)})
-            return {"events": [], "errors": errors, "auto_enabled": False, "blocks": blocks}
+            return {
+                "events": [],
+                "errors": errors,
+                "auto_enabled": False,
+                "blocks": blocks,
+                "notices": notices,
+            }
         seen = {key: dict(value) for key, value in auto["seen"].items()}
         original = {key: dict(value) for key, value in seen.items()}
         events: list[str] = []
@@ -720,13 +809,20 @@ def run_auto_paper(
                         champion=champion,
                         min_confidence=min_confidence,
                         blocks=blocks,
+                        notices=notices,
                     )
                 )
             except Exception as exc:
                 errors.append({"pair": pair.upper(), "error": str(exc)})
         if seen != original:
             broker.write_auto(seen=seen)
-        return {"events": events, "errors": errors, "auto_enabled": True, "blocks": blocks}
+        return {
+            "events": events,
+            "errors": errors,
+            "auto_enabled": True,
+            "blocks": blocks,
+            "notices": notices,
+        }
 
 
 def set_auto_settings(
@@ -945,6 +1041,12 @@ def portfolio_payload(
         refresh = int((cfg.get("board") or {}).get("realtime_seconds") or 60)
     rate_limited = opens_this_hour >= cap
     rate_status = f"Rate-limited: {opens_this_hour}/{cap} opens this hour" if rate_limited else None
+    block_status = _block_status(
+        enabled=bool(auto["enabled"]),
+        rate_status=rate_status,
+        blocks=list(auto_run.get("blocks") or []),
+        min_confidence=min_confidence,
+    )
     return {
         "timezone": timezone_name(cfg),
         "auto_enabled": bool(auto["enabled"]),
@@ -956,11 +1058,11 @@ def portfolio_payload(
         "opens_this_hour": opens_this_hour,
         "rate_limited": rate_limited,
         "rate_status": rate_status,
-        "block_status": _block_status(
-            enabled=bool(auto["enabled"]),
-            rate_status=rate_status,
-            blocks=list(auto_run.get("blocks") or []),
-            min_confidence=min_confidence,
+        "block_status": block_status,
+        "reasons": _reason_lines(
+            block_status,
+            list(auto_run.get("notices") or []),
+            list(auto_run.get("errors") or []),
         ),
         "active_pair": active,
         "refresh_seconds": max(60, refresh),

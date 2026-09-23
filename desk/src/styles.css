@@ -441,6 +441,10 @@
     }
     .brief-metric .val.stop { color: var(--red); }
     .brief-metric .val.tgt { color: var(--green); }
+    .paper-row button[aria-disabled="true"] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
     .brief.is-collapsed .paper-row {
       flex-wrap: nowrap;
       flex-shrink: 0;
