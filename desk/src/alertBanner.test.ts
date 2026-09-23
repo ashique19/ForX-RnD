@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { alertClauses, formatAlertBanner } from "./alertBanner.ts";
+import { alertClauses, flipBadges, formatAlertBanner } from "./alertBanner.ts";
 import type { AlertItem } from "./types.ts";
 
 function flip(pair: string, from: string, to: string): AlertItem {
@@ -49,6 +49,26 @@ test("ascii arrows and extra spaces still group", () => {
     { kind: "flip", pair: "USDJPY", message: "USDJPY SELL -> BUY" },
   ];
   assert.equal(formatAlertBanner(alerts), "USDJPY: HOLD→SELL, SELL→BUY");
+});
+
+test("badges keep newest first, with the pair only on the latest pill", () => {
+  const [grouped] = alertClauses([
+    flip("EURUSD", "SELL", "HOLD"),
+    flip("EURUSD", "BUY", "SELL"),
+    flip("EURUSD", "SELL", "BUY"),
+  ]);
+  assert.equal(grouped.type, "flips");
+  if (grouped.type !== "flips") return;
+  assert.deepEqual(flipBadges(grouped), [
+    { pair: "EURUSD", change: "SELL→HOLD", latest: true },
+    { pair: null, change: "BUY→SELL", latest: false },
+    { pair: null, change: "SELL→BUY", latest: false },
+  ]);
+
+  const [single] = alertClauses([flip("GBPUSD", "BUY", "SELL")]);
+  assert.equal(single.type, "flips");
+  if (single.type !== "flips") return;
+  assert.deepEqual(flipBadges(single), [{ pair: "GBPUSD", change: "BUY→SELL", latest: true }]);
 });
 
 test("empty and non-flip strips are unchanged", () => {

@@ -42,6 +42,22 @@ export function alertClauses(alerts: AlertItem[], limit = ALERT_BANNER_LIMIT): A
   return clauses;
 }
 
+/** One pill in a flip group. Index 0 is the newest change and carries the pair. */
+export type FlipBadge = {
+  pair: string | null;
+  change: string;
+  latest: boolean;
+};
+
+/** Badge order matches the strip: leftmost is newest. The pair sits on that first pill only. */
+export function flipBadges(clause: Extract<AlertClause, { type: "flips" }>): FlipBadge[] {
+  return clause.changes.map((change, index) => ({
+    pair: index === 0 ? clause.pair : null,
+    change,
+    latest: index === 0,
+  }));
+}
+
 function clauseText(clause: AlertClause): string {
   if (clause.type === "note") return clause.text;
   if (clause.changes.length === 1) return `${clause.pair} ${clause.changes[0]}`;
