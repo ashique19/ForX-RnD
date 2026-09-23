@@ -265,15 +265,10 @@ export function App() {
   return (
     <>
       <TopNav mode={mode} onMode={setMode} />
-<<<<<<< HEAD
-      <main className={mode === "decision" ? "app" : "app single"}>
+      <main className={mode === "decision" ? (noticeLeft > 0 ? "app has-notice" : "app") : "app single"}>
         {mode === "learnings" ? (
           <LearningsPanel />
         ) : mode !== "decision" ? (
-=======
-      <main className={mode === "decision" ? (noticeLeft > 0 ? "app has-notice" : "app") : "app single"}>
-        {mode !== "decision" ? (
->>>>>>> pr-26
           <Placeholder mode={mode} pair={selected} />
         ) : (
           <>
