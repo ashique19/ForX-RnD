@@ -20,9 +20,10 @@ export function FreshnessStrip({
 }) {
   const reason = problemText(problem);
   const countdown = nextIn == null ? null : `Updating in ${nextIn}s`;
-  const nextLabel = updating ? "Updating…" : reason ?? (auto ? countdown ?? "Updating in —" : "Auto off");
+  const nextLabel = updating
+    ? "Updating…"
+    : [reason, auto ? (countdown ?? "Updating in —") : "Auto off"].filter(Boolean).join(" · ");
   const lastLabel = lastAgo == null ? "Last update —" : `Last update ${lastAgo}s ago`;
-  const showCountdown = Boolean(!updating && reason && auto && countdown);
   const buttonLabel = updating ? "Updating…" : reason ? "Retry" : "Update now";
   const title = lastFetchDhaka ? `Last successful fetch ${lastFetchDhaka}` : "Asia/Dhaka";
 
@@ -39,14 +40,6 @@ export function FreshnessStrip({
         ·
       </span>
       <span className="fresh-next">{nextLabel}</span>
-      {showCountdown && (
-        <>
-          <span className="sep" aria-hidden="true">
-            ·
-          </span>
-          <span className="fresh-next">{countdown}</span>
-        </>
-      )}
       <span className="spacer" />
       <button className="btn sm" type="button" onClick={onUpdate} disabled={updating} aria-busy={updating}>
         {buttonLabel}
