@@ -192,6 +192,9 @@ def test_outcome_from_exit_and_normalize_timeout():
     assert outcome_from_exit("tp") == "RIGHT"
     assert outcome_from_exit("sl") == "WRONG"
     assert outcome_from_exit("manual") == "FLAT"
+    assert outcome_from_exit("opposite") == "FLAT"
+    assert outcome_from_exit("duration", side="BUY", entry=1.10, exit_px=1.12, spread_frac=0.0) == "RIGHT"
+    assert outcome_from_exit("duration", side="SELL", entry=1.10, exit_px=1.12, spread_frac=0.0) == "WRONG"
     assert outcome_from_exit(None) == "PENDING"
     assert (
         outcome_from_exit("timeout", side="BUY", entry=1.10, exit_px=1.11, spread_frac=0.0)

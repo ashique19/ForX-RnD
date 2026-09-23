@@ -258,7 +258,7 @@ function WatchlistPanel({
                 >
                   <td className="pair">
                     {row.pair}
-                    {row.pair === selected ? <span className="active-pill">Active</span> : null}
+                    {row.pair === selected ? <span className="wl-active">Active</span> : null}
                   </td>
                   <td><span className="tf-pill">{row.tf}</span></td>
                   <td>

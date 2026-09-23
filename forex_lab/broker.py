@@ -75,13 +75,38 @@ class BrokerPort(ABC):
 OrderGateway = BrokerPort
 
 
-def position_for_pair(port: BrokerPort, pair: str) -> dict[str, Any] | None:
-    """Lookup via list_positions() so the UI never needs a PaperBroker method."""
+def position_for_pair(
+    port: BrokerPort,
+    pair: str,
+    strategy_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Lookup via list_positions() so the UI never needs a PaperBroker method.
+
+    ``strategy_id`` limits the lookup to one paper book. Older rows with no
+    strategy id sit in the Brief book.
+    """
     key = str(pair).upper()
     for p in port.list_positions():
-        if str(p.get("pair")).upper() == key:
-            return p
+        if str(p.get("pair")).upper() != key:
+            continue
+        if strategy_id is not None and str(p.get("strategy_id") or "brief") != strategy_id:
+            continue
+        return p
     return None
+
+
+def _seen_pairs(raw: object) -> dict[str, dict[str, str]]:
+    """Normalize auto memory. A legacy string is the Brief book's last side."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for key, value in raw.items():
+        pair = str(key).upper()
+        if isinstance(value, dict):
+            out[pair] = {str(sid): "" if side is None else str(side) for sid, side in value.items()}
+        else:
+            out[pair] = {"brief": "" if value is None else str(value)}
+    return out
 
 
 def broker_cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:
@@ -103,6 +128,29 @@ def make_broker(cfg: dict[str, Any] | None = None, *, path: Path | None = None) 
     store = path or resolve_under_root(bcfg.get("store") or "data/paper_broker.json")
     size = float(bcfg.get("default_size") or 1.0)
     return PaperBroker(store, default_size=size, cfg=cfg or {})
+
+
+DEFAULT_OPENS_PER_HOUR = 3
+MAX_OPENS_PER_HOUR = 99
+DEFAULT_MIN_CONFIDENCE = 65
+MIN_CONFIDENCE_FLOOR = 50
+MIN_CONFIDENCE_CAP = 90
+
+
+def _clamp_opens_per_hour(value: object, default: int = DEFAULT_OPENS_PER_HOUR) -> int:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(MAX_OPENS_PER_HOUR, n))
+
+
+def _clamp_min_confidence(value: object, default: int = DEFAULT_MIN_CONFIDENCE) -> int:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(MIN_CONFIDENCE_FLOOR, min(MIN_CONFIDENCE_CAP, n))
 
 
 def _now_label() -> str:
@@ -187,6 +235,53 @@ class PaperBroker(BrokerPort):
     def reload(self) -> None:
         self._state = self._load()
 
+    def read_auto(self) -> dict[str, Any]:
+        """Paper-only auto switch. Missing key means enabled — old journals stay on.
+
+        ``max_opens_per_hour`` defaults to 3 when the journal has no setting.
+        ``min_confidence`` is a percent from 50 to 90 and defaults to 65.
+        It is shared by every strategy. ``max_opens_per_hour`` is applied
+        separately to each strategy book. ``champion`` defaults to ``brief``.
+        """
+        auto = self._state.get("auto")
+        if not isinstance(auto, dict):
+            auto = {}
+        enabled = auto.get("enabled", True)
+        return {
+            "enabled": bool(enabled),
+            "seen": _seen_pairs(auto.get("seen")),
+            "max_opens_per_hour": _clamp_opens_per_hour(auto.get("max_opens_per_hour", DEFAULT_OPENS_PER_HOUR)),
+            "min_confidence": _clamp_min_confidence(auto.get("min_confidence", DEFAULT_MIN_CONFIDENCE)),
+            "champion": str(auto.get("champion") or "brief"),
+        }
+
+    def write_auto(
+        self,
+        *,
+        enabled: bool | None = None,
+        seen: dict[str, Any] | None = None,
+        max_opens_per_hour: int | None = None,
+        min_confidence: int | None = None,
+        champion: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist auto flags without touching open or closed rows."""
+        auto = self._state.get("auto")
+        if not isinstance(auto, dict):
+            auto = {}
+        if enabled is not None:
+            auto["enabled"] = bool(enabled)
+        if seen is not None:
+            auto["seen"] = _seen_pairs(seen)
+        if max_opens_per_hour is not None:
+            auto["max_opens_per_hour"] = _clamp_opens_per_hour(max_opens_per_hour)
+        if min_confidence is not None:
+            auto["min_confidence"] = _clamp_min_confidence(min_confidence)
+        if champion is not None:
+            auto["champion"] = str(champion)
+        self._state["auto"] = auto
+        self._save()
+        return self.read_auto()
+
     def submit(
         self,
         side: str,
@@ -207,8 +302,11 @@ class PaperBroker(BrokerPort):
             px = float("nan")
         if not pd.notna(px) or px <= 0:
             raise BrokerError("no reference price — cannot paper-fill (no invented quotes)")
+        strategy_id = str(meta.get("strategy_id") or "brief")
         for pos in self._state["positions"]:
-            if str(pos.get("pair")).upper() == pair_u and str(pos.get("status")) == "open":
+            same_pair = str(pos.get("pair")).upper() == pair_u and str(pos.get("status")) == "open"
+            same_book = str(pos.get("strategy_id") or "brief") == strategy_id
+            if same_pair and same_book:
                 raise BrokerError(f"{pair_u} already has an open paper position — close it first")
         qty = float(size if size is not None else self.default_size)
         if qty <= 0:
@@ -217,6 +315,15 @@ class PaperBroker(BrokerPort):
         pid = _new_id("pos")
         fid = _new_id("fill")
         spread = _spread_frac(pair_u, self.cfg, px)
+        raw_horizon = meta.get("horizon", None)
+        if raw_horizon is None:
+            horizon = int(self.cfg.get("horizon") or 8)
+        else:
+            try:
+                horizon = int(raw_horizon)
+            except (TypeError, ValueError):
+                horizon = int(self.cfg.get("horizon") or 8)
+        source = str(meta.get("source") or "manual")
         pos = {
             "id": pid,
             "pair": pair_u,
@@ -239,7 +346,10 @@ class PaperBroker(BrokerPort):
             "rationale": str(meta.get("rationale") or "")[:400],
             "drivers": str(meta.get("drivers") or "")[:300],
             "entry_bar_time": str(meta.get("entry_bar_time") or ""),
-            "horizon": int(meta.get("horizon") or self.cfg.get("horizon") or 8),
+            "horizon": horizon,
+            "source": source,
+            "strategy_id": strategy_id,
+            "strategy_name": str(meta.get("strategy_name") or ("Brief" if strategy_id == "brief" else strategy_id)),
             "spread_frac": spread,
             "unrealized": -spread * qty,
             "session": session_name(meta.get("entry_bar_time") or now, self.cfg),
@@ -259,6 +369,9 @@ class PaperBroker(BrokerPort):
             "time": now,
             "kind": "open",
             "backend": "paper",
+            "confidence": meta.get("confidence"),
+            "model_signal": str(meta.get("model_signal") or ""),
+            "source": source,
         }
         self._state["positions"].append(pos)
         self._state["fills"].append(fill)
@@ -310,6 +423,9 @@ class PaperBroker(BrokerPort):
             "kind": "close",
             "reason": reason,
             "backend": "paper",
+            "confidence": pos.get("confidence"),
+            "model_signal": str(pos.get("model_signal") or ""),
+            "source": str(pos.get("source") or ""),
         }
         closed = dict(pos)
         closed.update(

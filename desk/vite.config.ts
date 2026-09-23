@@ -37,6 +37,7 @@ export default defineConfig({
       "/refresh": apiProxy(),
       "/pipeline": apiProxy(),
       "/paper": apiProxy(),
+      "/portfolio": apiProxy(),
       "/assets": apiProxy(),
       "/learnings": apiProxy(),
       "/calendar": apiProxy(),

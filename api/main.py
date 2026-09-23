@@ -18,7 +18,7 @@ from forex_lab.clock import fmt_display, timezone_name
 from forex_lab.ui.watchlist import WatchlistError, normalize_pair
 
 from api import __version__ as api_version
-from forex_lab.broker import BrokerError
+from forex_lab.broker import MAX_OPENS_PER_HOUR, MIN_CONFIDENCE_CAP, MIN_CONFIDENCE_FLOOR, BrokerError
 
 from api.consensus import ConsensusError, ensure_consensus, read_consensus
 from api.deskdata import (
@@ -32,11 +32,13 @@ from api.deskdata import (
     refresh_active_pair,
     refresh_watchlist,
     run_pipeline_pair,
+    set_active_pair,
     watchlist_json,
 )
 from api.learnings import MAX_LIMIT, learnings_payload
-from api.paperdesk import PaperBlocked, paper_order
+from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_settings
 from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, start_pull, start_replay
+from api.strategies import STRATEGY_IDS
 from forex_lab.ui.model_build import model_build_status
 from forex_lab.ui.pipeline import run_retrain
 
@@ -51,6 +53,10 @@ _ORIGINS = [
 class AddPairBody(BaseModel):
     pair: str = Field(..., min_length=1)
     interval: str | None = None
+
+
+class ActivePairBody(BaseModel):
+    pair: str = Field(..., min_length=1)
 
 
 class PaperOrderBody(BaseModel):
@@ -104,6 +110,13 @@ class ReplayTrainBody(BaseModel):
         return _one_active_pair(value)
 
 
+class PaperAutoBody(BaseModel):
+    enabled: bool | None = None
+    max_opens_per_hour: int | None = Field(default=None, ge=0, le=MAX_OPENS_PER_HOUR)
+    min_confidence: int | None = Field(default=None, ge=MIN_CONFIDENCE_FLOOR, le=MIN_CONFIDENCE_CAP)
+    champion: str | None = None
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ForX Decision API",
@@ -149,6 +162,13 @@ def create_app() -> FastAPI:
     def delete_watchlist(pair: str) -> dict:
         try:
             return mutate_watchlist(pair, remove=True)
+        except WatchlistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/watchlist/active")
+    def post_watchlist_active(body: ActivePairBody) -> dict:
+        try:
+            return set_active_pair(body.pair)
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -261,6 +281,36 @@ def create_app() -> FastAPI:
             cached = payload.get("row")
             payload = {**payload, "board": {"rows": [cached], "from_cache": True}}
         return JSONResponse(status_code=200, content=payload)
+
+    @app.get("/portfolio")
+    def get_portfolio(sync: bool = Query(default=True)) -> dict:
+        return portfolio_payload(sync=sync)
+
+    @app.post("/portfolio/auto")
+    def post_portfolio_auto(body: PaperAutoBody) -> dict:
+        if (
+            body.enabled is None
+            and body.max_opens_per_hour is None
+            and body.min_confidence is None
+            and body.champion is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="enabled, max_opens_per_hour, min_confidence, or champion is required",
+            )
+        if body.champion is not None and str(body.champion).strip().lower() not in STRATEGY_IDS:
+            raise HTTPException(status_code=400, detail="champion must be brief, consensus, or mtf")
+        try:
+            set_auto_settings(
+                enabled=body.enabled,
+                max_opens_per_hour=body.max_opens_per_hour,
+                min_confidence=body.min_confidence,
+                champion=body.champion,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Pausing freezes the book. A cap or confidence change still runs the auto step.
+        return portfolio_payload(sync=body.enabled is not False)
 
     @app.post("/paper/order")
     def post_paper_order(body: PaperOrderBody) -> dict:

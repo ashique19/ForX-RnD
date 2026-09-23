@@ -7,6 +7,7 @@ from forex_lab.ui.watchlist import (
     WatchItem,
     Watchlist,
     WatchlistError,
+    active_pair,
     add_pair,
     default_watchlist,
     load_watchlist,
@@ -90,6 +91,50 @@ def test_default_watchlist_starts_with_eurusd():
 def test_committed_watchlist_includes_eurusd():
     wl = load_watchlist(create=False)
     assert "EURUSD" in wl.pair_symbols()
+
+
+def test_active_pair_defaults_to_first_and_persists(tmp_path):
+    path = tmp_path / "watchlist.yaml"
+    wl = Watchlist(pairs=[WatchItem("EURUSD"), WatchItem("GBPUSD")], refresh_seconds=60)
+    assert active_pair(wl) == "EURUSD"
+    save_watchlist(wl, path)
+    assert "active: EURUSD" in path.read_text(encoding="utf-8")
+    assert active_pair(load_watchlist(path)) == "EURUSD"
+    loaded = load_watchlist(path)
+    loaded.active = "GBPUSD"
+    save_watchlist(loaded, path)
+    assert active_pair(load_watchlist(path)) == "GBPUSD"
+
+
+def test_unknown_active_falls_back_to_the_first_pair(tmp_path):
+    path = tmp_path / "watchlist.yaml"
+    path.write_text("active: USDJPY\npairs:\n- EURUSD\n- GBPUSD\n", encoding="utf-8")
+    wl = load_watchlist(path)
+    assert active_pair(wl) == "EURUSD"
+    save_watchlist(wl, path)
+    assert active_pair(load_watchlist(path)) == "EURUSD"
+
+
+def test_adding_a_pair_does_not_steal_active_unless_the_list_was_empty():
+    wl = Watchlist(pairs=[WatchItem("EURUSD")], active="EURUSD")
+    add_pair(wl, "GBPUSD")
+    assert active_pair(wl) == "EURUSD"
+    empty = Watchlist(pairs=[])
+    add_pair(empty, "USDJPY")
+    assert active_pair(empty) == "USDJPY"
+
+
+def test_removing_the_active_pair_promotes_the_next():
+    wl = Watchlist(
+        pairs=[WatchItem("EURUSD"), WatchItem("GBPUSD"), WatchItem("USDJPY")],
+        active="EURUSD",
+    )
+    remove_pair(wl, "USDJPY")
+    assert active_pair(wl) == "EURUSD"
+    remove_pair(wl, "EURUSD")
+    assert active_pair(wl) == "GBPUSD"
+    remove_pair(wl, "GBPUSD")
+    assert active_pair(wl) == ""
 
 
 def test_empty_pairs_list_is_allowed(tmp_path):

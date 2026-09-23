@@ -16,6 +16,8 @@ export interface Watchlist {
   refresh_seconds: number;
   interval: string;
   count: number;
+  /** The one pair Decision focus and auto paper follow. */
+  active?: string;
   pairs: WatchPair[];
   assets?: AssetOption[];
 }
@@ -56,6 +58,8 @@ export interface Board {
   refresh_seconds: number;
   /** Server floor for auto market-data refresh (FORX_REFRESH_MIN_S, default 18). */
   data_refresh_seconds?: number;
+  /** Active watchlist pair. Heavy board work follows this subject. */
+  active?: string;
   count: number;
   rows: BoardRow[];
   alerts: AlertItem[];
@@ -210,6 +214,13 @@ export interface Brief {
   calendar_note?: string | null;
   /** Core AI joblib for this pair. Separate from price STALE. */
   model_build?: ModelBuild | null;
+  champion?: {
+    id: string;
+    name: string;
+    signal: string | null;
+    confidence: number | null;
+    confidence_text: string;
+  };
 }
 
 export interface ModelChampion {
@@ -351,6 +362,75 @@ export interface LearningFeedInfo {
   present: boolean;
   count: number;
   error?: string;
+}
+
+export interface PortfolioRow {
+  id: string;
+  pair: string;
+  status: "open" | "closed" | string;
+  trigger: string;
+  confidence: number | null;
+  confidence_text: string;
+  entry_price: number | null;
+  entry_price_text: string;
+  entry_time_dhaka: string | null;
+  exit_price: number | null;
+  exit_price_text: string;
+  exit_time_dhaka: string | null;
+  duration: string;
+  pnl_price: number | null;
+  pnl_text: string;
+  pnl_r: number | null;
+  pnl_basis: "mark" | "realized" | null;
+  outcome: string | null;
+  exit_reason: string | null;
+  source: string | null;
+  strategy_id?: string;
+  strategy_name?: string;
+}
+
+export interface PortfolioStrategy {
+  id: string;
+  name: string;
+  champion: boolean;
+  /** Open positions on this book right now. Not a windowed count. */
+  open_count: number;
+  /** Closed trades with a parseable time inside the rolling window. */
+  trade_count: number;
+  win_rate_text: string;
+  expectancy_text: string;
+  opens_this_hour: number;
+  rate_limited: boolean;
+  rate_status: string | null;
+}
+
+export interface PortfolioFeed {
+  timezone: string;
+  auto_enabled: boolean;
+  /** Per-strategy auto-open budget. The same number applies to each book. */
+  max_opens_per_hour: number;
+  /** Shared minimum confidence (percent) for every strategy book. */
+  min_confidence: number;
+  /** Decision champion. Manual promote only. */
+  champion?: string;
+  compare_window?: string;
+  strategies?: PortfolioStrategy[];
+  /** Champion book's auto opens in the rolling hour. */
+  opens_this_hour: number;
+  rate_limited: boolean;
+  rate_status: string | null;
+  /** Paused, rate-limited, below threshold, or gated. Null when auto can open. */
+  block_status: string | null;
+  /** Short reasons for this pass: the standing block, skipped opens, and API errors. */
+  reasons?: string[];
+  /** Watchlist subject auto paper opens and manages. */
+  active_pair?: string;
+  refresh_seconds: number;
+  generated_at_dhaka: string;
+  open: PortfolioRow[];
+  closed: PortfolioRow[];
+  auto_events?: string[];
+  auto_errors?: { pair: string; error: string }[];
 }
 
 export interface LearningsFeed {

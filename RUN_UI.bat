@@ -39,6 +39,7 @@ echo.
 echo ForX Decision desk
 echo   API   http://127.0.0.1:8000
 echo   Desk  http://127.0.0.1:5173
+echo   Portfolio uses GET /portfolio. Active pair uses POST /watchlist/active. Restart the ForX API window after pulling API routes.
 echo Stop by closing the "ForX API" and "ForX Desk" windows.
 echo Streamlit lab stays on RUN_LAB.bat  http://localhost:8501
 echo.

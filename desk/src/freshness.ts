@@ -55,8 +55,8 @@ export function classifyThrown(err: unknown): { problem: StripProblem; retryAfte
   return { problem: "error", retryAfterS: null };
 }
 
+/** 1h, the open chart and row timeframes, then 1d — only the selected pair. */
 export function collectTargets(
-  rows: BoardRow[],
   selected: string,
   chartTf: string,
   rowTf: string,
@@ -72,9 +72,8 @@ export function collectTargets(
     seen.add(key);
     out.push({ pair: symbol, interval: iv });
   };
-  for (const row of rows) add(row.pair, row.interval);
-  // Active subject only: H1 then D1 (plus the open chart / row timeframe).
-  // Other watchlist rows stay on their own interval.
+  if (!selected.trim()) return [];
+  // H1 first so a missing daily file can be aggregated from fresh hourly bars.
   add(selected, "1h");
   add(selected, chartTf);
   add(selected, rowTf);

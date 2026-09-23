@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, RefreshBatch, ReplayJob, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, PortfolioFeed, RefreshBatch, ReplayJob, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -204,6 +204,11 @@ export const api = {
       body: JSON.stringify({ pair, interval: interval || null }),
     }),
   removePair: (pair: string) => request<Watchlist>(`/watchlist/${encodeURIComponent(pair)}`, { method: "DELETE" }),
+  setActivePair: (pair: string) =>
+    request<Watchlist>("/watchlist/active", {
+      method: "POST",
+      body: JSON.stringify({ pair }),
+    }),
   board: () => request<Board>("/board"),
   brief: (pair: string, tf?: string) =>
     request<Brief>(`/brief/${encodeURIComponent(pair)}${tf ? `?tf=${encodeURIComponent(tf)}` : ""}`),
@@ -223,7 +228,7 @@ export const api = {
       `/refresh/${encodeURIComponent(pair)}${interval ? `?interval=${encodeURIComponent(interval)}` : ""}`,
       { method: "POST" },
     ),
-  /** Watchlist OHLCV only. ``null`` asks the API for every saved pair. Does not run the pipeline. */
+  /** Watchlist OHLCV only. ``null`` asks the API for the active pair. Does not run the pipeline. */
   refreshWatchlist: (pairs: { pair: string; interval: string }[] | null, active?: string | null) =>
     request<RefreshBatch>("/refresh", {
       method: "POST",
@@ -264,4 +269,15 @@ export const api = {
     const q = params.toString();
     return request<CalendarFeed>(`/calendar${q ? `?${q}` : ""}`, { cache: "no-store" });
   },
+  portfolio: () => request<PortfolioFeed>("/portfolio", { cache: "no-store" }),
+  setAutoPaper: (body: {
+    enabled?: boolean;
+    max_opens_per_hour?: number;
+    min_confidence?: number;
+    champion?: string;
+  }) =>
+    request<PortfolioFeed>("/portfolio/auto", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

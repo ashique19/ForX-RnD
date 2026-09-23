@@ -745,6 +745,44 @@ def _latest_csv_row(pair: str, cfg: dict[str, Any]) -> pd.Series | None:
     return sub.iloc[-1]
 
 
+SCAN_DETAILS = "not the active pair — model was not run"
+
+
+def _inactive_scan_row(
+    pair: str,
+    interval: str,
+    ohlcv: pd.DataFrame,
+    cfg: dict[str, Any],
+    *,
+    clock: Any,
+    data_source: str | None,
+    n_bars: int | None,
+    fetch_at: str,
+) -> BoardRow:
+    """Cached bars only. Does not call the model."""
+    fresh = assess_ohlcv(ohlcv, interval, cfg, now=clock)
+    row = _status_row(
+        pair,
+        interval,
+        STATUS_READY,
+        SCAN_DETAILS,
+        data_source=data_source or "cached",
+        n_bars=n_bars if n_bars is not None else len(ohlcv),
+        validity=fresh.validity,
+        validity_reason=fresh.reason or SCAN_DETAILS,
+        last_bar_at=fresh.last_bar_label,
+        last_fetch_at=fetch_at if fetch_at != "n/a" else None,
+        target_note=SCAN_DETAILS,
+    )
+    row = apply_freshness(row, fresh, last_fetch_at=row.last_fetch_at, cfg=cfg)
+    if SCAN_DETAILS not in (row.signal_details or ""):
+        prev = (row.signal_details or "").strip()
+        row.signal_details = f"{prev} · {SCAN_DETAILS}" if prev else SCAN_DETAILS
+    row.buy_sell = "—"
+    row.raw_signal = None
+    return attach_visuals(row, ohlcv, cfg, now=clock)
+
+
 def build_board_row(
     pair: str,
     cfg: dict[str, Any] | None = None,
@@ -754,12 +792,16 @@ def build_board_row(
     regenerate: bool | None = None,
     now: Any = None,
     incremental: bool = True,
+    allow_generate: bool = True,
 ) -> BoardRow:
     """One watch-board row. Does not write ``signals/latest_signals.csv``.
 
     ``refresh_data`` tries yfinance (never synthetic). Signals are regenerated
     when ``regenerate`` is true, or when ``refresh_data`` is true, or when no
     matching row exists in the shared signals CSV.
+
+    ``allow_generate`` false never calls the model. A cached signal row is
+    still shown. With no cached row the pair is a light scan (not "need train").
 
     Stale/missing caches never flash BUY/SELL as a live call.
     """
@@ -866,8 +908,20 @@ def build_board_row(
         )
 
     last: pd.Series | dict[str, Any] | None = None
-    if not regenerate:
+    if not regenerate or not allow_generate:
         last = _latest_csv_row(pair, cfg)
+
+    if last is None and not allow_generate:
+        return _inactive_scan_row(
+            pair,
+            interval,
+            ohlcv,
+            cfg,
+            clock=clock,
+            data_source=data_source,
+            n_bars=len(ohlcv),
+            fetch_at=fetch_at,
+        )
 
     if last is None:
         try:
@@ -946,9 +1000,17 @@ def build_board_rows(
     *,
     refresh_data: bool = False,
     regenerate: bool | None = None,
+    generate_pairs: set[str] | None = None,
 ) -> list[BoardRow]:
+    """One row per watched pair.
+
+    ``generate_pairs`` None keeps the lab behavior: every pair may run the
+    model. A set limits ``generate_signals`` to those symbols. Pairs outside
+    the set still show a cached signal when one exists.
+    """
     cfg = cfg if cfg is not None else load_config()
     lab_iv = watchlist.lab_interval(cfg)
+    allowed = None if generate_pairs is None else {str(pair).upper() for pair in generate_pairs}
     rows: list[BoardRow] = []
     for item in watchlist.pairs:
         iv = item.resolved_interval(lab_iv)
@@ -959,6 +1021,7 @@ def build_board_rows(
                 interval=iv,
                 refresh_data=refresh_data,
                 regenerate=regenerate,
+                allow_generate=True if allowed is None else item.pair.upper() in allowed,
             )
         )
     return rows

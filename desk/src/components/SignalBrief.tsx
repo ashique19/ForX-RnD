@@ -274,6 +274,7 @@ function PaperActions({
   blockReason,
   onSize,
   onSubmit,
+  onBlocked,
 }: {
   canOpen: boolean;
   open: PaperState["position"];
@@ -282,33 +283,34 @@ function PaperActions({
   blockReason: string;
   onSize: (size: number) => void;
   onSubmit: (side: "BUY" | "SELL" | "CLOSE") => void;
+  onBlocked: (reason: string) => void;
 }) {
   return (
     <div className="paper-row">
       <button
         className="btn paper-buy"
         type="button"
-        disabled={!canOpen}
+        aria-disabled={!canOpen}
         title={blockReason || "Paper buy at the cached last close"}
-        onClick={() => onSubmit("BUY")}
+        onClick={() => (canOpen ? onSubmit("BUY") : onBlocked(blockReason || "Paper order blocked"))}
       >
         Buy
       </button>
       <button
         className="btn paper-sell"
         type="button"
-        disabled={!canOpen}
+        aria-disabled={!canOpen}
         title={blockReason || "Paper sell at the cached last close"}
-        onClick={() => onSubmit("SELL")}
+        onClick={() => (canOpen ? onSubmit("SELL") : onBlocked(blockReason || "Paper order blocked"))}
       >
         Sell
       </button>
       <button
         className="btn"
         type="button"
-        disabled={!open || busy}
+        aria-disabled={!open || busy}
         title={open ? "Close the open paper position" : "No open paper position"}
-        onClick={() => onSubmit("CLOSE")}
+        onClick={() => (open && !busy ? onSubmit("CLOSE") : onBlocked(open ? "Paper close is busy" : "No open paper position"))}
       >
         Close
       </button>
@@ -401,7 +403,8 @@ export function SignalBrief({
       setOrderError(err instanceof Error ? err.message : fallback);
     });
   };
-  const collapsedNote = !expanded && (open || toast || orderError);
+  const gateNote = !open ? paper?.block_reason ?? "" : "";
+  const collapsedNote = !expanded && (open || toast || orderError || gateNote);
   const pairLabel = pair.trim();
   const collapsedTitle = collapsedBriefTitle(pairLabel, bias, confidence);
   const caution = advice.find((card) => card.severity === "warn" || card.severity === "caution");
@@ -429,6 +432,7 @@ export function SignalBrief({
             blockReason={paper?.block_reason ?? ""}
             onSize={setSize}
             onSubmit={submit}
+            onBlocked={setOrderError}
           />
         )}
         <button className={`btn sm icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onRefresh}>
@@ -472,6 +476,7 @@ export function SignalBrief({
           )}
           {toast && <span className="paper-toast">{toast}</span>}
           {orderError && <span className="paper-note">{orderError}</span>}
+          {gateNote && <span className="paper-note">{gateNote}</span>}
         </div>
       )}
       <div className="panel-body" id="signal-brief-details" hidden={!expanded}>
@@ -496,6 +501,7 @@ export function SignalBrief({
               blockReason={paper?.block_reason ?? ""}
               onSize={setSize}
               onSubmit={submit}
+              onBlocked={setOrderError}
             />
             <div className="bias-sub">{sub}</div>
             {(open || paper?.block_reason || toast || orderError) && (
