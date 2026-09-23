@@ -292,9 +292,12 @@ def _public_reason(status: str, raw: object) -> str:
     text = " ".join(str(raw or "").split())
     if status == "OK":
         return text
-    if text:
-        return text
-    return {"ERROR": "fetch failed", "SKIPPED": "not requested", "RANGE": "range only"}.get(status, "empty parse")
+    if not text:
+        return {"ERROR": "fetch failed", "SKIPPED": "not requested", "RANGE": "range only"}.get(status, "empty parse")
+    low = text.lower()
+    if "blocked by bot check" in low:
+        return "bot check"
+    return text
 
 
 def _last_ok_fields(

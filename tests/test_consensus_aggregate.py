@@ -85,6 +85,26 @@ def test_failed_source_keeps_last_success_and_never_blank_missing():
     empty = read_consensus("GBPUSD", "hourly", cache={}, now=clock)
     assert "Asia/Dhaka" not in json.dumps(empty)
     assert all(str(row["reason"]).strip() for row in empty["forecasters"])
+    vague = {
+        "EURUSD": {
+            "hourly": {
+                "fetched_at": "2026-09-23T12:00:00Z",
+                "forecasters": [
+                    {
+                        "source": "FXStreet",
+                        "status": "ERROR",
+                        "direction": None,
+                        "reason": "FXStreet blocked by bot check",
+                    }
+                ],
+                "ranges": [],
+            }
+        }
+    }
+    old = read_consensus("EURUSD", "hourly", cache=vague, now=clock)
+    fx = next(row for row in old["forecasters"] if row["source"] == "FXStreet")
+    assert fx["reason"] == "bot check"
+    assert fx["last_ok_at_dhaka"] is None
 
 
 def test_pair_forms_collapse_usdjpy_spellings():
