@@ -38,6 +38,9 @@ export function classifyBatch(body: Pick<RefreshBatch, "reason" | "rate_limited"
 }
 
 export function classifyThrown(err: unknown): { problem: StripProblem; retryAfterS: number | null } {
+  if (err && typeof err === "object" && (err as { unreachable?: boolean }).unreachable) {
+    return { problem: "unreachable", retryAfterS: null };
+  }
   const status = err && typeof err === "object" && "status" in err ? Number((err as { status: number }).status) : 0;
   const payload =
     err && typeof err === "object" && "payload" in err

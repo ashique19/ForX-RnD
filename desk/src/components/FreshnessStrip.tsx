@@ -20,9 +20,8 @@ export function FreshnessStrip({
 }) {
   const reason = problemText(problem);
   const countdown = nextIn == null ? null : `Updating in ${nextIn}s`;
-  const nextLabel = updating
-    ? "Updating…"
-    : [reason, auto ? (countdown ?? "Updating in —") : "Auto off"].filter(Boolean).join(" · ");
+  const cadence = auto ? countdown : "Auto off";
+  const nextLabel = updating ? "Updating…" : [reason, cadence].filter(Boolean).join(" · ");
   const lastLabel = lastAgo == null ? "Last update —" : `Last update ${lastAgo}s ago`;
   const buttonLabel = updating ? "Updating…" : reason ? "Retry" : "Update now";
   const title = lastFetchDhaka ? `Last successful fetch ${lastFetchDhaka}` : "Asia/Dhaka";
