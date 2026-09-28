@@ -189,3 +189,107 @@ def classify_session(
         market_open=open_now,
         note=_session_note(labels, windows, cfg),
     )
+
+
+# ---------------------------------------------------------------------------
+# Replay / signal session gate (SERIAL step 5)
+# ---------------------------------------------------------------------------
+# Feature columns (UTC, end exclusive) — see forex_lab.features:
+#   London  07:00–16:00 UTC  (= 13:00–22:00 Asia/Dhaka)
+#   NY      13:00–21:00 UTC  (= 19:00–03:00 Asia/Dhaka)
+#   Overlap London∩NY 13:00–16:00 UTC (= 19:00–22:00 Asia/Dhaka)
+#
+# ``replay.session_gate`` maps to ``signals.sessions`` for Replay only
+# (via apply_replay_session_gate). Live paper keeps signals.sessions=[] unless set.
+# Modes: off | overlap | london_ny
+
+SESSION_GATE_OFF = frozenset({"", "off", "none", "false", "0", "all", "null"})
+SESSION_GATE_OVERLAP = frozenset({"overlap", "ldn_ny", "london_ny_overlap", "ldn-ny"})
+SESSION_GATE_UNION = frozenset({"london_ny", "london+ny", "union", "ldn+ny", "london_and_ny"})
+
+SESSION_GATE_HOURS_UTC = {
+    "london": (7.0, 16.0),
+    "ny": (13.0, 21.0),
+    "overlap": (13.0, 16.0),  # London ∩ NY
+}
+
+
+def normalize_session_gate(raw: object) -> str:
+    """Return canonical gate: ``off`` | ``overlap`` | ``london_ny``."""
+    if raw is None:
+        return "off"
+    key = str(raw).strip().lower().replace(" ", "_")
+    if key in SESSION_GATE_OFF:
+        return "off"
+    if key in SESSION_GATE_OVERLAP:
+        return "overlap"
+    if key in SESSION_GATE_UNION:
+        return "london_ny"
+    return "off"
+
+
+def session_gate_allow_list(gate: str) -> list[str] | None:
+    """Map gate to ``signals.sessions`` names, or None when off.
+
+    ``overlap`` → ``["ldn_ny"]`` (column ``sess_ldn_ny`` = London ∩ NY).
+    ``london_ny`` → ``["london", "ny"]`` (union of session feature flags).
+    """
+    mode = normalize_session_gate(gate)
+    if mode == "overlap":
+        return ["ldn_ny"]
+    if mode == "london_ny":
+        return ["london", "ny"]
+    return None
+
+
+def session_gate_hours_note(gate: str | None = None) -> str:
+    """Human-readable UTC + Asia/Dhaka windows for compare docs / reports."""
+    mode = normalize_session_gate(gate)
+    if mode == "off":
+        return "off (all UTC hours; no session entry filter)"
+    if mode == "overlap":
+        return (
+            "overlap London∩NY only: 13:00–16:00 UTC "
+            "(19:00–22:00 Asia/Dhaka); feature sess_ldn_ny"
+        )
+    # london_ny union
+    return (
+        "London+NY union: London 07:00–16:00 UTC (13:00–22:00 Asia/Dhaka) OR "
+        "NY 13:00–21:00 UTC (19:00–03:00 Asia/Dhaka); features sess_london | sess_ny"
+    )
+
+
+def apply_replay_session_gate(cfg: dict[str, Any]) -> dict[str, Any]:
+    """If ``replay.session_gate`` is on, set ``signals.sessions`` for this run.
+
+    Does not rewrite default.yaml. Leaves an explicit non-empty ``signals.sessions``
+    alone (caller override wins). Returns the same dict (mutated) for chaining.
+    """
+    if not isinstance(cfg, dict):
+        return cfg
+    rc = dict(cfg.get("replay") or {})
+    mode = normalize_session_gate(rc.get("session_gate"))
+    allow = session_gate_allow_list(mode)
+    signals = dict(cfg.get("signals") or {})
+    existing = signals.get("sessions") or []
+    if allow is None:
+        # Gate off: do not clear an explicit signals.sessions allow-list.
+        return cfg
+    if existing:
+        # Explicit signals.sessions already set — leave it (and keep gate metadata).
+        names = [str(x).strip().lower() for x in existing]
+        if names == ["ldn_ny"] or names == ["overlap"]:
+            resolved = "overlap"
+        elif set(names) >= {"london", "ny"}:
+            resolved = "london_ny"
+        else:
+            resolved = "custom"
+        rc["session_gate_resolved"] = resolved
+        cfg["replay"] = rc
+        return cfg
+    signals["sessions"] = list(allow)
+    cfg["signals"] = signals
+    rc["session_gate_resolved"] = mode
+    cfg["replay"] = rc
+    return cfg
+

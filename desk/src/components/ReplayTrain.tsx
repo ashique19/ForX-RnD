@@ -190,6 +190,7 @@ export function ReplayTrainButton() {
 
 export function LastReplayStrip() {
   const { pair, interval, open, setOpen, failure, latest, ready, loadFailed } = useReplay();
+  const [scoreboardDismissed, setScoreboardDismissed] = useState(false);
   const storedFail = latest?.recent_error ? failureText(latest.recent_error) : null;
   const failLine = !open ? failure || storedFail : null;
   const running = latest?.running && latest.running.status === "running" ? latest.running : null;
@@ -219,15 +220,17 @@ export function LastReplayStrip() {
           {failLine}
         </p>
       ) : null}
-      {job ? (
+      {job && !scoreboardDismissed ? (
         <ScoreboardPanel
           job={job}
           advisory={latest?.advisory}
           clampReasons
           mismatch={mismatch}
           onOpen={() => setOpen(true)}
+          collapsible
+          onDismiss={() => setScoreboardDismissed(true)}
         />
-      ) : ready && !loadFailed && pair && !running && !failLine ? (
+      ) : ready && !loadFailed && pair && !running && !failLine && !job ? (
         <p className="replay-empty">
           No scoreboard yet for {pair}. Replay train compares champion, challenger, and SMA. {latest?.advisory || REPLAY_ADVISORY}
         </p>

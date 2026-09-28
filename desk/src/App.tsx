@@ -325,9 +325,9 @@ export function App() {
   const rows = rowsOf(board);
   const lastAgo = secondsAgo(lastOkMs, nowMs);
   const nextIn = realtime && mode === "decision" && !offline ? secondsUntil(nextAt, nowMs) : null;
-  const newest = rows.reduce<{ age: number; text: string } | null>((best, row) => {
+  const newest = rows.reduce<{ age: number; text: string; source: string | null } | null>((best, row) => {
     if (!row || row.fetch_age_s == null || !row.last_fetch_dhaka || row.last_fetch_dhaka === "n/a") return best;
-    if (!best || row.fetch_age_s < best.age) return { age: row.fetch_age_s, text: row.last_fetch_dhaka };
+    if (!best || row.fetch_age_s < best.age) return { age: row.fetch_age_s, text: row.last_fetch_dhaka, source: row.data_source ?? null };
     return best;
   }, null);
 
@@ -417,6 +417,7 @@ export function App() {
                 problem={stripProblem}
                 auto={realtime}
                 lastFetchDhaka={newest?.text ?? null}
+                source={newest?.source ?? rows.find((r) => r.pair === selected)?.data_source ?? null}
                 onUpdate={() => void refreshData(true)}
               />
               <ReplayProvider pair={selected} interval={rowTf}>
@@ -465,6 +466,7 @@ export function App() {
                 pair={brief?.pair ?? selected}
                 bias={brief?.bias ?? "—"}
                 confidence={brief?.confidence ?? null}
+                rawSignal={brief?.raw_signal ?? null}
                 biasTone={brief?.bias_tone ?? "flat"}
                 headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
                 sub={brief?.sub ?? "Asia/Dhaka · research desk"}

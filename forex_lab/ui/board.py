@@ -37,7 +37,7 @@ from forex_lab.mtf import (
     conflict_flash_mode,
 )
 from forex_lab.session import SessionState, classify_session
-from forex_lab.signals import generate_signals
+from forex_lab.signals import generate_signals, write_signals
 from forex_lab.ui.pipeline import artifact_status, load_signals
 from forex_lab.ui.quote import QuoteView, quote_from_ohlcv
 from forex_lab.ui.watchlist import Watchlist
@@ -470,6 +470,12 @@ def attach_quote_session(
 ) -> BoardRow:
     """Last/mid + config spread + clock session. No invented bid/ask."""
     row.quote = quote_from_ohlcv(ohlcv, row.pair, cfg)
+    # Keep row.close on the same OHLCV Close as brief Now / board last.
+    if row.quote is not None and getattr(row.quote, "last", None) is not None:
+        try:
+            row.close = float(row.quote.last)
+        except (TypeError, ValueError):
+            pass
     row.session = classify_session(now, cfg)
     return row
 
@@ -707,12 +713,12 @@ def _cached_bars_without_signal(
     fetch_at: str,
     now: Any,
 ) -> BoardRow:
-    """Bars for this timeframe exist. The saved signal is for another timeframe."""
+    """Bars for this timeframe exist, but no model/signal for this bar size."""
     fresh = assess_ohlcv(ohlcv, interval, cfg, now=now)
     label = FAILURE_TF_LABEL.get(str(interval), str(interval))
     note = (
         f"{label} bars are cached. No {interval} signal — "
-        f"the saved signal is for {lab_interval} and was not copied."
+        f"needs {interval} train (lab {lab_interval} signal was not copied)."
     )
     if fresh.reason and fresh.validity in {VALIDITY_STALE, VALIDITY_ERROR, VALIDITY_CLOSED}:
         note = f"{note} {fresh.reason}"
@@ -735,11 +741,27 @@ def _cached_bars_without_signal(
     return attach_visuals(row, ohlcv, cfg, now=now)
 
 
-def _latest_csv_row(pair: str, cfg: dict[str, Any]) -> pd.Series | None:
+def _latest_csv_row(
+    pair: str,
+    cfg: dict[str, Any],
+    interval: str | None = None,
+) -> pd.Series | None:
     df = load_signals(cfg)
     if df is None or df.empty or "pair" not in df.columns:
         return None
     sub = df[df["pair"].astype(str).str.upper() == pair.upper()]
+    if sub.empty:
+        return None
+    iv = str(interval or cfg.get("interval") or "1h")
+    if "timeframe" in sub.columns:
+        matched = sub[sub["timeframe"].astype(str) == iv]
+        # Legacy rows without timeframe were H1 lab signals only.
+        if matched.empty and iv in {"1h", "H1", "h1"}:
+            matched = sub[sub["timeframe"].isna() | (sub["timeframe"].astype(str) == "")]
+        sub = matched
+    elif iv not in {"1h", "H1", "h1"}:
+        # No timeframe column and asking for non-H1: do not reuse H1 rows.
+        return None
     if sub.empty:
         return None
     return sub.iloc[-1]
@@ -794,7 +816,10 @@ def build_board_row(
     incremental: bool = True,
     allow_generate: bool = True,
 ) -> BoardRow:
-    """One watch-board row. Does not write ``signals/latest_signals.csv``.
+    """One watch-board row.
+
+    When signals are regenerated, also writes ``signals/latest_signals.csv``
+    so later ``regenerate=False`` reads (brief/board) stay current.
 
     ``refresh_data`` tries yfinance (never synthetic). Signals are regenerated
     when ``regenerate`` is true, or when ``refresh_data`` is true, or when no
@@ -850,8 +875,26 @@ def build_board_row(
             cfg,
             now=clock,
         )
+    lab_iv_early = str(cfg.get("interval") or "1h")
     if not status.get("model_exists"):
         ohlcv_only = load_cached_ohlcv(pair, cfg, interval)
+        # Non-lab TF with bars but no TF-specific model: say need train / not copied
+        # instead of a silent miss or replaying the lab signal.
+        if (
+            ohlcv_only is not None
+            and not ohlcv_only.empty
+            and str(interval) != lab_iv_early
+        ):
+            return _cached_bars_without_signal(
+                pair,
+                interval,
+                ohlcv_only,
+                cfg,
+                lab_interval=lab_iv_early,
+                data_source=data_source or "cached",
+                fetch_at=fetch_at,
+                now=clock,
+            )
         fresh_m = assess_ohlcv(ohlcv_only, interval, cfg, now=clock)
         row = _status_row(
             pair,
@@ -892,10 +935,9 @@ def build_board_row(
         )
 
     lab_iv = str(cfg.get("interval") or "1h")
-    if str(interval) != lab_iv:
-        # The on-disk signal and model belong to the lab timeframe. Do not
-        # replay that BUY/SELL on another interval, and do not score these
-        # bars with a model trained on a different bar size.
+    # Non-lab TF (e.g. 1d while lab is 1h) needs its own joblib. Never score
+    # daily bars with the H1 model and never copy the H1 side/confidence.
+    if str(interval) != lab_iv and not status.get("model_exists"):
         return _cached_bars_without_signal(
             pair,
             interval,
@@ -907,9 +949,13 @@ def build_board_row(
             now=clock,
         )
 
+    # Score this interval with cfg overlay so load_model / generate_signals
+    # pick PAIR_{interval}_* artifacts (H1 keeps legacy PAIR_* names).
+    score_cfg = cfg if str(interval) == lab_iv else {**cfg, "interval": str(interval)}
+
     last: pd.Series | dict[str, Any] | None = None
     if not regenerate or not allow_generate:
-        last = _latest_csv_row(pair, cfg)
+        last = _latest_csv_row(pair, cfg, interval=interval)
 
     if last is None and not allow_generate:
         return _inactive_scan_row(
@@ -925,8 +971,19 @@ def build_board_row(
 
     if last is None:
         try:
-            sigs = generate_signals(ohlcv, cfg, pair)
+            sigs = generate_signals(ohlcv, score_cfg, pair, interval=interval)
         except FileNotFoundError:
+            if str(interval) != lab_iv:
+                return _cached_bars_without_signal(
+                    pair,
+                    interval,
+                    ohlcv,
+                    cfg,
+                    lab_interval=lab_iv,
+                    data_source=data_source or "cached",
+                    fetch_at=fetch_at,
+                    now=clock,
+                )
             return attach_visuals(
                 _status_row(
                     pair,
@@ -974,6 +1031,9 @@ def build_board_row(
                 now=clock,
             )
         last = sigs.iloc[-1]
+        # Persist so /brief and /board (regenerate=False) cannot snap back to a stale CSV.
+        # write_signals merges by pair+timeframe so H1 rows survive a D1 write.
+        write_signals(sigs, score_cfg)
 
     row = row_from_signal(
         pair,

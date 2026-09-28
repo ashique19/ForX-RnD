@@ -27,6 +27,8 @@ export interface BoardRow {
   tf: string;
   interval: string;
   signal: string;
+  raw_signal?: string | null;
+  gate_reason?: string | null;
   target: number | null;
   target_text: string;
   last: number | null;
@@ -42,6 +44,8 @@ export interface BoardRow {
   last_bar_dhaka: string;
   last_fetch_dhaka: string;
   last_signal_dhaka: string;
+  /** Live cache provider: dukascopy | yfinance | resampled_from_1h */
+  data_source?: string | null;
   status: string;
   rationale: string;
 }
@@ -187,6 +191,10 @@ export interface Suggestion {
   rationale: string;
   /** Model confidence for this suggestion. Probability in 0–1, or null when the row has none. */
   confidence?: number | null;
+  /** Ungated model class (BUY/SELL/HOLD) when flash was rewritten to HOLD. */
+  raw_signal?: string | null;
+  /** Why flash was gated to HOLD (min_confidence / MTF / event). */
+  gate_reason?: string | null;
   /** Tighter research SL from advise.py when an open paper position meets a high-impact window. */
   event_stop?: number | null;
   event_stop_text?: string;
@@ -200,6 +208,10 @@ export interface Brief {
   bias_tone: string;
   /** Confidence of the primary suggestion that produced `bias`. Null when missing. */
   confidence?: number | null;
+  /** Ungated model class when bias was gated to HOLD. */
+  raw_signal?: string | null;
+  /** Gate caption (min_confidence / MTF / event), when flash was rewritten. */
+  gate_reason?: string | null;
   headline: string;
   sub: string;
   rationale: string;
@@ -373,6 +385,8 @@ export interface PortfolioRow {
   confidence_text: string;
   entry_price: number | null;
   entry_price_text: string;
+  sl: number | null;
+  tp: number | null;
   entry_time_dhaka: string | null;
   exit_price: number | null;
   exit_price_text: string;

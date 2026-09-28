@@ -22,6 +22,7 @@ from api.consensus_registry import (
     REGISTRY,
     SourceSpec,
     aggregate_consensus,
+    listed_sources,
     live_sources,
     pair_forms,
     range_sources,
@@ -225,7 +226,7 @@ def read_consensus(
     specs = _spec_by_name()
 
     forecasters: list[dict[str, Any]] = []
-    for spec in REGISTRY:
+    for spec in listed_sources():
         if not spec.live:
             forecasters.append(_skipped_view(spec))
             continue
@@ -283,7 +284,7 @@ def read_consensus(
         "ranges": ranges,
         "aggregate": aggregate,
         "note": NOTE,
-        "sources": len(specs),
+        "sources": sum(1 for spec in specs.values() if spec.listed),
     }
 
 

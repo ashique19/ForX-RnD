@@ -79,10 +79,11 @@ def test_consensus_missing_without_cache(client: TestClient):
     body = res.json()
     assert body["pair"] == "EURUSD"
     assert body["status"] == "MISSING"
-    assert len(body["forecasters"]) >= 10
+    assert len(body["forecasters"]) >= 8
     assert all(row["direction"] is None for row in body["forecasters"])
     assert all(row["status"] in {"MISSING", "SKIPPED", "RANGE"} for row in body["forecasters"])
-    assert any(row["status"] == "SKIPPED" and row["reason"] for row in body["forecasters"])
+    # live=False sources are listed=False — they must not inflate Failures as SKIPPED.
+    assert "TradingView" not in {row["source"] for row in body["forecasters"]}
     assert all(row["status"] == "MISSING" for row in body["ranges"])
     agg = body["aggregate"]
     assert agg["counts"] == {"Buy": 0, "Sell": 0, "Neutral": 0}
@@ -198,21 +199,20 @@ def test_brief_does_not_invent_daily_or_live_call_when_stale(client: TestClient)
     assert body["pair"] == "EURUSD"
     assert body["hourly"]["interval"] == "1h"
     assert body["daily"]["interval"] == "1d"
-    # No 1d cache in the repo — daily must not look like a live suggestion.
-    assert body["daily"]["validity"] == VALIDITY_MISSING
-    assert body["daily"]["signal"] is None
-    assert body["daily"]["stop"] is None
-    assert body["daily"]["target"] is None
-    assert "Fetch" in body["daily"]["stop_text"]
-    assert body["daily"]["duration"] != "—"
-    assert body["daily"]["chip"] == "MISSING"
-    assert body["daily"]["status"] == "need_fetch"
-    daily_reason = str(body["daily"].get("validity_reason") or "")
-    assert daily_reason
-    assert daily_reason.startswith("Daily — failed")
-    assert "no OHLCV cache" in daily_reason
-    assert body["daily"]["scenario"]
-    assert "Daily — failed" in body["daily"]["scenario"]
+    # Denser live / 1d path may fill daily from cache or 1h resample.
+    # Still never invent a signal/stop/target when daily is MISSING.
+    daily = body["daily"]
+    assert daily["validity"] in {VALIDITY_OK, VALIDITY_STALE, "CLOSED", VALIDITY_MISSING}
+    if daily["validity"] == VALIDITY_MISSING:
+        assert daily["signal"] is None
+        assert daily["stop"] is None
+        assert daily["target"] is None
+        assert "Fetch" in daily["stop_text"]
+        assert daily["chip"] == "MISSING"
+        assert daily["status"] == "need_fetch"
+        daily_reason = str(daily.get("validity_reason") or "")
+        assert daily_reason
+        assert "no OHLCV cache" in daily_reason or "failed" in daily_reason.lower()
     hourly = body["hourly"]
     assert hourly["validity"] in {VALIDITY_OK, VALIDITY_STALE, "CLOSED", VALIDITY_MISSING}
     if hourly["validity"] in {VALIDITY_STALE, VALIDITY_MISSING}:
@@ -305,7 +305,7 @@ def test_refresh_is_rate_limited(client: TestClient, monkeypatch: pytest.MonkeyP
         yf_calls["n"] += 1
         return None, "yfinance failed (test)"
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _fake_row)
     monkeypatch.setattr(
         "forex_lab.data.resample_daily_cache_from_hourly",
@@ -379,7 +379,7 @@ def test_refresh_watchlist_is_market_data_only(client: TestClient, monkeypatch: 
         pipeline.append("run")
         raise AssertionError("data refresh must not run the pipeline")
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
     monkeypatch.setattr("api.deskdata.run_pipeline_pair", _pipeline)
     body_pairs = [
@@ -415,7 +415,7 @@ def test_refresh_watchlist_classifies_failures(client: TestClient, monkeypatch: 
     def _limited(*_a, **_k):
         return None, "yfinance rate limited (HTTP 429)"
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _limited)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _limited)
     limited = client.post("/refresh", json={"pairs": [{"pair": "EURUSD", "interval": "15m"}]}).json()
     assert limited["reason"] == "rate_limited"
     assert limited["updated"] is False
@@ -424,7 +424,7 @@ def test_refresh_watchlist_classifies_failures(client: TestClient, monkeypatch: 
     def _down(*_a, **_k):
         return None, "yfinance failed (connection timed out)"
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _down)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _down)
     failed = client.post("/refresh", json={"pairs": [{"pair": "GBPUSD", "interval": "1h"}]}).json()
     assert failed["reason"] == "error"
     assert failed["fetch_failed"] is True
@@ -435,7 +435,7 @@ def test_refresh_empty_watchlist_does_not_fetch(client: TestClient, monkeypatch:
     def _yf(*_a, **_k):
         raise AssertionError("empty refresh must not fetch")
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _yf)
     res = client.post("/refresh", json={"pairs": []})
     assert res.status_code == 200
     body = res.json()
@@ -457,7 +457,7 @@ def test_refresh_watchlist_defaults_to_the_active_pair(
         seen.append((pair, interval))
         return object(), "yfinance"
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
     res = client.post("/refresh", json={})
     assert res.status_code == 200
@@ -550,7 +550,7 @@ def test_refresh_active_fetches_1h_and_1d_only_for_that_pair(
         seen.append((pair, interval))
         return object(), "yfinance"
 
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _board_row)
     res = client.post(
         "/refresh",
@@ -630,6 +630,13 @@ def test_paper_buy_blocked_when_stale(client: TestClient, monkeypatch: pytest.Mo
 
 def test_paper_buy_and_close_when_ok(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: _paper_row("OK"))
+    # Live stack keeps weekday_gate (block Mon/Thu). Paper OK path still needs
+    # stop/target from brackets; only skip selective open gates here.
+    monkeypatch.setattr(
+        "api.paperdesk.paper_submit_allowed",
+        lambda validity, row=None, cfg=None, events=None, now=None: str(validity or "").upper().split()[0] in {"OK", "CLOSED"},
+    )
+    monkeypatch.setattr("api.paperdesk.paper_submit_block_reason", lambda *_a, **_k: "")
     opened = client.post("/paper/order", json={"pair": "EURUSD", "side": "BUY", "size": 1})
     assert opened.status_code == 200
     body = opened.json()
@@ -856,7 +863,7 @@ def test_failed_refresh_is_not_live_and_keeps_age(monkeypatch: pytest.MonkeyPatc
         return row
 
     calls: list[tuple] = []
-    monkeypatch.setattr("api.deskdata.try_yfinance_refresh", _yf)
+    monkeypatch.setattr("api.deskdata.try_live_refresh", _yf)
     monkeypatch.setattr("api.deskdata.build_board_row", _board)
     monkeypatch.setattr("api.deskdata.ensure_consensus", lambda *a, **_k: calls.append(a))
     out = refresh_pair("EURUSD", interval="1h", cfg={"interval": "1h", "board": {"stale_bars": 2}})

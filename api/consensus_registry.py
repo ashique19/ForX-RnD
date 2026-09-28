@@ -45,6 +45,8 @@ class SourceSpec:
     skip_reason: str
     notes: str
     fetch: FetchFn | None = None
+    # False = keep registry entry but omit from desk Failures / listed rows until an adapter exists.
+    listed: bool = True
 
 
 def pair_forms(raw: str) -> dict[str, str]:
@@ -555,6 +557,7 @@ REGISTRY: tuple[SourceSpec, ...] = (
         False,
         "scanner.tradingview.com robots.txt disallows / (only /global/scan is allowed). Not called.",
         "Would have been the scanner recommendation. Skipped for robots.txt.",
+        listed=False,
     ),
     SourceSpec(
         "Myfxbook",
@@ -564,6 +567,7 @@ REGISTRY: tuple[SourceSpec, ...] = (
         False,
         "Community outlook sits behind a bot check and has no keyless JSON. Not called.",
         "Outlook page returns a Cloudflare challenge from this environment.",
+        listed=False,
     ),
     SourceSpec(
         "Dukascopy SWFX",
@@ -573,6 +577,7 @@ REGISTRY: tuple[SourceSpec, ...] = (
         False,
         "freeserv.dukascopy.com sentiment index returns 403/204. Not called.",
         "SWFX long/short JSON is not reachable without a session.",
+        listed=False,
     ),
     SourceSpec(
         "DailyFX",
@@ -582,6 +587,7 @@ REGISTRY: tuple[SourceSpec, ...] = (
         False,
         "dailyfx.com timed out (no bytes). No stable public JSON found. Not called.",
         "IG client sentiment on dailyfx.com did not answer.",
+        listed=False,
     ),
     SourceSpec(
         "FX Blue",
@@ -591,6 +597,7 @@ REGISTRY: tuple[SourceSpec, ...] = (
         False,
         "Sentiment figures load inside a JS widget with no documented public JSON. Not called.",
         "The tools page does not include the pair ratios in the HTML.",
+        listed=False,
     ),
 )
 
@@ -599,8 +606,13 @@ def live_sources() -> tuple[SourceSpec, ...]:
     return tuple(spec for spec in REGISTRY if spec.live)
 
 
+def listed_sources() -> tuple[SourceSpec, ...]:
+    """Desk-listed rows. live=False placeholders stay in REGISTRY with listed=False."""
+    return tuple(spec for spec in REGISTRY if spec.listed)
+
+
 def range_sources() -> tuple[SourceSpec, ...]:
-    return tuple(spec for spec in REGISTRY if spec.live and spec.provides_range)
+    return tuple(spec for spec in REGISTRY if spec.live and spec.provides_range and spec.listed)
 
 
 def fetch_registered(pair: str, *, now: datetime | None = None) -> dict[str, Any]:

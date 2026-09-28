@@ -225,7 +225,10 @@ def load_cached_ohlcv(
 # A daily cache is usable once it clears the same short-history bar as freshness.
 MIN_CACHE_BARS = 20
 SOURCE_YFINANCE = "yfinance"
+SOURCE_DUKASCOPY = "dukascopy"
+SOURCE_YFINANCE_M1 = "yfinance_1m"
 SOURCE_RESAMPLED_FROM_1H = "resampled_from_1h"
+PROVIDER_SOURCES = frozenset({SOURCE_YFINANCE, SOURCE_DUKASCOPY, SOURCE_YFINANCE_M1})
 
 
 def cache_source_path(pair: str, cfg: dict[str, Any], interval: str | None = None) -> Path:
@@ -312,6 +315,330 @@ def resample_daily_cache_from_hourly(
     return daily, SOURCE_RESAMPLED_FROM_1H
 
 
+
+
+def _joblib_has_vol_z(pair: str, cfg: dict[str, Any], interval: str | None = None) -> bool:
+    """True when the Active pair's saved joblib feature list includes ``vol_z``."""
+    try:
+        from forex_lab.model import model_paths
+        import json
+    except Exception:
+        return False
+    mtype = str((cfg.get("model") or {}).get("type") or "xgboost").lower()
+    try:
+        paths = model_paths(pair, cfg, mtype, interval=interval)
+        meta_path = paths.get("meta")
+    except Exception:
+        return False
+    if meta_path is None or not Path(meta_path).is_file():
+        return False
+    try:
+        raw = json.loads(Path(meta_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    feats = raw.get("features") if isinstance(raw, dict) else None
+    if not isinstance(feats, list):
+        return False
+    return "vol_z" in {str(x) for x in feats}
+
+
+def _flat_volume_value(existing: pd.DataFrame | None) -> float:
+    """Constant volume for schema-safe live writes when joblib has no vol_z."""
+    if existing is None or existing.empty or "Volume" not in existing.columns:
+        return 0.0
+    series = pd.to_numeric(existing["Volume"], errors="coerce").dropna()
+    if series.empty:
+        return 0.0
+    # Prefer the mode of the existing cache (yfinance is typically all zeros).
+    try:
+        mode = series.mode()
+        if not mode.empty:
+            return float(mode.iloc[0])
+    except Exception:
+        pass
+    return float(series.iloc[-1])
+
+
+def _align_live_volume_to_model(
+    frame: pd.DataFrame,
+    pair: str,
+    cfg: dict[str, Any],
+    interval: str,
+    *,
+    existing: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Keep denser OHLC; keep real volume only when joblib already has ``vol_z``.
+
+    Dukascopy tick counts make Volume vary. That flips Decision schema to
+    expect ``vol_z``. Until a matching retrain persists ``vol_z``, flatten
+    volume so the Model strip does not report a schema mismatch. yfinance
+    fallback stays flat either way.
+    """
+    if frame is None or frame.empty or "Volume" not in frame.columns:
+        return frame
+    out = frame.copy()
+    if _joblib_has_vol_z(pair, cfg, interval):
+        return out
+    flat = _flat_volume_value(existing)
+    out["Volume"] = flat
+    return out
+
+
+def _merge_live_ohlcv_parts(parts: list[pd.DataFrame]) -> pd.DataFrame:
+    """Merge live OHLCV frames.
+
+    Later parts win OHLC (so yfinance 1m can densify the forming bar). Volume
+    is different: a later Volume of 0 / NaN must never clobber an earlier
+    positive Dukascopy (or cache) volume. Newer positive volume still wins so
+    Dukascopy can update mid-hour tick counts. yfinance volume is used only
+    when no denser source has volume and yfinance volume is > 0.
+    """
+    cleaned: list[pd.DataFrame] = []
+    for part in parts:
+        if part is None or getattr(part, "empty", True):
+            continue
+        cleaned.append(_normalize_ohlcv(part))
+    if not cleaned:
+        return pd.DataFrame(columns=REQUIRED_COLS)
+    out = cleaned[0].copy()
+    for nxt in cleaned[1:]:
+        if nxt.empty:
+            continue
+        combined = pd.concat([out, nxt])
+        winners = combined[~combined.index.duplicated(keep="last")].sort_index()
+        prior_vol = pd.to_numeric(out["Volume"], errors="coerce").reindex(winners.index)
+        new_vol = pd.to_numeric(nxt["Volume"], errors="coerce").reindex(winners.index)
+        new_pos = new_vol.fillna(0.0)
+        # Later positive volume wins; otherwise keep prior (incl. prior 0).
+        coalesced = new_pos.where(new_pos > 0, prior_vol)
+        winners["Volume"] = coalesced.fillna(0.0)
+        out = winners
+    return out.sort_index()
+
+
+def try_dukascopy_refresh(
+    pair: str,
+    cfg: dict[str, Any],
+    period: str | None = None,
+    interval: str | None = None,
+    *,
+    incremental: bool = False,
+) -> tuple[pd.DataFrame | None, str]:
+    """Denser live OHLCV: Dukascopy recent hours + optional 1m forming overlay.
+
+    Dukascopy bi5 often lags the *current* UTC hour, so completed hours alone
+    cannot move the forming H1/D1 bar. After merging Dukascopy mid OHLC, this
+    also pulls a short yfinance 1m window and aggregates it into the target
+    interval so mid-candle High/Low/Close can update. Never writes synthetic
+    prices. Does not touch Replay ``data/history/``.
+    """
+    from forex_lab.history import (
+        HistoryError,
+        fetch_dukascopy_recent_bars,
+        resample_bars,
+    )
+
+    _ = period
+    iv = str(interval or cfg.get("interval") or "1h")
+    out_path = data_path(pair, cfg, iv)
+    board = dict(cfg.get("board") or {})
+    if iv == "1d":
+        lookback = int(board.get("dukascopy_daily_lookback_hours") or 24)
+    elif incremental:
+        lookback = int(board.get("dukascopy_lookback_hours") or 6)
+    else:
+        lookback = int(board.get("dukascopy_bootstrap_hours") or 48)
+    min_bars = int(board.get("incremental_min_bars") or 20) if incremental else MIN_CACHE_BARS
+
+    existing = None
+    if out_path.exists():
+        try:
+            existing = load_cached_ohlcv(pair, cfg, iv)
+        except Exception:
+            existing = None
+
+    duka_bars: pd.DataFrame | None = None
+    m1_bars: pd.DataFrame | None = None
+    duka_err = ""
+    m1_err = ""
+
+    # Live Decision budget: never block the ~18s poll on a hung Dukascopy feed.
+    duka_budget_s = float(board.get("dukascopy_live_budget_s") or 5.0)
+
+    def _pull_duka() -> pd.DataFrame | None:
+        if iv == "1d":
+            hourly = fetch_dukascopy_recent_bars(
+                pair, lookback_hours=lookback, grain="1h"
+            )
+            if hourly is None or hourly.empty:
+                return None
+            cols = [c for c in REQUIRED_COLS if c in hourly.columns]
+            return aggregate_hourly_to_daily(hourly[cols])
+        grain = "15m" if iv == "15m" else "1h"
+        raw = fetch_dukascopy_recent_bars(
+            pair, lookback_hours=lookback, grain=grain
+        )
+        if raw is None or raw.empty:
+            return None
+        if iv == "4h":
+            raw = resample_bars(raw, "4h")
+        cols = [c for c in REQUIRED_COLS if c in raw.columns]
+        return raw[cols]
+
+    if iv not in {"1h", "15m", "4h", "1d"}:
+        return None, f"dukascopy unsupported interval {iv}"
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+        # shutdown(wait=False): a timed-out Dukascopy pull must not block the
+        # Decision poll while bi5 workers finish in the background.
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = pool.submit(_pull_duka)
+            try:
+                duka_bars = fut.result(timeout=max(1.0, duka_budget_s))
+            except FuturesTimeout:
+                duka_err = f"dukascopy timeout ({duka_budget_s:.0f}s budget)"
+                duka_bars = None
+                fut.cancel()
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        if duka_bars is None and not duka_err:
+            duka_err = "dukascopy empty"
+    except HistoryError as exc:
+        duka_err = f"dukascopy failed ({exc})"
+    except Exception as exc:  # noqa: BLE001
+        text_err = str(exc)
+        low = text_err.lower()
+        if "429" in text_err or "503" in text_err or "too many" in low or "rate limit" in low:
+            duka_err = f"dukascopy rate limited ({exc})"
+        else:
+            duka_err = f"dukascopy failed ({exc})"
+
+    # Forming-bar densification: yfinance 1m -> target interval (no synthetic).
+    # Dukascopy bi5 often omits the current UTC hour; only then pull 1m.
+    # 1m overlay is the reliable mid-candle densifier (~1s). Always try unless disabled.
+    if bool(board.get("live_m1_overlay", True)):
+        try:
+            m1_bars, m1_err = _yfinance_m1_aggregate(pair, cfg, iv)
+        except Exception as exc:  # noqa: BLE001
+            m1_err = f"yfinance_1m failed ({exc})"
+            m1_bars = None
+    else:
+        m1_err = "yfinance_1m disabled"
+
+    parts: list[pd.DataFrame] = []
+    if existing is not None and not existing.empty:
+        parts.append(existing)
+    used_duka = False
+    used_m1 = False
+    if duka_bars is not None and not duka_bars.empty:
+        parts.append(_normalize_ohlcv(duka_bars))
+        used_duka = True
+    if m1_bars is not None and not m1_bars.empty:
+        parts.append(_normalize_ohlcv(m1_bars))
+        used_m1 = True
+    if not parts or (existing is not None and len(parts) == 1 and not used_duka and not used_m1):
+        reason = duka_err or m1_err or "dukascopy empty"
+        if duka_err and m1_err:
+            reason = f"{duka_err}; {m1_err}"
+        return None, reason
+
+    # Later parts win OHLC; never let yfinance_1m Volume=0 clobber Dukascopy/cache.
+    df = _merge_live_ohlcv_parts(parts)
+    if len(df) < min_bars:
+        return None, f"dukascopy too few bars: {len(df)}"
+    # Require an actual denser contribution; otherwise fall through to 1h yfinance.
+    if not used_duka and not used_m1:
+        return None, duka_err or m1_err or "dukascopy empty"
+    # Prefer denser OHLC + real volume when joblib has vol_z; otherwise flatten
+    # volume so Decision schema stays matched until a catch-up Train.
+    df = _align_live_volume_to_model(df, pair, cfg, iv, existing=existing)
+    df.to_csv(out_path)
+    source = SOURCE_DUKASCOPY if used_duka else SOURCE_YFINANCE_M1
+    write_cache_source(pair, cfg, iv, source)
+    return df, source
+
+
+def _yfinance_m1_aggregate(
+    pair: str,
+    cfg: dict[str, Any],
+    interval: str,
+) -> tuple[pd.DataFrame | None, str]:
+    """Short yfinance 1m window aggregated into ``interval``. Never synthetic."""
+    from forex_lab.config_loader import pair_to_ticker
+
+    iv = str(interval)
+    if iv not in {"1h", "15m", "4h", "1d"}:
+        return None, f"yfinance_1m unsupported interval {iv}"
+    board = dict(cfg.get("board") or {})
+    period = str(board.get("m1_period") or "1d")
+    try:
+        ticker = pair_to_ticker(pair, cfg)
+    except KeyError as exc:
+        return None, str(exc)
+    try:
+        import yfinance as yf
+
+        raw = yf.download(
+            ticker,
+            period=period,
+            interval="1m",
+            auto_adjust=True,
+            progress=False,
+            threads=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        text = str(exc)
+        low = text.lower()
+        if "429" in text or "too many" in low or "rate limit" in low:
+            return None, f"yfinance_1m rate limited ({exc})"
+        return None, f"yfinance_1m failed ({exc})"
+    if raw is None or raw.empty:
+        return None, "yfinance_1m empty"
+    try:
+        m1 = _normalize_ohlcv(raw)
+    except Exception as exc:
+        return None, f"yfinance_1m normalize failed ({exc})"
+    if m1.empty:
+        return None, "yfinance_1m empty"
+    rule = {"15m": "15min", "1h": "1h", "4h": "4h", "1d": "1D"}[iv]
+    agg = (
+        m1.resample(rule, label="left", closed="left")
+        .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+        .dropna(subset=["Open", "High", "Low", "Close"])
+    )
+    if agg.empty:
+        return None, "yfinance_1m produced no bars"
+    agg.index.name = "Datetime"
+    return agg[REQUIRED_COLS], ""
+
+
+def try_live_refresh(
+    pair: str,
+    cfg: dict[str, Any],
+    period: str | None = None,
+    interval: str | None = None,
+    *,
+    incremental: bool = False,
+) -> tuple[pd.DataFrame | None, str]:
+    """Primary denser Dukascopy, then yfinance. Never writes synthetic bars."""
+    fetched, tag = try_dukascopy_refresh(
+        pair, cfg, period=period, interval=interval, incremental=incremental
+    )
+    if fetched is not None:
+        return fetched, tag
+    duka_reason = str(tag or "dukascopy failed").strip()
+    fetched, tag = try_yfinance_refresh(
+        pair, cfg, period=period, interval=interval, incremental=incremental
+    )
+    if fetched is not None:
+        return fetched, tag
+    yf_reason = str(tag or "yfinance failed").strip()
+    return None, f"dukascopy: {duka_reason}; {yf_reason}"
+
+
 def ensure_interval_ohlcv(
     pair: str,
     cfg: dict[str, Any],
@@ -323,7 +650,8 @@ def ensure_interval_ohlcv(
 ) -> tuple[pd.DataFrame | None, str, str]:
     """Fill one OHLCV cache without synthetic prices.
 
-    Prefer a real provider download (``try_yfinance_refresh``). A missing or
+    Prefer a denser live provider (``try_live_refresh``: Dukascopy then
+    yfinance). A missing or
     short **1d** cache that the provider cannot fill is aggregated from the
     1h cache (see ``aggregate_hourly_to_daily``). An existing usable cache is
     left untouched when the download fails — it is not replaced by a resample.
@@ -331,15 +659,16 @@ def ensure_interval_ohlcv(
     A first fill is a full-period download. Incremental 1d (a few sessions)
     is shorter than the minimum bar count and would never create the file.
 
-    Returns ``(frame, source, reason)`` where ``source`` is ``yfinance``,
-    ``resampled_from_1h``, ``cache`` (download failed, previous file kept),
-    or ``missing``. ``reason`` is empty on a provider hit, the provider error
-    when daily bars were aggregated from 1h, and the failure text otherwise.
+    Returns ``(frame, source, reason)`` where ``source`` is ``dukascopy``,
+    ``yfinance``, ``resampled_from_1h``, ``cache`` (download failed, previous
+    file kept), or ``missing``. ``reason`` is empty on a provider hit, the
+    provider error when daily bars were aggregated from 1h, and the failure
+    text otherwise.
     """
     iv = str(interval or cfg.get("interval") or "1h")
     usable = cache_bar_count(pair, cfg, iv) >= MIN_CACHE_BARS
-    do_refresh = refresh or try_yfinance_refresh
-    fetched, reason = do_refresh(
+    do_refresh = refresh or try_live_refresh
+    fetched, tag = do_refresh(
         pair,
         cfg,
         period=period,
@@ -347,10 +676,11 @@ def ensure_interval_ohlcv(
         incremental=bool(incremental and usable),
     )
     if fetched is not None:
+        source = tag if tag in PROVIDER_SOURCES else SOURCE_YFINANCE
         if isinstance(fetched, pd.DataFrame):
-            write_cache_source(pair, cfg, iv, SOURCE_YFINANCE)
-        return fetched, SOURCE_YFINANCE, ""
-    provider_reason = str(reason or "").strip()
+            write_cache_source(pair, cfg, iv, source)
+        return fetched, source, ""
+    provider_reason = str(tag or "").strip()
     if iv == "1d" and not usable:
         resampled, resample_note = resample_daily_cache_from_hourly(pair, cfg)
         if resampled is not None:

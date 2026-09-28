@@ -72,7 +72,8 @@ def artifact_status(
         except OSError:
             n_bars = None
     mtype = str((cfg.get("model") or {}).get("type") or "xgboost")
-    model_file = model_paths(pair, cfg, mtype)["model"]
+    # Interval-aware path: 1d looks for EURUSD_1d_xgboost, not the H1 joblib.
+    model_file = model_paths(pair, cfg, mtype, interval=interval)["model"]
     return {
         "pair": pair,
         "interval": interval,

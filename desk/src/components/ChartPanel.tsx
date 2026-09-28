@@ -134,12 +134,12 @@ export function ChartPanel({
         <button
           className="switch"
           type="button"
-          title="Auto-refresh watchlist prices on the top strip (about every 18s). Does not run the research pipeline."
+          title="Auto-refresh Active-pair market data on the top strip (about every 18s). Dukascopy ticks when available, else yfinance. Not a broker stream."
           onClick={() => onRealtime(!realtime)}
           aria-pressed={realtime}
         >
           <span className={realtime ? "track" : "track off"}><span className="thumb" /></span>
-          Realtime
+          Auto-refresh
         </button>
         <button className={`btn icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onReload}>
           <RefreshIcon />

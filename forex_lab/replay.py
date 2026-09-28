@@ -70,11 +70,19 @@ class ReplayClock:
         ordered = ordered[~ordered.index.duplicated(keep="last")]
         self.frame = ordered
         self.as_of = pd.Timestamp(self.frame.index[0] if as_of is None else as_of)
+        self._pos = self._pos_at_or_before(self.as_of)
+
+    def _pos_at_or_before(self, stamp: pd.Timestamp) -> int:
+        """Index of the last bar with timestamp <= stamp, or -1 if none."""
+        return int(self.frame.index.searchsorted(stamp, side="right") - 1)
 
     def visible(self) -> pd.DataFrame:
-        """Bars with timestamps <= as-of. Read-only contract — do not mutate."""
-        view = self.frame.loc[self.frame.index <= self.as_of]
-        if len(view) and pd.Timestamp(view.index.max()) > self.as_of:
+        """Bars with timestamps <= as-of. Read-only contract - do not mutate."""
+        if self._pos < 0:
+            return self.frame.iloc[0:0]
+        # Prefix iloc on a sorted unique index - O(1) slice vs O(n) boolean mask.
+        view = self.frame.iloc[: self._pos + 1]
+        if len(view) and pd.Timestamp(view.index[-1]) > self.as_of:
             raise LookaheadError("visible slice passed the clock")
         return view
 
@@ -97,6 +105,7 @@ class ReplayClock:
         if stamp > pd.Timestamp(self.frame.index.max()):
             raise ReplayError("clock is past the last bar")
         self.as_of = stamp
+        self._pos = self._pos_at_or_before(stamp)
 
 
 def label_ready_at(ts: object, bar_index: pd.DatetimeIndex, horizon: int) -> pd.Timestamp | None:
@@ -158,7 +167,18 @@ def entry_price(row: pd.Series, side: str, *, bid_ask: bool, slip: float) -> flo
         if side_u == "BUY":
             return float(row["AskOpen"]) + slip
         return float(row["BidOpen"]) - slip
-    return float(row["Open"])
+    # Mid path: open plus adverse slip (spread_pips is charged separately via PaperBroker).
+    if side_u == "BUY":
+        return float(row["Open"]) + slip
+    return float(row["Open"]) - slip
+
+
+def exit_price(side: str, px: float, slip: float) -> float:
+    """Adverse slippage on the exit fill (long sells lower; short covers higher)."""
+    slip = abs(float(slip))
+    if str(side).upper() == "BUY":
+        return float(px) - slip
+    return float(px) + slip
 
 
 def touch_exit(
@@ -170,11 +190,16 @@ def touch_exit(
     bid_ask: bool,
     bars_seen: int,
     horizon: int,
+    min_bars_before_sl: int = 0,
 ) -> tuple[float, str] | None:
     """First barrier touch on this bar, else timeout on the horizon bar.
 
     Longs exit on the bid (the price they can sell). Shorts exit on the ask.
     Same-bar SL and TP is a stop, matching the paper journal.
+
+    `min_bars_before_sl` (SERIAL exit-hold): ignore SL hits while
+    `bars_seen < min_bars_before_sl` so same-bar stop noise can be deferred.
+    TP and timeout still apply. bars_seen is 1 on the entry bar after _mark_open.
     """
     side_u = str(side).upper()
     if bid_ask and side_u == "BUY":
@@ -189,10 +214,16 @@ def touch_exit(
     else:
         hit_sl = hi >= sl
         hit_tp = lo <= tp
-    if hit_sl:
+    allow_sl = int(bars_seen) >= int(min_bars_before_sl or 0)
+    if hit_sl and allow_sl:
         return float(sl), "sl"
     if hit_tp:
         return float(tp), "tp"
+    # If SL was deferred on this bar, do not also TP-conflict; wait next bar.
+    if hit_sl and not allow_sl and not hit_tp:
+        if bars_seen >= int(horizon):
+            return float(timeout_px), "timeout"
+        return None
     if bars_seen >= int(horizon):
         return float(timeout_px), "timeout"
     return None
@@ -238,13 +269,16 @@ def _make_port(name: str, job_dir: Path, cfg: dict[str, Any], *, bid_ask: bool, 
     book_cfg["broker"] = broker
     if bid_ask:
         # Spread is the bid/ask distance. Do not charge spread_pips again.
+        # Slippage is applied on entry/exit prices instead.
         book_cfg["spread_pips"] = 0.0
         book_cfg["commission_pips"] = 0.0
     else:
-        book_cfg["spread_pips"] = float(cfg.get("spread_pips") or 0.0) + float(slippage_pips)
+        # Mid fills: round-trip spread_pips via PaperBroker; per-side slip on prices.
+        book_cfg["spread_pips"] = float(cfg.get("spread_pips") or 0.0)
         book_cfg["commission_pips"] = float(cfg.get("commission_pips") or 0.0)
     size = float(broker.get("default_size") or 1.0)
-    return PaperBroker(store, default_size=size, cfg=book_cfg)
+    # Keep books in memory during replay; flush/checkpoint from run_replay.
+    return PaperBroker(store, default_size=size, cfg=book_cfg, autosave=False)
 
 
 def _metrics(closed: list[dict[str, Any]], *, hours: float) -> dict[str, Any]:
@@ -469,7 +503,16 @@ def run_replay(
     for col in ("Open", "High", "Low", "Close"):
         if col not in frame.columns:
             raise ReplayError(f"history is missing {col}", reason="insufficient_bars")
-    cfg = cfg or {}
+    cfg = dict(cfg or {})
+    from forex_lab.session import apply_replay_session_gate
+    from forex_lab.news_blackout import apply_replay_news_blackout
+    from forex_lab.vol_regime import apply_replay_vol_regime
+    from forex_lab.weekday_gate import apply_replay_weekday_gate
+
+    apply_replay_session_gate(cfg)
+    apply_replay_news_blackout(cfg, pair=pair_u, index=frame.index)
+    apply_replay_vol_regime(cfg)
+    apply_replay_weekday_gate(cfg)
     rc = replay_cfg(cfg)
     wf = dict(cfg.get("walk_forward") or {})
     horizon = int(cfg.get("horizon") or 8)
@@ -479,7 +522,11 @@ def run_replay(
     step_bars = max(1, step_bars)
     bid_ask = bool(rc.get("use_bid_ask", True)) and has_bid_ask(frame)
     slippage_pips = float(rc.get("slippage_pips") or 0.0)
-    slip_px = slippage_pips * _pip(pair_u, cfg) if bid_ask else 0.0
+    # Adverse slip on both bid/ask and mid paths (prices). Toggle via replay.slippage_pips.
+    slip_px = slippage_pips * _pip(pair_u, cfg)
+    exit_slip_px = slip_px if bool(rc.get("exit_slippage", True)) else 0.0
+    exit_hold = dict(rc.get("exit_hold") or {})
+    min_bars_before_sl = int(exit_hold.get("min_bars_before_sl") or 0)
     tp_atr = float((cfg.get("barrier") or {}).get("tp_atr") or 2.0)
     sl_atr = float((cfg.get("barrier") or {}).get("sl_atr") or 2.0)
     min_conf = (cfg.get("signals") or {}).get("min_confidence")
@@ -523,6 +570,9 @@ def run_replay(
             )
 
     n = len(frame)
+    total_span = max(1, n - first_i)
+    # Sparse durability: ~every 5% of the run, and never more than 2000 bars apart.
+    ckpt_every = max(1, min(2000, total_span // 20 or 1))
     if progress:
         progress({"phase": "replay", "fraction": 0.0, "message": f"Replay {pair_u} from {frame.index[first_i]}", "bars": n})
 
@@ -563,11 +613,13 @@ def run_replay(
                 clock,
                 bid_ask=bid_ask,
                 slip_px=slip_px,
+                exit_slip_px=exit_slip_px,
                 tp_atr=tp_atr,
                 sl_atr=sl_atr,
                 horizon=horizon,
                 pair=pair_u,
                 interval=interval,
+                min_bars_before_sl=min_bars_before_sl,
             )
             if not just_opened:
                 _mark_open(
@@ -577,7 +629,9 @@ def run_replay(
                     row,
                     ts,
                     bid_ask=bid_ask,
+                    exit_slip_px=exit_slip_px,
                     horizon=horizon,
+                    min_bars_before_sl=min_bars_before_sl,
                 )
             if opens[name] is not None or pending[name] is not None:
                 continue
@@ -621,6 +675,15 @@ def run_replay(
                 }
             )
 
+        done = i - first_i + 1
+        if done == total_span or done % ckpt_every == 0:
+            for port in ports.values():
+                port.flush()
+
+    # Final flush so scoreboard/report see durable paper_* artifacts.
+    for port in ports.values():
+        port.flush()
+
     hours = max((pd.Timestamp(frame.index[-1]) - pd.Timestamp(frame.index[first_i])).total_seconds() / 3600.0, 1e-9)
     return _publish(
         pair=pair_u,
@@ -652,11 +715,13 @@ def _fill_pending(
     *,
     bid_ask: bool,
     slip_px: float,
+    exit_slip_px: float,
     tp_atr: float,
     sl_atr: float,
     horizon: int,
     pair: str,
     interval: str,
+    min_bars_before_sl: int = 0,
 ) -> bool:
     """Fill a resting order at this bar's open. Returns True when a position was opened here."""
     order = pending.get(name)
@@ -689,7 +754,9 @@ def _fill_pending(
     )
     pending[name] = None
     opens[name] = _Open(broker_id=str(fill["position_id"]), side=order.side, sl=sl, tp=tp, bars_seen=0)
-    _mark_open(name, port, opens, row, ts, bid_ask=bid_ask, horizon=horizon)
+    _mark_open(
+        name, port, opens, row, ts, bid_ask=bid_ask, exit_slip_px=exit_slip_px, horizon=horizon, min_bars_before_sl=min_bars_before_sl
+    )
     return True
 
 
@@ -701,16 +768,28 @@ def _mark_open(
     ts: pd.Timestamp,
     *,
     bid_ask: bool,
+    exit_slip_px: float,
     horizon: int,
+    min_bars_before_sl: int = 0,
 ) -> None:
     pos = opens.get(name)
     if pos is None:
         return
     pos.bars_seen += 1
-    hit = touch_exit(pos.side, pos.sl, pos.tp, row, bid_ask=bid_ask, bars_seen=pos.bars_seen, horizon=horizon)
+    hit = touch_exit(
+        pos.side,
+        pos.sl,
+        pos.tp,
+        row,
+        bid_ask=bid_ask,
+        bars_seen=pos.bars_seen,
+        horizon=horizon,
+        min_bars_before_sl=min_bars_before_sl,
+    )
     if hit is None:
         return
     px, reason = hit
+    px = exit_price(pos.side, px, exit_slip_px)
     port.close(pos.broker_id, price=px, reason=reason, timestamp=_utc_label(ts))
     opens[name] = None
 
@@ -856,6 +935,12 @@ def _predict_window(
         )
         pred = _attach_policy_columns(pred, x_te, ohlcv, cfg, pair)
         pred["pred"] = apply_signal_filters(pred, cfg)
+        from forex_lab.news_blackout import apply_news_blackout_to_pred
+        from forex_lab.vol_regime import apply_vol_regime_to_pred
+        from forex_lab.weekday_gate import apply_weekday_gate_to_pred
+        pred = apply_news_blackout_to_pred(pred, cfg, pair=pair)
+        pred = apply_vol_regime_to_pred(pred, cfg)
+        pred = apply_weekday_gate_to_pred(pred, cfg)
     except ReplayError:
         raise
     except Exception as exc:
@@ -1041,6 +1126,11 @@ def _report_md(
         f"- Source: `{source}` ({'bid/ask fills' if bid_ask else 'mid fills + spread_pips'})",
         f"- Champion model: `{champion_type}` · Challenger model: `{challenger_type}` · SMA 10/50 baseline",
         f"- min_confidence: {min_conf}",
+        f"- session_gate: {((cfg or {}).get('replay') or {}).get('session_gate_resolved') or ((cfg or {}).get('replay') or {}).get('session_gate') or 'off'} | sessions={list(((cfg or {}).get('signals') or {}).get('sessions') or [])}",
+        f"- {__import__('forex_lab.news_blackout', fromlist=['news_blackout_report_line']).news_blackout_report_line(cfg)}",
+        f"- {__import__('forex_lab.vol_regime', fromlist=['vol_regime_report_line']).vol_regime_report_line(cfg)}",
+        f"- {__import__('forex_lab.weekday_gate', fromlist=['weekday_gate_report_line']).weekday_gate_report_line(cfg)}",
+        f"- Costs: spread_pips={float((cfg or {}).get('spread_pips') or 0.0):g} (mid RT; ignored when bid/ask) | slippage_pips={float(((cfg or {}).get('replay') or {}).get('slippage_pips') or 0.0):g} | exit_slippage={bool(((cfg or {}).get('replay') or {}).get('exit_slippage', True))}",
         "",
         "## Promotion",
         "",

@@ -4,4 +4,4 @@ refresh_seconds: 60
 interval: null
 active: EURUSD
 pairs:
-  - EURUSD
+- EURUSD

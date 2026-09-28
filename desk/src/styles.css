@@ -1153,6 +1153,24 @@
     }
     .replay-links a { font-size: 12px; }
     .modal-dialog.replay-dialog { width: min(720px, 100%); }
+    .modal-dialog.brief-dialog { width: min(720px, 100%); }
+    .modal-dialog.brief-dialog .brief.panel {
+      width: 100%;
+      max-height: calc(100vh - 72px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+    }
+    .modal-dialog.brief-dialog .brief .panel-body {
+      overflow: auto;
+      flex: 1;
+      min-height: 0;
+    }
+    .brief-open-title {
+      cursor: pointer;
+    }
+    .brief-open-title:hover { color: var(--blue); }
     .replay-strip,
     .replay-empty,
     .replay-running,
@@ -1190,6 +1208,25 @@
       font-size: 13px;
     }
     .replay-strip-hd .spacer { flex: 1; }
+    .replay-strip.is-collapsed {
+      padding-bottom: 8px;
+    }
+    .replay-strip .scoreboard-dismiss {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      justify-content: center;
+      font-size: 15px;
+      line-height: 1;
+    }
+    .replay-strip .scoreboard-dismiss:hover {
+      border-color: currentColor;
+      color: inherit;
+    }
+    .replay-strip .scoreboard-toggle {
+      flex-shrink: 0;
+    }
     .replay-when {
       font-size: 12px;
       color: var(--muted);

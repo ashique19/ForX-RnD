@@ -78,7 +78,7 @@ def test_failed_source_keeps_last_success_and_never_blank_missing():
     assert "Asia/Dhaka" in by_src["FXEmpire"]["last_ok_at_dhaka"]
     assert by_src["DailyForex"]["reason"] == "empty parse"
     assert by_src["DailyForex"]["last_ok_at_dhaka"] is None
-    assert snap["aggregate"]["listed"] >= 14
+    assert snap["aggregate"]["listed"] >= 9
     assert snap["aggregate"]["ok"] <= snap["aggregate"]["listed"]
     blank = [row for row in snap["forecasters"] if row["status"] != "OK" and not str(row["reason"]).strip()]
     assert blank == []
@@ -245,18 +245,19 @@ def test_actionforex_ig_fxssi_mataf_snippets():
     assert levels["pivot"] == 157.35
 
 
-def test_read_consensus_normalizes_pair_and_lists_skipped(tmp_path, monkeypatch):
+def test_read_consensus_normalizes_pair_and_hides_unlisted(tmp_path, monkeypatch):
     monkeypatch.setenv("FORX_CONSENSUS_CACHE", str(tmp_path / "c.json"))
     snap = read_consensus("USD/JPY", "hourly", cache={})
     assert snap["pair"] == "USDJPY"
     names = [row["source"] for row in snap["forecasters"]]
-    assert len(names) >= 14
     assert "FXEmpire" in names
-    assert "TradingView" in names
-    skipped = next(row for row in snap["forecasters"] if row["source"] == "TradingView")
-    assert skipped["status"] == "SKIPPED"
-    assert skipped["direction"] is None
-    assert "robots" in skipped["reason"]
+    # live=False placeholders stay in REGISTRY with listed=False — not desk rows.
+    assert "TradingView" not in names
+    assert "Myfxbook" not in names
+    assert "FX Blue" not in names
+    assert all(row["status"] != "SKIPPED" for row in snap["forecasters"])
+    from api.consensus_registry import REGISTRY
+    assert any(spec.name == "TradingView" and not spec.listed for spec in REGISTRY)
 
 
 def test_background_refresh_does_not_block(tmp_path, monkeypatch):

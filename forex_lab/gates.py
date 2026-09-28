@@ -32,6 +32,7 @@ from forex_lab.mtf import MTF_AGREE, MTF_CONFLICT, MTF_NA, MtfStatus, confirm_ti
 GATE_MTF = "mtf_agree"
 GATE_CONF = "min_confidence"
 GATE_EVENT = "event_window"
+GATE_WEEKDAY = "weekday"
 
 DEFAULT_EVENT_WINDOWS = (WINDOW_BEFORE, WINDOW_DURING, WINDOW_AFTER)
 
@@ -329,6 +330,24 @@ def evaluate_open_gates(
         decision.fail_soft_notes.append(note)
         if not soft:
             decision.blocked_by.append("error")
+
+    # Weekday gate (replay.weekday_gate) — same UTC block list as Replay.
+    try:
+        from forex_lab.weekday_gate import weekday_gate_blocks_now, weekday_gate_enabled
+
+        if weekday_gate_enabled(cfg) and directional:
+            blocked, reason = weekday_gate_blocks_now(cfg, now=now)
+            if blocked:
+                decision.hits.append(
+                    GateHit(GATE_WEEKDAY, True, reason or "weekday_gate", fail_soft=False)
+                )
+                decision.blocked_by.append(GATE_WEEKDAY)
+            else:
+                decision.hits.append(GateHit(GATE_WEEKDAY, False, "weekday ok"))
+    except Exception as _wd_exc:  # noqa: BLE001
+        note = f"weekday_gate error ({type(_wd_exc).__name__}) — fail-soft pass"
+        decision.hits.append(GateHit(GATE_WEEKDAY, False, note, fail_soft=True))
+        decision.fail_soft_notes.append(note)
 
     decision.allowed = not decision.blocked_by
     if not decision.allowed and directional:

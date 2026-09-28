@@ -9,6 +9,12 @@ function dash(value: string | null | undefined): string {
   return text ? text : "—";
 }
 
+function formatPrice(value: number | null | undefined, pair: string): string {
+  if (value == null || !Number.isFinite(value)) return "\u2014";
+  const digits = pair.toUpperCase().includes("JPY") ? 3 : 5;
+  return value.toFixed(digits);
+}
+
 function TradeTable({ rows }: { rows: PortfolioRow[] }) {
   return (
     <table className="wl port">
@@ -20,6 +26,8 @@ function TradeTable({ rows }: { rows: PortfolioRow[] }) {
           <th>Signal</th>
           <th>Trigger</th>
           <th>Opening</th>
+          <th>SL</th>
+          <th>TP</th>
           <th>Closing</th>
           <th>Duration</th>
           <th>P/L</th>
@@ -44,6 +52,8 @@ function TradeTable({ rows }: { rows: PortfolioRow[] }) {
               <div className="port-px">{dash(row.entry_price_text)}</div>
               <div className="port-when">{dash(row.entry_time_dhaka)}</div>
             </td>
+            <td>{formatPrice(row.sl, row.pair)}</td>
+            <td>{formatPrice(row.tp, row.pair)}</td>
             <td>
               <div className="port-px">{dash(row.exit_price_text)}</div>
               <div className="port-when">{dash(row.exit_time_dhaka)}</div>

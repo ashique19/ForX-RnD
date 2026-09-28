@@ -37,7 +37,7 @@ def _attach_policy_columns(
     """Copy session/vol/ATR columns used by signal filters. Causal features only."""
     out = frame.copy()
     aligned = X.reindex(out.index)
-    for extra in ("sess_asia", "sess_london", "sess_ny", "sess_ldn_ny", "vol_regime", "atr_pct", "vol_pct"):
+    for extra in ("sess_asia", "sess_london", "sess_ny", "sess_ldn_ny", "vol_regime", "atr_pct", "vol_pct", "atr_pctile"):
         if extra in aligned.columns:
             out[extra] = aligned[extra].to_numpy()
     for col in aligned.columns:

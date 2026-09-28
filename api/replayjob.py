@@ -8,6 +8,7 @@ own directory under ``data/replay/`` with separate PaperBroker JSON files.
 """
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import math
@@ -111,10 +112,21 @@ def start_replay(
     start: str | None,
     end: str | None,
     pull: bool = True,
+    min_confidence: float | None = None,
 ) -> dict[str, Any]:
     symbol = parse_pair(pair)
     iv = _interval(interval)
-    return _start(cfg, kind="replay", pair=symbol, interval=iv, start=start, end=end, pull=pull, source=None)
+    return _start(
+        cfg,
+        kind="replay",
+        pair=symbol,
+        interval=iv,
+        start=start,
+        end=end,
+        pull=pull,
+        source=None,
+        min_confidence=min_confidence,
+    )
 
 
 def get_job(job_id: str, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -454,6 +466,7 @@ def _start(
     end: str | None,
     pull: bool,
     source: str | None,
+    min_confidence: float | None = None,
 ) -> dict[str, Any]:
     global _ACTIVE_ID
     with _LOCK:
@@ -482,6 +495,7 @@ def _start(
             "interval": interval,
             "start": start,
             "end": end,
+            "min_confidence": min_confidence,
             "fraction": 0.0,
             "message": "Starting",
             "as_of_dhaka": None,
@@ -501,7 +515,7 @@ def _start(
     _write(status, folder)
     thread = threading.Thread(
         target=_worker,
-        args=(job_id, cfg, kind, pair, interval, start, end, pull, source),
+        args=(job_id, cfg, kind, pair, interval, start, end, pull, source, min_confidence),
         name=f"forx-{kind}-{pair}",
         daemon=True,
     )
@@ -521,8 +535,15 @@ def _worker(
     end: str | None,
     pull: bool,
     source: str | None,
+    min_confidence: float | None = None,
 ) -> None:
     folder = job_dir(job_id, cfg)
+    # Per-job override: deep-copy so live desk config/default.yaml stays untouched.
+    if min_confidence is not None:
+        cfg = copy.deepcopy(cfg)
+        signals = dict(cfg.get("signals") or {})
+        signals["min_confidence"] = float(min_confidence)
+        cfg["signals"] = signals
     try:
         if kind == "pull" or pull:
             stale = True

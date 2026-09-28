@@ -1,4 +1,4 @@
-# Forex Research Lab — default config (research only; no live trading)
+﻿# Forex Research Lab â€” default config (research only; no live trading)
 
 pairs:
   EURUSD: "EURUSD=X"
@@ -34,8 +34,10 @@ barrier:
 use_tp_sl: true
 one_position: true         # no overlapping trades; enter only when flat
 
-# Transaction costs
-spread_pips: 1.0           # round-trip-ish cost applied per trade entry
+# Transaction costs (honest paper / Replay defaults — research, not a broker fee card)
+# EURUSD: 1.0 pip round-trip = 0.5 pip/side = 0.00010 price. Typical retail mid ~0.1-0.2 pip/side;
+# 0.5/side is a clear conservative default when fills are mid-only (no bid/ask).
+spread_pips: 1.0           # round-trip cost on mid fills (PaperBroker spread_frac at entry)
 commission_pips: 0.0       # optional extra pips (research; not a broker fee schedule)
 pip_size: 0.0001           # 0.01 for JPY pairs (auto-adjusted for *JPY)
 
@@ -49,7 +51,7 @@ vol_long_window: 100
 range_windows: [20, 50]
 
 # Extra causal features (the committed EURUSD joblib ignores unknown columns
-# until you retrain). Not walk-forward screened as an upgrade — HTF/cross-pair
+# until you retrain). Not walk-forward screened as an upgrade â€” HTF/cross-pair
 # did not earn a default *filter*. pandas-ta / FRED packs stay **off**: EURUSD
 # WF showed a ~0.01 PF tick for TA (noise, still PF<1) and a null FRED pack
 # with a slightly worse drawdown. See reports/experiments.md.
@@ -57,9 +59,27 @@ feature_extras:
   higher_tf: ["4h"]        # resample of the SAME pair CSV; add "1D" if wanted; [] disables
   htf_sma_window: 20
   htf_slope_span: 3        # HTF bars for SMA slope
-  session_overlap: true    # sess_ldn_ny feature (London∩NY); not a trade filter
+  session_overlap: true    # sess_ldn_ny feature (Londonâˆ©NY); not a trade filter
   vol_percentile_window: 100  # 0 = off; causal min-max position of short vol
   cross_pair: null         # e.g. GBPUSD; skipped if that CSV is missing (EURUSD-only safe)
+  # Causal S/R style levels (SERIAL step 9). As-of only; requires retrain for joblib match.
+  levels:
+    enabled: true
+    prior_day: true          # dist to prior completed day H/L/C + range_pos
+    week_open: true          # dist to current week open (first bar of W-SUN period)
+    swing_order: 3           # fractal confirm bars each side (causal: right side known)
+    round_steps: [0.01, 0.005]  # EURUSD 100-pip / 50-pip round distances
+  # Causal Fibonacci swing distances (SERIAL step 11). As-of only; requires retrain.
+  # swing_order: fractal confirm bars each side (same semantics as levels.swing_order).
+  # ratios: retracements of [min(SH,SL), max(SH,SL)]. extensions: stub distances beyond range.
+  # fail_soft_fill when swings sparse / range=0 (schema stable; no crash).
+  fib:
+    enabled: true
+    swing_order: 3
+    ratios: [0.236, 0.382, 0.5, 0.618]
+    extensions: [1.272, 1.618]
+    proximity_frac: 0.0005   # |close-level|/close => fib_near_* flag
+    fail_soft_fill: 0.0
   pandas_ta:
     enabled: false         # extra oscillators (stoch/ADX/BB/CCI/WILLR/ROC/KC); native subset
     backend: native        # native (CI-safe) | pandas_ta if `pip install pandas-ta`
@@ -75,6 +95,22 @@ feature_extras:
     roc_period: 12
     kc_window: 20
     kc_atr: 1.5
+  # Causal DXY / US yields (SERIAL step 10). As-of FRED lag; requires retrain for joblib match.
+  # DTWEXBGS = broad USD goods index (free DXY proxy). DGS10 = 10y Treasury constant maturity.
+  # True ICE DXY (Yahoo DX-Y.NYB) 401'd from this host — FRED proxy is the durable cache.
+  dxy_yields:
+    enabled: false          # SERIAL P second pass KEEP OFF vs a0d93fc6; also SERIAL 10 OFF
+    lag_days: 1              # observation dated D first used at D+lag (no same-day leak)
+    cache_dir: data/fred_cache
+    cache_ttl_s: 86400
+    timeout_s: 12
+    allow_network: true
+    dxy_series: DTWEXBGS     # broad USD; swap only if you have another local series id
+    yield_series: DGS10
+    dxy_sma_window: 20
+    dxy_slope_span: 5
+    emit_stubs_when_missing: true
+    fail_soft_fill: 0.0      # stub fill when cache/download fails (schema stable; no crash)
   fred:
     enabled: false         # macro as-of features; skip if cache/download fails
     api_key_env: FRED_API_KEY  # optional; CSV download works without a key
@@ -128,13 +164,13 @@ model:
 
 # Signal generation (also applied in backtest so research matches the CSV)
 signals:
-  min_confidence: 0.40     # min P(predicted class) to emit BUY/SELL (else HOLD)
+  min_confidence: 0.60     # min P(predicted class) to emit BUY/SELL (else HOLD)
   min_dir_edge: 0.0        # min |P(BUY)-P(SELL)|; 0 keeps the model's own HOLD class
   lookback_bars: 64        # rows written to latest_signals.csv
   sessions: []             # e.g. [london, ny]; empty = all UTC hours
   min_vol_regime: 0.0      # 0 = off; >1 keeps only high-vol vs long-run vol
   min_tp_pips: 0.0         # skip entries whose TP distance is below this (0 = off)
-  htf_trend_filter: null   # null/off | 4h | 1D — require HTF SMA slope to agree with BUY/SELL
+  htf_trend_filter: null   # null/off | 4h | 1D â€” require HTF SMA slope to agree with BUY/SELL
                            # Default off: session/vol filters hurt EURUSD in prior screens.
 
 # News lane (decision context beside math; not a trade instruction)
@@ -154,7 +190,7 @@ calendar:
   source: faireconomy_ff_json
   url: "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
   timeout_s: 8
-  cache_ttl_s: 1800        # 30 min — be polite; the week dump is not a tick
+  cache_ttl_s: 1800        # 30 min â€” be polite; the week dump is not a tick
   cache_file: data/calendar_cache.json
   min_impact: High         # High | Medium | Low (Holiday is always dropped below High)
   max_events: 12
@@ -176,20 +212,20 @@ calendar:
     - GDP
 
 # Selective open gates (flashed BUY/SELL + paper BUY/SELL). Fail-soft when
-# calendar or MTF is missing — never crash, never invent a block.
+# calendar or MTF is missing â€” never crash, never invent a block.
 # Default **off**: EURUSD walk-forward (reports/gate_screen.md) did not improve
 # PF / total return / max DD vs baseline. Enable only for research.
 gates:
-  enabled: false
+  enabled: true           # SERIAL D unlock: news event window ON; MTF stays off
   apply_to_flash: true     # rewrite BUY/SELL -> HOLD on the scan row when gated
   apply_to_paper: true     # disable Paper BUY/SELL (CLOSE still works)
-  require_mtf_agree: true  # HOLD unless causal HTF SMA slope agrees (n/a = pass)
+  require_mtf_agree: false # keep MTF off (gate_screen hurt EURUSD); news window is the live ask
   min_confidence: null     # null = reuse signals.min_confidence; set 0.50 to raise
   no_new_opens_in_event_window: true  # reuse advice before/during/after minutes
   event_windows: [before, during, after]
   fail_soft: true          # missing calendar/MTF/confidence = pass, not a crash
 
-# Advisory cards in the detail drawer + Next-event ⚠ on the scan row.
+# Advisory cards in the detail drawer + Next-event âš  on the scan row.
 # Never auto-submit via BrokerPort.
 advice:
   enabled: true
@@ -200,16 +236,16 @@ advice:
   during_action_open: hold
   after_action_open: hold
   flatten_action: close            # NFP/FOMC/CPI-style names in the before/during window
-  tighten_sl_atr: 1.0              # vs barrier.sl_atr (default 2.0) — research SL only
+  tighten_sl_atr: 1.0              # vs barrier.sl_atr (default 2.0) â€” research SL only
 
 # Display clock for the Streamlit desk. Data/session windows stay UTC.
 # Dark dense terminal chrome lives in `.streamlit/config.toml` + forex_lab/ui/theme.py.
-# Presentation only — does not change BrokerPort or this timezone.
+# Presentation only â€” does not change BrokerPort or this timezone.
 ui:
   timezone: Asia/Dhaka     # zoneinfo name; default Dhaka (UTC+6, no DST)
   timezone_tag: Asia/Dhaka # suffix on timestamps so the zone is obvious
 
-# Trader board freshness (UI). yfinance is unofficial — do not poll faster than 60s.
+# Trader board freshness (UI). yfinance is unofficial â€” do not poll faster than 60s.
 # Workspace presets (config/workspaces/scalp.yaml, swing.yaml) overlay watchlist
 # pairs, interval/TF, board.realtime_seconds, and signals.min_confidence in memory.
 # Apply / Save / Reset on the desk. They do not rewrite this file, the paper
@@ -221,20 +257,20 @@ ui:
 broker:
   backend: paper
   store: data/paper_broker.json
-  default_size: 1.0         # paper units — not a lot-size ticket
+  default_size: 1.0         # paper units â€” not a lot-size ticket
 
 board:
   realtime_seconds: 60     # st.fragment period when Realtime is checked
   yf_min_interval_s: 60    # min seconds between yfinance hits per pair
-  stale_bars: 2            # STALE if last bar older than N × timeframe in-session
+  stale_bars: 2            # STALE if last bar older than N Ã— timeframe in-session
   incremental_period: "5d" # short Yahoo window; merged into the existing CSV
   incremental_min_bars: 20
   sparkline_bars: 48        # cached closes on each watchlist card (mini spark)
-  candle_bars: 150          # Plotly OHLC in the detail Chart tab (100–200)
+  candle_bars: 150          # Plotly OHLC in the detail Chart tab (100â€“200)
   quote:
     last_label: last/mid-ish   # yfinance FX has no bid/ask
-    source_note: "yfinance last/mid-ish — not broker bid/ask"
-    bar_range_proxy: true      # last High−Low in pips; labeled range, not spread
+    source_note: "yfinance last/mid-ish â€” not broker bid/ask"
+    bar_range_proxy: true      # last Highâˆ’Low in pips; labeled range, not spread
   sessions:                    # UTC hours, end exclusive; start>end wraps midnight
     asia: [21, 7]              # Sydney/Tokyo so Sunday 21:00 open is not OFF
     london: [7, 16]
@@ -242,13 +278,13 @@ board:
   mtf_confirm:
     enabled: true
     timeframes: ["4h"]     # causal SMA slope from the same pair CSV (add "1D" if wanted)
-    conflict_flash: off    # off | weaken | hold — default off (badge only; HTF gate hurt EURUSD)
+    conflict_flash: off    # off | weaken | hold â€” default off (badge only; HTF gate hurt EURUSD)
     flat_eps: 1.0e-8
   alerts:
     enabled: true
     sound: false             # optional beep; off by default (UI checkbox can enable)
     cooldown_s: 300          # same flip/STALE/event key will not re-fire inside this window
-    max_visible: 6           # compact strip — do not bury the board
+    max_visible: 6           # compact strip â€” do not bury the board
     event_warning: true      # high-impact calendar event within event_minutes
     event_minutes: 60
     persist_file: data/alert_state.json  # last-seen signals; gitignored; not a broker store
@@ -268,7 +304,7 @@ digest:
 # Train/score a challenger on current config+CSV via walk-forward. Promote only
 # if PF / total return / max DD all improve vs the saved champion (mode: improve)
 # or clear the non-regression bar (mode: non_regression). Else keep champion
-# and report null. First run seeds the slot — that is not a promotion.
+# and report null. First run seeds the slot â€” that is not a promotion.
 # Persist under data/champion/ (plus models/<PAIR>_champion.json pointer).
 # Fail-soft. No live broker. Not a live edge.
 retrain:
@@ -281,31 +317,98 @@ retrain:
   return_eps: 0.0
   dd_eps: 0.0                # max DD is negative; challenger must not be worse than champ - eps
   # non_regression acceptance bar (used when mode: non_regression and eps left at 0):
-  #   PF 0.05 / total return 0.03 / max DD 0.01  — fold noise, not an edge
-  min_trades: 1
+  #   PF 0.05 / total return 0.03 / max DD 0.01 — fold noise, not an edge
+  min_trades: 30             # raised SERIAL step 8 (was 1); also under promotion.min_trades
   seed_from_metrics: true    # if no champion, copy reports/latest_metrics.json
   compare_logistic: false    # skip extra WF column (speed)
   train_on_promote: true     # refresh production joblib only when seeding/promoting
   write_report: false        # leave reports/latest_report.md unless true
+  # Absolute promotion floors (SERIAL step 8). Relative improve/non_regression still required.
+  # Floors block promoting a "less-bad loser" (e.g. PF 0.90 -> 0.95). Seed bypasses floors.
+  # Honest picks: PF>=1.05 (above break-even cushion; roadmap "clearly >1"), DD not deeper
+  # than -15%, WR>=0.40 (asym R:R OK below 50%), min_trades 30. Not live signal filters.
+  promotion:
+    enabled: true
+    min_profit_factor: 1.05
+    max_drawdown_floor: -0.15   # challenger max_drawdown must be >= this (shallower)
+    min_win_rate: 0.40          # null/omit to disable WR floor
+    min_trades: 30
+  # Rolling weekly promote-only on AFTER-COST Replay scoreboards (not yfinance WF).
+  # Pin: data/replay/weekly_champion.json. Scoreboards: data/replay/weekly_promote_*.md
+  # Default dry-run via scripts/weekly_replay_promote.py — no silent overwrite.
+  # apply_live_on_promote: false keeps Replay advisory for live joblib (README).
+  # Weekday 8:04 routine (forx-weekly-model-retrain-gate): prefer this script for
+  # after-cost promote-or-keep; keep scripts/weekly_retrain.py for WF joblib path.
+  weekly_replay:
+    enabled: true
+    pointer: data/replay/weekly_champion.json
+    history: data/replay/weekly_promote_history.jsonl
+    baseline_job: "a0d93fc6df364c2a869b5f3a69eef206"  # exit_hold KEEP ON (beats d20/45bb)
+    challenger_book: champion   # book on --challenger-job (within-job dry-run uses challenger)
+    apply_live_on_promote: false
 
 # Historic walk-forward replay (Decision desk "Replay train" + `python -m forex_lab replay`).
 # One Active pair per pull/replay. The watchlist is not downloaded as a batch.
 # Pulls Dukascopy bid/ask OHLC into data/history/ (gitignored). HistData M1 is the
-# fallback and has no bid/ask — fills then use spread_pips + slippage_pips.
+# fallback and has no bid/ask â€” fills then use spread_pips + slippage_pips.
 # ReplayClock paper books live under data/replay/ and do not touch broker.store.
-# The event-window gate is NOT applied: the desk calendar is the current week,
-# not a point-in-time history back to `start`. Bar features and fills are causal.
-# Promotion uses the same retrain gate (PF / total return / max DD / min_trades).
-# trades/hour is reported only — live has no trades/hour gate.
+# News blackout (replay.news_blackout) applies only when events_file / cache causally
+# covers the bar range; otherwise resolves skipped_no_pit_calendar (no fake gate).
+# Desk calendar alone is the current-week FF dump — not PIT history back to `start`.
+# Bar features and fills stay causal.
+# Promotion uses the same retrain gate (PF / total return / max DD / min_trades
+# plus absolute floors under retrain.promotion).
+# trades/hour is reported only â€” live has no trades/hour gate.
 # min_confidence is the signals filter (and gates.min_confidence when gates.enabled).
 replay:
   start: "2015-01-01"
-  slippage_pips: 0.0         # adverse ticks on bid/ask fills; added to spread_pips when no bid/ask
+  # Honest fills (SERIAL step 4). Toggle: set slippage_pips 0 and exit_slippage false for zero-slip baseline.
+  # With Dukascopy bid/ask: BBO is the spread; do NOT also charge spread_pips. Slippage is extra adverse.
+  # With mid-only (HistData): PaperBroker charges spread_pips; entry/exit prices also shift by slippage_pips.
+  slippage_pips: 0.2         # adverse pips per fill side (entry + exit when exit_slippage). Was 0.0 (optimistic).
+  exit_slippage: true        # apply the same adverse slip on exit fills (SL/TP/timeout)
   use_bid_ask: true
   history_dir: data/history
   store_dir: data/replay
   workers: 8
   source: auto               # auto | dukascopy | histdata
+  # Session entry filter for Replay (SERIAL step 5). Live paper uses signals.sessions (still []).
+  # Hours UTC (end exclusive): London 07-16, NY 13-21, overlap London∩NY 13-16 (=19:00-22:00 Asia/Dhaka).
+  # overlap → signals.sessions=[ldn_ny]; london_ny → [london, ny] union; off → all hours.
+  session_gate: overlap      # off | overlap | london_ny
+  # News blackout (SERIAL step 6). Blocks new opens in high-impact USD/EUR windows
+  # when a causal event calendar covers the Replay bar range. Desk cache is this-week-only
+  # (ff_calendar_thisweek.json) — without events_file, gate resolves skipped_no_pit_calendar.
+  # Live desk: gates.enabled=true with require_mtf_agree=false; no_new_opens_in_event_window uses this-week FF cache (fail_soft).
+  news_blackout:
+    enabled: true
+    before_minutes: 60
+    during_minutes: 15
+    after_minutes: 30
+    min_impact: High
+    currencies: null          # null = pair legs (EUR+USD for EURUSD)
+    event_windows: [before, during, after]
+    require_historic_coverage: true  # refuse non-causal week-dump on multi-month Replay
+    events_file: data/calendars/pit_high_impact_usd_eur.json  # PIT high-impact USD/EUR (SERIAL unlock)
+  # ATR/vol regime entry skip (SERIAL step 7). Prefer skip extremes for clean before/after.
+  # Metric atr_pctile = causal rolling min-max of atr_pct (same window as feature_extras.vol_percentile_window).
+  # vol_pct = short-vol percentile. mode skip_extremes skips high AND dead-quiet; skip_high = extreme only.
+  vol_regime:
+    enabled: true
+    mode: skip_extremes       # off | skip_high | skip_extremes
+    metric: atr_pctile        # atr_pctile | vol_pct
+    high: 0.90                # skip when metric >= high (extreme vol)
+    low: 0.10                 # skip when metric <= low (dead quiet); 0 = do not skip quiet
+  # Weekday open gate (Mon/Thu paper-driven). UTC weekday of bar (= entry_time UTC).
+  # Asia/Dhaka same calendar day for overlap 13-16 UTC. SERIAL L full-hist KEEP ON (d20de070).
+  weekday_gate:
+    enabled: true             # KEEP ON — PF 1.275->1.450 vs 45bbad3a (see tighten_L_weekday_gate_full_compare.md)
+    block: [mon, thu]         # block new opens these UTC weekdays
+    tz: UTC                   # matches Replay bar timestamps / paper entry_time
+  # Exit hold (SERIAL N). Defer SL until bars_seen >= min_bars_before_sl (entry bar = 1).
+  # Evidence: champion d20 same-bar SL pure losses; same-bar TP kept. TP/timeout unchanged.
+  exit_hold:
+    min_bars_before_sl: 2     # skip same-bar SL only; 0 = legacy immediate SL
   # step_bars / train_bars / min_train_bars default to walk_forward when omitted
 
 # Paths (relative to project root)

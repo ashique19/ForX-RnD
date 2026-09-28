@@ -1,9 +1,16 @@
-/** Bias tag the expanded brief already shows → Buy / Sell / Hold. Anything else is no side. */
+/** Bias tag the expanded brief already shows — Buy / Sell / Hold. Anything else is no side. */
 export function briefSide(bias: string | null | undefined): "Buy" | "Sell" | "Hold" | null {
   const key = (bias ?? "").trim().toLowerCase();
   if (key === "buy" || key === "buy bias") return "Buy";
   if (key === "sell" || key === "sell bias") return "Sell";
   if (key === "hold") return "Hold";
+  return null;
+}
+
+/** Raw model class (BUY/SELL/HOLD) from the API, independent of flash gates. */
+export function rawSide(raw: string | null | undefined): "BUY" | "SELL" | "HOLD" | null {
+  const key = (raw ?? "").trim().toUpperCase();
+  if (key === "BUY" || key === "SELL" || key === "HOLD") return key;
   return null;
 }
 
@@ -21,17 +28,29 @@ export function confidencePercent(value: number | null | undefined): number | nu
   return rounded;
 }
 
-/** Collapsed heading: `PAIR`, `PAIR (Side)`, or `PAIR (Side : NN%)`. */
+/**
+ * Collapsed heading.
+ * Ungated: `PAIR (Side : NN%)` when bias matches the live call.
+ * Gated:   `PAIR (SELL 38% gated → HOLD)` when min_confidence (or similar) rewrote
+ *          the flash to HOLD but raw_signal is still BUY/SELL.
+ */
 export function collapsedBriefTitle(
   pair: string | null | undefined,
   bias: string | null | undefined,
   confidence: number | null | undefined,
+  rawSignal?: string | null | undefined,
 ): string {
   const name = (pair ?? "").trim();
   if (!name) return "Signal brief";
   const side = briefSide(bias);
-  if (!side) return name;
+  const raw = rawSide(rawSignal);
   const pct = confidencePercent(confidence);
+  // Gated flash: model wanted BUY/SELL, desk shows HOLD.
+  if (side === "Hold" && raw && raw !== "HOLD") {
+    if (pct == null) return `${name} (${raw} gated → HOLD)`;
+    return `${name} (${raw} ${pct}% gated → HOLD)`;
+  }
+  if (!side) return name;
   if (pct == null) return `${name} (${side})`;
   return `${name} (${side} : ${pct}%)`;
 }
