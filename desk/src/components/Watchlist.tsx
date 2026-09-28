@@ -203,9 +203,7 @@ function WatchlistPanel({
             </select>
             <select aria-label="Timeframe" value={interval} onChange={(e) => setInterval(e.target.value)}>
               <option value="">Lab TF</option>
-              <option value="15m">15m</option>
               <option value="1h">1h</option>
-              <option value="4h">4h</option>
               <option value="1d">1d</option>
             </select>
             <button className="btn primary sm" type="submit">Add</button>

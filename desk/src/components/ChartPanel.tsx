@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Bar, IndicatorSeries, Ohlcv } from "../types";
 import {
   DEFAULT_TOGGLES,
@@ -7,12 +7,19 @@ import {
   type IndicatorToggles,
   type ToggleKey,
 } from "../chartEngine";
+import {
+  DEFAULT_PATTERN_PREFS,
+  PATTERN_DEFS,
+  detectPatterns,
+  loadPatternPrefs,
+  savePatternPrefs,
+  type PatternPrefs,
+} from "../patterns";
 import { RefreshIcon } from "./SignalBrief";
 
+/** Decision desk chart: 1h (default) + 1d only. */
 const TFS = [
-  { id: "15m", label: "15m" },
   { id: "1h", label: "1h" },
-  { id: "4h", label: "4h" },
   { id: "1d", label: "1d" },
 ];
 
@@ -55,6 +62,13 @@ const LEGEND: { toggle?: ToggleKey; color: string; label: string; key?: keyof In
   { toggle: "bb", color: "#98a2b3", label: "BB 20,2", key: "bb_mid" },
 ];
 
+function initialPatternPrefs(): PatternPrefs {
+  if (typeof window === "undefined") {
+    return { ...DEFAULT_PATTERN_PREFS, filters: { ...DEFAULT_PATTERN_PREFS.filters } };
+  }
+  return loadPatternPrefs();
+}
+
 export function ChartPanel({
   pair,
   interval,
@@ -81,11 +95,21 @@ export function ChartPanel({
   const host = useRef<HTMLDivElement | null>(null);
   const engine = useRef<DeskChart | null>(null);
   const [toggles, setToggles] = useState<IndicatorToggles>(DEFAULT_TOGGLES);
+  const [patternPrefs, setPatternPrefs] = useState<PatternPrefs>(initialPatternPrefs);
   const bars = data?.bars ?? [];
   const precision = data?.digits ?? priceFormatFor(pair).precision;
   const quote = bars.length ? ohlcParts(bars, precision) : null;
   const stale = data && data.validity !== "OK" && data.validity !== "CLOSED";
   const indicators = data?.indicators;
+
+  const patternHits = useMemo(() => {
+    if (!patternPrefs.show || !bars.length) return [];
+    return detectPatterns(bars, patternPrefs.filters);
+  }, [bars, patternPrefs.show, patternPrefs.filters]);
+
+  useEffect(() => {
+    savePatternPrefs(patternPrefs);
+  }, [patternPrefs]);
 
   useEffect(() => {
     const el = host.current;
@@ -109,8 +133,9 @@ export function ChartPanel({
       target,
       realtime,
       precision: data?.digits ?? priceFormatFor(pair).precision,
+      patterns: patternHits,
     });
-  }, [data, toggles, stop, target, realtime, pair, interval]);
+  }, [data, toggles, stop, target, realtime, pair, interval, patternHits]);
 
   const rsi = toggles.rsi ? lastFinite(indicators?.rsi) : null;
   const macd = toggles.macd ? lastFinite(indicators?.macd) : null;
@@ -181,6 +206,36 @@ export function ChartPanel({
           {macd != null && <span>MACD {formatReadout(macd, precision)}</span>}
           {atr != null && <span>ATR {formatReadout(atr, precision)}</span>}
         </div>
+      </div>
+      <div className="pattern-toolbar" role="group" aria-label="Chart patterns research overlay">
+        <label className="pattern-master" title="Research overlay only. Not used by Buy/Sell gates.">
+          <input
+            type="checkbox"
+            checked={patternPrefs.show}
+            onChange={(e) => setPatternPrefs((cur) => ({ ...cur, show: e.target.checked }))}
+          />
+          Show patterns
+        </label>
+        {patternPrefs.show && (
+          <div className="pattern-filters">
+            {PATTERN_DEFS.map((item) => (
+              <label key={item.id} className="pattern-filter" title={item.title}>
+                <input
+                  type="checkbox"
+                  checked={patternPrefs.filters[item.id]}
+                  onChange={(e) =>
+                    setPatternPrefs((cur) => ({
+                      ...cur,
+                      filters: { ...cur.filters, [item.id]: e.target.checked },
+                    }))
+                  }
+                />
+                {item.label}
+              </label>
+            ))}
+            <span className="pattern-note">Research overlay · not a signal</span>
+          </div>
+        )}
       </div>
       <div className="chart-area">
         <div className="chart-legend">

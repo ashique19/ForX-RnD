@@ -6,6 +6,7 @@ import {
   AUTO_REFRESH_FUDGE_MS,
   classifyBatch,
   classifyThrown,
+  coerceChartInterval,
   collectTargets,
   newestFetchMs,
   refreshIntervalSeconds,
@@ -146,7 +147,7 @@ export function App() {
       setSelected(pick?.pair ?? "");
       if (pick?.interval) {
         setRowTf(pick.interval);
-        setChartTf(pick.interval);
+        setChartTf(coerceChartInterval(pick.interval));
       }
     }
     setError(null);
@@ -517,7 +518,7 @@ export function App() {
                 }
                 setSelected(row.pair);
                 setRowTf(row.interval);
-                setChartTf(row.interval);
+                setChartTf(coerceChartInterval(row.interval));
               }}
               onAdd={async (pair, interval) => {
                 const wl = await api.addPair(pair, interval || undefined);
@@ -525,7 +526,7 @@ export function App() {
                 if (focus) {
                   setSelected(focus.pair);
                   setRowTf(focus.interval);
-                  setChartTf(focus.interval);
+                  setChartTf(coerceChartInterval(focus.interval));
                 }
                 setTick((n) => n + 1);
               }}
@@ -535,7 +536,7 @@ export function App() {
                 setSelected(focus?.pair ?? "");
                 if (focus) {
                   setRowTf(focus.interval);
-                  setChartTf(focus.interval);
+                  setChartTf(coerceChartInterval(focus.interval));
                 }
                 setTick((n) => n + 1);
               }}

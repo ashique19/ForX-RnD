@@ -485,7 +485,7 @@ def try_dukascopy_refresh(
         cols = [c for c in REQUIRED_COLS if c in raw.columns]
         return raw[cols]
 
-    if iv not in {"1h", "15m", "4h", "1d"}:
+    if iv not in {"1h", "1d"}:
         return None, f"dukascopy unsupported interval {iv}"
 
     try:
@@ -570,7 +570,7 @@ def _yfinance_m1_aggregate(
     from forex_lab.config_loader import pair_to_ticker
 
     iv = str(interval)
-    if iv not in {"1h", "15m", "4h", "1d"}:
+    if iv not in {"1h", "1d"}:
         return None, f"yfinance_1m unsupported interval {iv}"
     board = dict(cfg.get("board") or {})
     period = str(board.get("m1_period") or "1d")

@@ -44,17 +44,36 @@ def test_health_reports_dhaka_and_lab_version(client: TestClient):
     assert "8501" in body["streamlit"]
 
 
+def test_desk_chart_intervals_allowlist_1h_1d_only():
+    from api.deskdata import (
+        DESK_CHART_INTERVALS,
+        OHLCV_INTERVALS,
+        coerce_desk_chart_interval,
+        _decision_intervals,
+    )
+
+    assert DESK_CHART_INTERVALS == frozenset({"1h", "1d"})
+    assert OHLCV_INTERVALS == DESK_CHART_INTERVALS
+    assert coerce_desk_chart_interval("1h") == "1h"
+    assert coerce_desk_chart_interval("1d") == "1d"
+    assert coerce_desk_chart_interval("15m") == "1h"
+    assert coerce_desk_chart_interval("4h") == "1h"
+    assert _decision_intervals("4h") == ["1h", "1d"]
+    assert _decision_intervals("15m") == ["1h", "1d"]
+    assert _decision_intervals("1d") == ["1h", "1d"]
+
+
 def test_watchlist_add_and_remove(client: TestClient):
     res = client.get("/watchlist")
     assert res.status_code == 200
     symbols = [p["pair"] for p in res.json()["pairs"]]
     assert "EURUSD" in symbols
 
-    added = client.post("/watchlist", json={"pair": "gbp/usd", "interval": "4h"})
+    added = client.post("/watchlist", json={"pair": "gbp/usd", "interval": "1d"})
     assert added.status_code == 200
     pairs = {p["pair"]: p for p in added.json()["pairs"]}
-    assert pairs["GBPUSD"]["interval"] == "4h"
-    assert pairs["GBPUSD"]["tf"] == "H4"
+    assert pairs["GBPUSD"]["interval"] == "1d"
+    assert pairs["GBPUSD"]["tf"] == "D1"
 
     bad = client.post("/watchlist", json={"pair": "EUR", "interval": "1h"})
     assert bad.status_code == 400
@@ -416,7 +435,7 @@ def test_refresh_watchlist_classifies_failures(client: TestClient, monkeypatch: 
         return None, "yfinance rate limited (HTTP 429)"
 
     monkeypatch.setattr("api.deskdata.try_live_refresh", _limited)
-    limited = client.post("/refresh", json={"pairs": [{"pair": "EURUSD", "interval": "15m"}]}).json()
+    limited = client.post("/refresh", json={"pairs": [{"pair": "EURUSD", "interval": "1h"}]}).json()
     assert limited["reason"] == "rate_limited"
     assert limited["updated"] is False
     assert limited["results"][0]["fetch_failed"] is True
@@ -564,7 +583,9 @@ def test_refresh_active_fetches_1h_and_1d_only_for_that_pair(
     )
     assert res.status_code == 200
     assert ("GBPUSD", "1h") in seen
-    assert ("USDJPY", "4h") in seen
+    # 4h is not a Decision chart interval; live refresh coerces to 1h.
+    assert ("USDJPY", "4h") not in seen
+    assert ("USDJPY", "1h") in seen
     assert ("GBPUSD", "1d") not in seen
     assert ("USDJPY", "1d") not in seen
     assert ("EURUSD", "1h") in seen
