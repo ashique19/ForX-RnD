@@ -6,13 +6,17 @@ import {
   LineSeries,
   LineStyle,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
   type LogicalRange,
+  type SeriesMarker,
   type SeriesType,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import type { PatternHit } from "./patterns";
 import type { Bar, IndicatorSeries } from "./types";
 
 export type ToggleKey = "ema21" | "ema50" | "sma200" | "bb" | "rsi" | "macd" | "stoch" | "atr";
@@ -117,11 +121,14 @@ export type ChartUpdate = {
   target: number | null;
   realtime: boolean;
   precision: number;
+  /** Research overlay markers; empty/omitted clears. Not a signal input. */
+  patterns?: PatternHit[];
 };
 
 export class DeskChart {
   private chart: IChartApi;
   private candle: ISeriesApi<"Candlestick">;
+  private patternMarkers: { setMarkers: (markers: SeriesMarker<Time>[]) => void } | null = null;
   private volume: ISeriesApi<"Histogram">;
   private overlays = new Map<string, ISeriesApi<"Line">>();
   private oscLines = new Map<string, ISeriesApi<"Line">>();
@@ -227,6 +234,7 @@ export class DeskChart {
         color: i === bars.length - 1 ? "#98a2b3" : "#d0d5dd",
       })),
     );
+    this.syncPatternMarkers(input.patterns ?? []);
     this.syncLevels(input.stop, input.target);
     this.syncOverlays(bars, indicators, toggles, format);
     this.syncOscillators(bars, indicators, toggles, precision);
@@ -517,6 +525,26 @@ export class DeskChart {
       if (!pane) return;
       pane.setStretchFactor(name === "atr" ? 0.7 : name === "macd" ? 1.15 : 1);
     });
+  }
+
+  private syncPatternMarkers(hits: PatternHit[]) {
+    let plugin = this.patternMarkers;
+    if (!plugin) {
+      plugin = createSeriesMarkers(this.candle, []);
+      this.patternMarkers = plugin;
+    }
+    const markers: SeriesMarker<Time>[] = hits.map((hit) => {
+      const bull = hit.side === "bull";
+      const bear = hit.side === "bear";
+      return {
+        time: hit.time as UTCTimestamp,
+        position: bull ? "belowBar" : "aboveBar",
+        shape: bull ? "arrowUp" : bear ? "arrowDown" : "circle",
+        color: bull ? "#12b76a" : bear ? "#f04438" : "#667085",
+        text: hit.label,
+      };
+    });
+    plugin.setMarkers(markers);
   }
 
   private paintTags() {

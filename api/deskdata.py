@@ -92,7 +92,9 @@ INTERVAL_ALIASES = {
 }
 HOURLY_INTERVAL = "1h"
 DAILY_INTERVAL = "1d"
-OHLCV_INTERVALS = frozenset({"15m", "1h", "4h", "1d"})
+# Decision desk chart / live OHLCV: 1h + 1d only (15m/4h removed from UI + auto-refresh).
+DESK_CHART_INTERVALS = frozenset({HOURLY_INTERVAL, DAILY_INTERVAL})
+OHLCV_INTERVALS = DESK_CHART_INTERVALS
 ASSET_ALLOW = (
     "EURUSD",
     "GBPUSD",
@@ -135,8 +137,14 @@ def parse_interval(raw: str | None, *, default: str = "1h") -> str:
         return default
     key = INTERVAL_ALIASES.get(str(raw).strip())
     if key is None:
-        raise WatchlistError(f"Unknown timeframe {raw!r}. Use 15m, 1h, 4h, or 1d.")
+        raise WatchlistError(f"Unknown timeframe {raw!r}. Decision chart intervals: 1h, 1d.")
     return key
+
+
+def coerce_desk_chart_interval(interval: str | None, *, default: str = HOURLY_INTERVAL) -> str:
+    """Map any timeframe onto the Decision chart allowlist (1h / 1d)."""
+    iv = parse_interval(interval, default=default)
+    return iv if iv in DESK_CHART_INTERVALS else HOURLY_INTERVAL
 
 
 def _num(value: object) -> float | None:
@@ -1206,7 +1214,7 @@ def ohlcv_payload(
 ) -> dict[str, Any]:
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
-    iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
+    iv = coerce_desk_chart_interval(interval, default=str(cfg.get("interval") or "1h"))
     if iv not in OHLCV_INTERVALS:
         raise WatchlistError(f"Unsupported interval {iv}")
     try:
@@ -1299,7 +1307,7 @@ def _active_targets(cfg: dict[str, Any]) -> list[tuple[str, str]]:
     item = next((pair for pair in wl.pairs if pair.pair == symbol), None)
     if item is None:
         return []
-    iv = parse_interval(item.resolved_interval(default), default=default)
+    iv = coerce_desk_chart_interval(item.resolved_interval(default), default=default)
     return [(symbol, iv)]
 
 
@@ -1341,14 +1349,9 @@ def expand_active_intervals(
 
 
 def _decision_intervals(primary: str) -> list[str]:
-    """1h, the requested interval, then 1d. Daily is last so resample can see fresh 1h."""
-    ordered: list[str] = []
-    for iv in (HOURLY_INTERVAL, primary, DAILY_INTERVAL):
-        if iv not in ordered:
-            ordered.append(iv)
-    if DAILY_INTERVAL in ordered:
-        ordered = [iv for iv in ordered if iv != DAILY_INTERVAL] + [DAILY_INTERVAL]
-    return ordered
+    """Decision live path: 1h then 1d only. Daily last so resample can see fresh 1h."""
+    _ = coerce_desk_chart_interval(primary)
+    return [HOURLY_INTERVAL, DAILY_INTERVAL]
 
 
 def _dedupe_targets(raw: list[tuple[str, str | None]], cfg: dict[str, Any]) -> list[tuple[str, str]]:
@@ -1357,7 +1360,7 @@ def _dedupe_targets(raw: list[tuple[str, str | None]], cfg: dict[str, Any]) -> l
     seen: set[tuple[str, str]] = set()
     for pair, interval in raw:
         symbol = normalize_pair(pair)
-        iv = parse_interval(interval, default=default)
+        iv = coerce_desk_chart_interval(interval, default=default)
         key = (symbol, iv)
         if key in seen:
             continue
@@ -1373,7 +1376,7 @@ def refresh_one(pair: str, *, interval: str | None = None, cfg: dict[str, Any] |
     """
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
-    iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
+    iv = coerce_desk_chart_interval(interval, default=str(cfg.get("interval") or "1h"))
     allowed, retry = allow(f"{symbol}:{iv}")
     if not allowed:
         row = build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=False)
@@ -1465,7 +1468,7 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     """
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
-    iv = parse_interval(interval, default=str(cfg.get("interval") or "1h"))
+    iv = coerce_desk_chart_interval(interval, default=str(cfg.get("interval") or "1h"))
     fetched, source, reason = ensure_interval_ohlcv(
         symbol,
         cfg,

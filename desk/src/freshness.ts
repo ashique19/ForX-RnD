@@ -55,11 +55,19 @@ export function classifyThrown(err: unknown): { problem: StripProblem; retryAfte
   return { problem: "error", retryAfterS: null };
 }
 
-/** 1h, the open chart and row timeframes, then 1d — only the selected pair. */
+/** Decision desk live refresh: 1h then 1d for the selected pair only. */
+export const DESK_CHART_INTERVALS = ["1h", "1d"] as const;
+export type DeskChartInterval = (typeof DESK_CHART_INTERVALS)[number];
+
+export function coerceChartInterval(interval: string | null | undefined): DeskChartInterval {
+  const iv = String(interval || "").trim();
+  return iv === "1d" ? "1d" : "1h";
+}
+
 export function collectTargets(
   selected: string,
-  chartTf: string,
-  rowTf: string,
+  _chartTf: string,
+  _rowTf: string,
 ): { pair: string; interval: string }[] {
   const out: { pair: string; interval: string }[] = [];
   const seen = new Set<string>();
@@ -67,16 +75,15 @@ export function collectTargets(
     const symbol = pair.trim();
     const iv = interval.trim();
     if (!symbol || !iv) return;
-    const key = `${symbol}:${iv}`;
+    const key = symbol + ":" + iv;
     if (seen.has(key)) return;
     seen.add(key);
     out.push({ pair: symbol, interval: iv });
   };
   if (!selected.trim()) return [];
   // H1 first so a missing daily file can be aggregated from fresh hourly bars.
+  // 15m/4h are not Decision chart intervals and must not waste live fetches.
   add(selected, "1h");
-  add(selected, chartTf);
-  add(selected, rowTf);
   add(selected, "1d");
   return out;
 }
