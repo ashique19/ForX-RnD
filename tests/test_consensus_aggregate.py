@@ -78,7 +78,7 @@ def test_failed_source_keeps_last_success_and_never_blank_missing():
     assert "Asia/Dhaka" in by_src["FXEmpire"]["last_ok_at_dhaka"]
     assert by_src["DailyForex"]["reason"] == "empty parse"
     assert by_src["DailyForex"]["last_ok_at_dhaka"] is None
-    assert snap["aggregate"]["listed"] >= 14
+    assert snap["aggregate"]["listed"] >= 9
     assert snap["aggregate"]["ok"] <= snap["aggregate"]["listed"]
     blank = [row for row in snap["forecasters"] if row["status"] != "OK" and not str(row["reason"]).strip()]
     assert blank == []

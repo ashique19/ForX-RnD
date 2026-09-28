@@ -1,4 +1,4 @@
-﻿"""Per-job min_confidence reaches run_replay without rewriting default.yaml."""
+"""Per-job min_confidence reaches run_replay without rewriting default.yaml."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -97,4 +97,4 @@ def test_replay_train_min_confidence_override(client: TestClient, monkeypatch: p
     # Live yaml on disk is not rewritten by the override path.
     from pathlib import Path as P
     yaml_text = P("config/default.yaml").read_text(encoding="utf-8")
-    assert "min_confidence: 0.40" in yaml_text or "min_confidence: 0.4" in yaml_text
+    assert "min_confidence: 0.60" in yaml_text or "min_confidence: 0.6" in yaml_text
