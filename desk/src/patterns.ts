@@ -1,4 +1,4 @@
-/** Classic candle pattern research overlay (not a signal input). */
+/** Classic candle + structure research overlay (not a signal input). */
 
 import type { Bar } from "./types";
 
@@ -8,6 +8,11 @@ export const PATTERN_DEFS = [
   { id: "hammer", label: "Hammer", title: "Hammer (long lower wick)" },
   { id: "shooting_star", label: "Shooting star", title: "Shooting star (long upper wick)" },
   { id: "inside_bar", label: "Inside bar", title: "Inside bar (range inside prior bar)" },
+  { id: "head_shoulders", label: "H&S", title: "Head and shoulders (visible window)" },
+  { id: "inv_head_shoulders", label: "Inv H&S", title: "Inverse head and shoulders" },
+  { id: "double_top", label: "Double top", title: "Double top (two similar highs)" },
+  { id: "double_bottom", label: "Double bottom", title: "Double bottom (two similar lows)" },
+  { id: "triangle", label: "Triangle", title: "Simple converging triangle / squeeze" },
 ] as const;
 
 export type PatternId = (typeof PATTERN_DEFS)[number]["id"];
@@ -32,6 +37,11 @@ export const DEFAULT_PATTERN_FILTERS: PatternFilters = {
   hammer: true,
   shooting_star: true,
   inside_bar: true,
+  head_shoulders: true,
+  inv_head_shoulders: true,
+  double_top: true,
+  double_bottom: true,
+  triangle: true,
 };
 
 export const DEFAULT_PATTERN_PREFS: PatternPrefs = {
@@ -86,10 +96,31 @@ function lowerWick(bar: Bar): number {
   return Math.min(bar.open, bar.close) - bar.low;
 }
 
-/** Detect a small classic set on the given bars only. Cheap research overlay. */
-export function detectPatterns(bars: Bar[], filters: PatternFilters): PatternHit[] {
-  if (!bars.length) return [];
-  const out: PatternHit[] = [];
+type Pivot = { i: number; price: number; time: number };
+
+/** Local extrema on a short lookback — cheap, visible-window only. */
+function pivots(bars: Bar[], left = 3, right = 3): { highs: Pivot[]; lows: Pivot[] } {
+  const highs: Pivot[] = [];
+  const lows: Pivot[] = [];
+  for (let i = left; i < bars.length - right; i++) {
+    let isHigh = true;
+    let isLow = true;
+    for (let j = i - left; j <= i + right; j++) {
+      if (j === i) continue;
+      if (bars[j].high >= bars[i].high) isHigh = false;
+      if (bars[j].low <= bars[i].low) isLow = false;
+    }
+    if (isHigh) highs.push({ i, price: bars[i].high, time: bars[i].time });
+    if (isLow) lows.push({ i, price: bars[i].low, time: bars[i].time });
+  }
+  return { highs, lows };
+}
+
+function near(a: number, b: number, tol: number): boolean {
+  return Math.abs(a - b) <= tol;
+}
+
+function detectCandles(bars: Bar[], filters: PatternFilters, out: PatternHit[]): void {
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
     const rng = range(bar);
@@ -109,12 +140,18 @@ export function detectPatterns(bars: Bar[], filters: PatternFilters): PatternHit
     }
     if (i > 0) {
       const prev = bars[i - 1];
-      if (filters.inside_bar && bar.high <= prev.high && bar.low >= prev.low && (bar.high < prev.high || bar.low > prev.low)) {
+      if (
+        filters.inside_bar &&
+        bar.high <= prev.high &&
+        bar.low >= prev.low &&
+        (bar.high < prev.high || bar.low > prev.low)
+      ) {
         out.push({ time: bar.time, id: "inside_bar", side: "neutral", label: "Inside" });
       }
       if (filters.engulfing) {
         const prevBull = prev.close >= prev.open;
-        const engulfs = bar.high >= Math.max(prev.open, prev.close) && bar.low <= Math.min(prev.open, prev.close);
+        const engulfs =
+          bar.high >= Math.max(prev.open, prev.close) && bar.low <= Math.min(prev.open, prev.close);
         if (engulfs && bull && !prevBull && bod > body(prev)) {
           out.push({ time: bar.time, id: "engulfing", side: "bull", label: "Bull eng." });
         } else if (engulfs && !bull && prevBull && bod > body(prev)) {
@@ -123,5 +160,101 @@ export function detectPatterns(bars: Bar[], filters: PatternFilters): PatternHit
       }
     }
   }
+}
+
+function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[]): void {
+  if (bars.length < 20) return;
+  const { highs, lows } = pivots(bars);
+  const prices = bars.map((b) => b.close);
+  const span = Math.max(...prices) - Math.min(...prices);
+  const tol = Math.max(span * 0.015, range(bars[bars.length - 1]) * 0.5);
+
+  if (filters.double_top && highs.length >= 2) {
+    for (let a = 0; a < highs.length - 1; a++) {
+      for (let b = a + 1; b < highs.length; b++) {
+        const p1 = highs[a];
+        const p2 = highs[b];
+        if (p2.i - p1.i < 5) continue;
+        if (!near(p1.price, p2.price, tol)) continue;
+        const midLow = lows.find((l) => l.i > p1.i && l.i < p2.i);
+        if (!midLow || midLow.price >= Math.min(p1.price, p2.price) - tol * 0.2) continue;
+        out.push({ time: p2.time, id: "double_top", side: "bear", label: "Double top" });
+        a = highs.length;
+        break;
+      }
+    }
+  }
+
+  if (filters.double_bottom && lows.length >= 2) {
+    for (let a = 0; a < lows.length - 1; a++) {
+      for (let b = a + 1; b < lows.length; b++) {
+        const p1 = lows[a];
+        const p2 = lows[b];
+        if (p2.i - p1.i < 5) continue;
+        if (!near(p1.price, p2.price, tol)) continue;
+        const midHigh = highs.find((h) => h.i > p1.i && h.i < p2.i);
+        if (!midHigh || midHigh.price <= Math.max(p1.price, p2.price) + tol * 0.2) continue;
+        out.push({ time: p2.time, id: "double_bottom", side: "bull", label: "Double bot." });
+        a = lows.length;
+        break;
+      }
+    }
+  }
+
+  if (filters.head_shoulders && highs.length >= 3) {
+    for (let i = 0; i < highs.length - 2; i++) {
+      const l = highs[i];
+      const h = highs[i + 1];
+      const r = highs[i + 2];
+      if (!(h.price > l.price && h.price > r.price)) continue;
+      if (!near(l.price, r.price, tol * 1.5)) continue;
+      if (h.price - Math.max(l.price, r.price) < tol * 0.5) continue;
+      out.push({ time: r.time, id: "head_shoulders", side: "bear", label: "H&S" });
+      break;
+    }
+  }
+
+  if (filters.inv_head_shoulders && lows.length >= 3) {
+    for (let i = 0; i < lows.length - 2; i++) {
+      const l = lows[i];
+      const h = lows[i + 1];
+      const r = lows[i + 2];
+      if (!(h.price < l.price && h.price < r.price)) continue;
+      if (!near(l.price, r.price, tol * 1.5)) continue;
+      if (Math.min(l.price, r.price) - h.price < tol * 0.5) continue;
+      out.push({ time: r.time, id: "inv_head_shoulders", side: "bull", label: "Inv H&S" });
+      break;
+    }
+  }
+
+  if (filters.triangle && highs.length >= 3 && lows.length >= 3) {
+    const recentHighs = highs.slice(-4);
+    const recentLows = lows.slice(-4);
+    if (recentHighs.length >= 3 && recentLows.length >= 3) {
+      const hiSlope =
+        (recentHighs[recentHighs.length - 1].price - recentHighs[0].price) /
+        Math.max(1, recentHighs[recentHighs.length - 1].i - recentHighs[0].i);
+      const loSlope =
+        (recentLows[recentLows.length - 1].price - recentLows[0].price) /
+        Math.max(1, recentLows[recentLows.length - 1].i - recentLows[0].i);
+      const firstWidth = recentHighs[0].price - recentLows[0].price;
+      const lastWidth =
+        recentHighs[recentHighs.length - 1].price - recentLows[recentLows.length - 1].price;
+      const converging = lastWidth > 0 && firstWidth > 0 && lastWidth < firstWidth * 0.72;
+      const opposing = hiSlope < 0 && loSlope > 0;
+      if (converging && (opposing || Math.abs(hiSlope) + Math.abs(loSlope) > 0)) {
+        const t = bars[bars.length - 1].time;
+        out.push({ time: t, id: "triangle", side: "neutral", label: "Triangle" });
+      }
+    }
+  }
+}
+
+/** Detect classic candles + multi-bar structures on the visible bars only. */
+export function detectPatterns(bars: Bar[], filters: PatternFilters): PatternHit[] {
+  if (!bars.length) return [];
+  const out: PatternHit[] = [];
+  detectCandles(bars, filters, out);
+  detectStructures(bars, filters, out);
   return out;
 }
