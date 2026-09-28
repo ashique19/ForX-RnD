@@ -12,8 +12,16 @@ from forex_lab.model import apply_signal_filters, load_model, predict_proba_alig
 from forex_lab.paths import resolve_under_root
 
 
-def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.DataFrame:
-    model, feature_cols, mtype = load_model(pair, cfg)
+def generate_signals(
+    df: pd.DataFrame,
+    cfg: dict[str, Any],
+    pair: str,
+    *,
+    interval: str | None = None,
+) -> pd.DataFrame:
+    iv = str(interval or cfg.get("interval") or "1h")
+    # Score with the model trained for this bar size — never reuse another TF.
+    model, feature_cols, mtype = load_model(pair, cfg, interval=iv)
     feats = build_features(df, cfg, pair=pair)
     missing = [c for c in feature_cols if c not in feats.columns]
     if missing:
@@ -42,6 +50,7 @@ def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.Dat
             {
                 "datetime": ts,
                 "pair": pair.upper(),
+                "timeframe": iv,
                 "close": float(df.loc[ts, "Close"]),
                 "signal": name,
                 "raw_signal": INV_LABEL_MAP.get(raw_id, "HOLD"),
@@ -57,15 +66,56 @@ def generate_signals(df: pd.DataFrame, cfg: dict[str, Any], pair: str) -> pd.Dat
 
 
 def write_signals(signals: pd.DataFrame, cfg: dict[str, Any]) -> str:
+    """Persist signals. Replaces rows for the same pair+timeframe only.
+
+    Other timeframes (e.g. H1 when writing D1) stay intact so Active H1+D1
+    never wipe each other.
+    """
     sig_dir = resolve_under_root(cfg.get("paths", {}).get("signals_dir", "signals"))
     sig_dir.mkdir(parents=True, exist_ok=True)
     path = sig_dir / "latest_signals.csv"
-    signals.to_csv(path, index=False)
-    safe_print(f"[signals] wrote {path} ({len(signals)} rows)")
-    if len(signals):
-        last = signals.iloc[-1]
+    frame = signals.copy()
+    if "timeframe" not in frame.columns:
+        frame["timeframe"] = str(cfg.get("interval") or "1h")
+    frame["pair"] = frame["pair"].astype(str).str.upper()
+    frame["timeframe"] = frame["timeframe"].astype(str)
+
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            existing = pd.read_csv(path)
+        except Exception:
+            existing = pd.DataFrame()
+    else:
+        existing = pd.DataFrame()
+
+    if existing is not None and not existing.empty:
+        if "timeframe" not in existing.columns:
+            # Legacy CSV rows were lab H1 only.
+            existing["timeframe"] = "1h"
+        existing["pair"] = existing["pair"].astype(str).str.upper()
+        existing["timeframe"] = existing["timeframe"].astype(str)
+        keys = frame[["pair", "timeframe"]].drop_duplicates()
+        keep = pd.Series(True, index=existing.index)
+        for _, key in keys.iterrows():
+            keep &= ~(
+                (existing["pair"] == str(key["pair"]))
+                & (existing["timeframe"] == str(key["timeframe"]))
+            )
+        existing = existing.loc[keep]
+        combined = pd.concat([existing, frame], ignore_index=True)
+    else:
+        combined = frame
+
+    if "datetime" in combined.columns:
+        combined = combined.sort_values(["pair", "timeframe", "datetime"], kind="mergesort").reset_index(
+            drop=True
+        )
+    combined.to_csv(path, index=False)
+    safe_print(f"[signals] wrote {path} ({len(frame)} new / {len(combined)} total)")
+    if len(frame):
+        last = frame.iloc[-1]
         safe_print(
-            f"[signals] latest: {last['datetime']} {last['pair']} "
+            f"[signals] latest: {last['datetime']} {last['pair']} {last.get('timeframe', '')} "
             f"{last['signal']} conf={last['confidence']} close={last['close']}"
         )
     return str(path)

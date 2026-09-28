@@ -149,8 +149,10 @@ def expected_model_features(
     volume (typical yfinance) never writes that column.
     """
     names = set(_contract(cfg, pair))
-    if not volume_varies:
-        names.discard("vol_z")
+    # vol_z is always emitted (fail-soft 0.0 when Volume is flat) so Dukascopy-
+    # history joblibs and flat yfinance caches share one schema.
+    names.add("vol_z")
+    _ = volume_varies  # retained for call-site compatibility
     return sorted(names)
 
 

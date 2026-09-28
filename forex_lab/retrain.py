@@ -2,8 +2,9 @@
 
 Walk-forward compare a freshly trained challenger against the saved champion.
 Promote only when profit factor, total return, and max drawdown all improve
-(or clear a configured non-regression bar). Otherwise keep the champion and
-report ``null``.
+(or clear a configured non-regression bar) **and** absolute promotion floors
+pass (PF / max DD / WR / min_trades under ``retrain.promotion``). Otherwise
+keep the champion and report ``null``.
 
 Research only — not a live edge. Does not call BrokerPort. Fail-soft.
 """
@@ -39,6 +40,10 @@ DEFAULT_STORE = "data/champion"
 DEFAULT_NONREG_PF_EPS = 0.05
 DEFAULT_NONREG_RET_EPS = 0.03
 DEFAULT_NONREG_DD_EPS = 0.01
+DEFAULT_FLOOR_MIN_PF = 1.05
+DEFAULT_FLOOR_MAX_DD = -0.15  # challenger max_drawdown must be >= this
+DEFAULT_FLOOR_MIN_WR = 0.40
+DEFAULT_FLOOR_MIN_TRADES = 30
 
 
 def retrain_cfg(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -51,12 +56,29 @@ def retrain_cfg(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     raw.setdefault("pf_eps", 0.0)
     raw.setdefault("return_eps", 0.0)
     raw.setdefault("dd_eps", 0.0)
-    raw.setdefault("min_trades", 1)
+    # Absolute floors live under retrain.promotion; min_trades also accepted at
+    # retrain top-level (legacy) and mirrored from promotion when unset.
+    promo = dict(raw.get("promotion") or {})
+    promo.setdefault("enabled", True)
+    promo.setdefault("min_profit_factor", DEFAULT_FLOOR_MIN_PF)
+    promo.setdefault("max_drawdown_floor", DEFAULT_FLOOR_MAX_DD)
+    promo.setdefault("min_win_rate", DEFAULT_FLOOR_MIN_WR)
+    promo.setdefault("min_trades", DEFAULT_FLOOR_MIN_TRADES)
+    raw["promotion"] = promo
+    if "min_trades" not in raw or raw.get("min_trades") is None:
+        raw["min_trades"] = int(promo.get("min_trades") or DEFAULT_FLOOR_MIN_TRADES)
+    else:
+        raw.setdefault("min_trades", 1)
     raw.setdefault("seed_from_metrics", True)
     raw.setdefault("compare_logistic", False)
     raw.setdefault("train_on_promote", True)
     raw.setdefault("write_report", False)
     return raw
+
+
+def promotion_floors(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Absolute challenger floors (independent of champion deltas)."""
+    return dict(retrain_cfg(cfg).get("promotion") or {})
 
 
 def champion_dir(cfg: dict[str, Any] | None = None) -> Path:
@@ -162,6 +184,10 @@ class PromotionDecision:
     pf_ok: bool
     return_ok: bool
     dd_ok: bool
+    floors_ok: bool = True
+    pf_floor_ok: bool = True
+    dd_floor_ok: bool = True
+    wr_floor_ok: bool = True
     honest_note: str = HONEST_NOTE
 
     def as_dict(self) -> dict[str, Any]:
@@ -174,6 +200,10 @@ class PromotionDecision:
             "pf_ok": self.pf_ok,
             "return_ok": self.return_ok,
             "dd_ok": self.dd_ok,
+            "floors_ok": self.floors_ok,
+            "pf_floor_ok": self.pf_floor_ok,
+            "dd_floor_ok": self.dd_floor_ok,
+            "wr_floor_ok": self.wr_floor_ok,
             "honest_note": self.honest_note,
         }
 
@@ -192,9 +222,9 @@ def promotion_decision(
     challenger: Mapping[str, Any] | None,
     cfg: dict[str, Any] | None = None,
 ) -> PromotionDecision:
-    """Pure gate. Promote only on a clear improve / non-regression; else null.
+    """Pure gate. Promote only on improve / non-regression **and** absolute floors.
 
-    Rules (documented in README):
+    Rules (documented in README / tighten_F):
 
     * ``improve`` (default): challenger PF **and** total return are strictly
       greater than champion (plus ``pf_eps`` / ``return_eps``), **and** max
@@ -202,11 +232,20 @@ def promotion_decision(
     * ``non_regression``: no metric regresses beyond the acceptance bar
       (defaults PF 0.05 / return 0.03 / DD 0.01) **and** at least one of the
       three strictly improves. Equal-within-eps is ``null``.
+    * Absolute floors (``retrain.promotion``, ON by default): challenger must
+      also clear ``min_profit_factor`` (1.05), ``max_drawdown_floor`` (-0.15),
+      ``min_win_rate`` (0.40), and ``min_trades`` (30). Blocks promoting a
+      "less-bad loser" over a worse champion. Seed bypasses floors.
     * Missing champion -> ``seed`` (not a promotion).
     * Missing / empty challenger, or below ``min_trades`` -> ``null``.
     """
     mode, pf_eps, ret_eps, dd_eps = _eps_for_mode(cfg)
-    min_trades = int(retrain_cfg(cfg).get("min_trades") or 1)
+    rc = retrain_cfg(cfg)
+    floors = promotion_floors(cfg)
+    floors_on = bool(floors.get("enabled", True))
+    min_trades = int(rc.get("min_trades") or 1)
+    if floors_on:
+        min_trades = max(min_trades, int(floors.get("min_trades") or min_trades))
     empty_deltas = {"profit_factor": 0.0, "total_return": 0.0, "max_drawdown": 0.0}
 
     if not champion:
@@ -243,10 +282,44 @@ def promotion_decision(
             pf_ok=False,
             return_ok=False,
             dd_ok=False,
+            floors_ok=False,
         )
 
     d = _deltas(champion, challenger)
     d_pf, d_ret, d_dd = d["profit_factor"], d["total_return"], d["max_drawdown"]
+
+    # Absolute floors on the challenger (independent of champion).
+    pf_floor = _num(floors.get("min_profit_factor"), default=DEFAULT_FLOOR_MIN_PF)
+    dd_floor = _num(floors.get("max_drawdown_floor"), default=DEFAULT_FLOOR_MAX_DD)
+    wr_floor_raw = floors.get("min_win_rate")
+    wr_floor = None if wr_floor_raw in (None, "", False) else _num(wr_floor_raw, default=DEFAULT_FLOOR_MIN_WR)
+    chal_pf = _pf(challenger)
+    chal_dd = _dd(challenger)
+    chal_wr = _num(challenger.get("win_rate"), default=0.0)
+
+    if floors_on:
+        pf_floor_ok = chal_pf >= pf_floor
+        dd_floor_ok = chal_dd >= dd_floor  # DD is <= 0; greater (shallower) is better
+        wr_floor_ok = True if wr_floor is None else chal_wr >= wr_floor
+    else:
+        pf_floor_ok = True
+        dd_floor_ok = True
+        wr_floor_ok = True
+    floors_ok = bool(pf_floor_ok and dd_floor_ok and wr_floor_ok)
+
+    floor_reasons: list[str] = []
+    if floors_on and not pf_floor_ok:
+        floor_reasons.append(
+            f"PF floor failed ({chal_pf:.4f} < min_profit_factor {pf_floor:g}) — keep champion"
+        )
+    if floors_on and not dd_floor_ok:
+        floor_reasons.append(
+            f"DD floor failed ({chal_dd:.4f} < max_drawdown_floor {dd_floor:g}) — keep champion"
+        )
+    if floors_on and not wr_floor_ok:
+        floor_reasons.append(
+            f"WR floor failed ({chal_wr:.4f} < min_win_rate {wr_floor:g}) — keep champion"
+        )
 
     if mode == MODE_NON_REGRESSION:
         pf_ok = d_pf >= -pf_eps
@@ -268,10 +341,13 @@ def promotion_decision(
             )
         if pf_ok and ret_ok and dd_ok and not any_improve:
             reasons.append("non-regression but no metric improved — null / fold noise")
-        promote = bool(pf_ok and ret_ok and dd_ok and any_improve)
+        reasons.extend(floor_reasons)
+        relative_ok = bool(pf_ok and ret_ok and dd_ok and any_improve)
+        promote = bool(relative_ok and floors_ok)
         if promote:
             reasons.append(
-                "non-regression bar cleared and at least one of PF / total return / max DD improved"
+                "non-regression bar cleared, absolute floors passed, "
+                "and at least one of PF / total return / max DD improved"
             )
         return PromotionDecision(
             promote=promote,
@@ -282,6 +358,10 @@ def promotion_decision(
             pf_ok=pf_ok,
             return_ok=ret_ok,
             dd_ok=dd_ok,
+            floors_ok=floors_ok,
+            pf_floor_ok=pf_floor_ok,
+            dd_floor_ok=dd_floor_ok,
+            wr_floor_ok=wr_floor_ok,
         )
 
     # Strict improve: all three must get better (DD not worse).
@@ -291,7 +371,7 @@ def promotion_decision(
     reasons = []
     if not pf_ok:
         reasons.append(
-            f"PF did not improve ({_pf(challenger):.4f} vs champion {_pf(champion):.4f}, "
+            f"PF did not improve ({chal_pf:.4f} vs champion {_pf(champion):.4f}, "
             f"delta {d_pf:.4f}, need > {pf_eps:g})"
         )
     if not ret_ok:
@@ -301,13 +381,16 @@ def promotion_decision(
         )
     if not dd_ok:
         reasons.append(
-            f"max DD worsened ({_dd(challenger):.4f} vs champion {_dd(champion):.4f}, "
+            f"max DD worsened ({chal_dd:.4f} vs champion {_dd(champion):.4f}, "
             f"delta {d_dd:.4f}, bar {dd_eps:g})"
         )
-    promote = bool(pf_ok and ret_ok and dd_ok)
+    reasons.extend(floor_reasons)
+    relative_ok = bool(pf_ok and ret_ok and dd_ok)
+    promote = bool(relative_ok and floors_ok)
     if promote:
         reasons.append(
-            "PF, total return, and max DD all improved vs champion (research sample only)"
+            "PF, total return, and max DD all improved vs champion and absolute "
+            "floors passed (research sample only)"
         )
     else:
         reasons.append("keep champion and report null")
@@ -320,6 +403,10 @@ def promotion_decision(
         pf_ok=pf_ok,
         return_ok=ret_ok,
         dd_ok=dd_ok,
+        floors_ok=floors_ok,
+        pf_floor_ok=pf_floor_ok,
+        dd_floor_ok=dd_floor_ok,
+        wr_floor_ok=wr_floor_ok,
     )
 
 
@@ -701,6 +788,7 @@ __all__ = [
     "format_retrain_text",
     "load_champion",
     "promotion_decision",
+    "promotion_floors",
     "retrain_cfg",
     "run_retrain_gate",
     "save_champion",

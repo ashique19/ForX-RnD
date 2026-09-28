@@ -24,6 +24,8 @@ Features at t use only information available at or before t.
 
 Optional packs (default off): ``feature_extras.pandas_ta`` extra oscillators
 and ``feature_extras.fred`` as-of macro series. See ``ta_pack.py`` / ``fred.py``.
+DXY/US yields (SERIAL step 10): ``feature_extras.dxy_yields`` — see ``dxy_yields.py``.
+Fib swings (SERIAL step 11): ``feature_extras.fib`` — causal fib distances from confirmed swings.
 """
 from __future__ import annotations
 
@@ -162,8 +164,13 @@ def build_features(
     out["sess_ny"] = ((hour >= 13) & (hour < 21)).astype(float)
 
     vol = df["Volume"].astype(float)
+    # Always emit vol_z so Dukascopy-trained joblibs stay scorable when the live
+    # Active-pair cache is temporarily flat (yfinance Volume=0). Real volume
+    # keeps the rolling z; flat volume fail-soft fills 0.0 (schema-stable).
     if float(vol.std() or 0.0) > 0:
         out["vol_z"] = _rolling_z(vol, vol_w)
+    else:
+        out["vol_z"] = 0.0
 
     _add_feature_extras(out, df, cfg, pair=pair)
     return out
@@ -237,6 +244,204 @@ def _higher_tf_features(df: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
     return out
 
 
+def _levels_cfg(extra: dict[str, Any]) -> dict[str, Any]:
+    raw = extra.get("levels")
+    if isinstance(raw, dict):
+        return dict(raw)
+    return {}
+
+
+def _add_level_features(out: pd.DataFrame, df: pd.DataFrame, extra: dict[str, Any]) -> None:
+    """Prior-day H/L, week open, confirmed swing H/L, round-number distances.
+
+    All as-of / causal: prior day is the last *completed* daily bar; swings are
+    only confirmed after ``swing_order`` bars to the right; round levels use
+    the current close only. SERIAL step 9.
+    """
+    lvl = _levels_cfg(extra)
+    if not lvl:
+        return
+    if "enabled" in lvl and not bool(lvl.get("enabled")):
+        return
+    # enabled omitted => on when the block exists (matches vol_regime style)
+
+    close = df["Close"].astype(float)
+    high = df["High"].astype(float)
+    low = df["Low"].astype(float)
+    open_ = df["Open"].astype(float)
+    idx = pd.DatetimeIndex(pd.to_datetime(df.index))
+    base = pd.DataFrame(
+        {"Open": open_.to_numpy(), "High": high.to_numpy(), "Low": low.to_numpy(), "Close": close.to_numpy()},
+        index=idx,
+    )
+    close_safe = close.replace(0, np.nan)
+
+    if bool(lvl.get("prior_day", True)):
+        # Calendar-day buckets (UTC floor). Shift(1) => hour bars on day D see day D-1 only.
+        day_key = idx.floor("D")
+        daily = (
+            base.groupby(day_key)
+            .agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"})
+            .sort_index()
+        )
+        prior = daily.shift(1)
+        pd_high = pd.Series(day_key.map(prior["High"]), index=df.index, dtype=float)
+        pd_low = pd.Series(day_key.map(prior["Low"]), index=df.index, dtype=float)
+        pd_close = pd.Series(day_key.map(prior["Close"]), index=df.index, dtype=float)
+        out["lvl_pd_high_dist"] = close_safe / pd_high.replace(0, np.nan) - 1.0
+        out["lvl_pd_low_dist"] = close_safe / pd_low.replace(0, np.nan) - 1.0
+        out["lvl_pd_close_dist"] = close_safe / pd_close.replace(0, np.nan) - 1.0
+        span = (pd_high - pd_low).replace(0, np.nan)
+        out["lvl_pd_range_pos"] = (close - pd_low) / span
+
+    if bool(lvl.get("week_open", True)):
+        # ISO-ish week keyed by period; transform('first') is causal once the
+        # first bar of the week prints (uses that bar's open for later bars).
+        periods = idx.to_period("W-SUN")
+        week_open = open_.copy()
+        week_open.index = idx
+        wo = week_open.groupby(periods).transform("first")
+        wo.index = df.index
+        out["lvl_week_open_dist"] = close_safe / wo.replace(0, np.nan) - 1.0
+
+    order = int(lvl.get("swing_order", 3) or 0)
+    if order > 0:
+        last_sh, last_sl = _confirmed_swing_series(high, low, order)
+        out["lvl_swing_high_dist"] = close_safe / last_sh.replace(0, np.nan) - 1.0
+        out["lvl_swing_low_dist"] = close_safe / last_sl.replace(0, np.nan) - 1.0
+
+    steps = lvl.get("round_steps")
+    if steps is None:
+        steps = [0.01, 0.005]
+    for step in steps:
+        try:
+            s = float(step)
+        except (TypeError, ValueError):
+            continue
+        if s <= 0:
+            continue
+        # Tag: 0.01 -> 0100 (100 pips on EURUSD), 0.005 -> 0050
+        pips = int(round(s / 0.0001))
+        tag = f"{pips:04d}"
+        nearest = (close / s).round() * s
+        out[f"lvl_round_{tag}_dist"] = (close - nearest) / close_safe
+
+
+def _fib_cfg(extra: dict[str, Any]) -> dict[str, Any]:
+    raw = extra.get("fib")
+    if isinstance(raw, dict):
+        return dict(raw)
+    return {}
+
+
+def _confirmed_swing_series(
+    high: pd.Series,
+    low: pd.Series,
+    order: int,
+) -> tuple[pd.Series, pd.Series]:
+    """Causal fractal swings: confirmed only after ``order`` bars on the right.
+
+    At bar t, window is [t-2*order, t] (length 2*order+1). Candidate is the
+    extreme at t-order. Confirmed when that candidate equals the window
+    high/low. Last confirmed values are forward-filled (as-of).
+    Shared by levels pack and fib pack. SERIAL steps 9/11.
+    """
+    order = int(order or 0)
+    if order <= 0:
+        nan = pd.Series(np.nan, index=high.index, dtype=float)
+        return nan, nan
+    win = 2 * order + 1
+    roll_h = high.rolling(win, min_periods=win).max()
+    roll_l = low.rolling(win, min_periods=win).min()
+    cand_h = high.shift(order)
+    cand_l = low.shift(order)
+    conf_h = cand_h.where(cand_h >= roll_h - 1e-15)
+    conf_l = cand_l.where(cand_l <= roll_l + 1e-15)
+    return conf_h.ffill(), conf_l.ffill()
+
+
+def _add_fib_features(out: pd.DataFrame, df: pd.DataFrame, extra: dict[str, Any]) -> None:
+    """Fibonacci distances / proximity from last confirmed swing high+low.
+
+    Window/order: ``swing_order`` (default 3) — same fractal confirm as levels.
+    Retracement anchors: lo=min(SH,SL), hi=max(SH,SL). Levels at
+    lo + r*(hi-lo) for r in ratios (default 23.6/38.2/50/61.8).
+    Extensions (stubs): hi + (e-1)*(hi-lo) and lo - (e-1)*(hi-lo) for e in
+    extensions (default 1.272/1.618); emit dist to nearest stub.
+    Fail-soft: when SH/SL missing or range ~0, fill with ``fail_soft_fill``.
+    Does not alter lvl_* columns. SERIAL step 11.
+    """
+    fib = _fib_cfg(extra)
+    if not fib:
+        return
+    if "enabled" in fib and not bool(fib.get("enabled")):
+        return
+
+    close = df["Close"].astype(float)
+    high = df["High"].astype(float)
+    low = df["Low"].astype(float)
+    close_safe = close.replace(0, np.nan)
+
+    # Prefer fib.swing_order; else reuse levels.swing_order; else 3.
+    lvl = _levels_cfg(extra)
+    order = int(fib.get("swing_order", lvl.get("swing_order", 3)) or 3)
+    last_sh, last_sl = _confirmed_swing_series(high, low, order)
+
+    fill = float(fib.get("fail_soft_fill", 0.0) or 0.0)
+    ratios = fib.get("ratios")
+    if ratios is None:
+        ratios = [0.236, 0.382, 0.5, 0.618]
+    extensions = fib.get("extensions")
+    if extensions is None:
+        extensions = [1.272, 1.618]
+    prox = float(fib.get("proximity_frac", fib.get("proximity_frac", 0.0005)) or 0.0005)
+
+    hi = pd.concat([last_sh, last_sl], axis=1).max(axis=1)
+    lo = pd.concat([last_sh, last_sl], axis=1).min(axis=1)
+    rng = (hi - lo).replace(0, np.nan)
+    valid = last_sh.notna() & last_sl.notna() & rng.notna() & (rng > 0)
+
+    out["fib_swing_high_dist"] = (close_safe / last_sh.replace(0, np.nan) - 1.0).where(valid, fill)
+    out["fib_swing_low_dist"] = (close_safe / last_sl.replace(0, np.nan) - 1.0).where(valid, fill)
+    out["fib_range_pct"] = (rng / close_safe).where(valid, fill)
+    out["fib_pos"] = ((close - lo) / rng).where(valid, fill)
+    # +1 when last confirmed swing high is above low (always for valid range);
+    # sign of (SH - SL) kept as orientation stub (up-leg vs down-leg anchor).
+    out["fib_swing_dir"] = np.sign((last_sh - last_sl).fillna(0.0)).where(valid, fill)
+
+    for r in ratios:
+        try:
+            rf = float(r)
+        except (TypeError, ValueError):
+            continue
+        if not (0.0 < rf < 1.0):
+            continue
+        tag = f"{int(round(rf * 1000)):04d}"  # 0.236 -> 0236
+        level = lo + rf * rng
+        dist = ((close - level) / close_safe).where(valid, fill)
+        out[f"fib_r{tag}_dist"] = dist
+        near = ((close - level).abs() / close_safe <= prox) & valid
+        out[f"fib_near_{tag}"] = near.astype(float).where(valid, fill)
+
+    for e in extensions:
+        try:
+            ef = float(e)
+        except (TypeError, ValueError):
+            continue
+        if ef <= 1.0:
+            continue
+        tag = f"{int(round(ef * 1000)):04d}"  # 1.272 -> 1272
+        up = hi + (ef - 1.0) * rng
+        dn = lo - (ef - 1.0) * rng
+        # Distance to nearest extension stub (up or down), signed vs close.
+        d_up = (close - up).abs()
+        d_dn = (close - dn).abs()
+        nearest = np.where(d_up <= d_dn, up, dn)
+        dist = pd.Series((close.to_numpy() - nearest) / close_safe.to_numpy(), index=df.index)
+        out[f"fib_ext{tag}_dist"] = dist.where(valid, fill)
+
+
+
 def _add_feature_extras(
     out: pd.DataFrame,
     df: pd.DataFrame,
@@ -256,6 +461,15 @@ def _add_feature_extras(
         out["vol_pct"] = (vol - rmin) / (rmax - rmin).replace(0, np.nan)
         if "ret_1" in out.columns:
             out["vol_shock"] = out["ret_1"].abs() / vol.replace(0, np.nan)
+    # Causal ATR percentile (SERIAL step 7 vol_regime metric). Same window as vol_pct.
+    if vp > 0 and "atr_pct" in out.columns:
+        atr = out["atr_pct"]
+        amin = atr.rolling(vp, min_periods=max(5, vp // 5)).min()
+        amax = atr.rolling(vp, min_periods=max(5, vp // 5)).max()
+        out["atr_pctile"] = (atr - amin) / (amax - amin).replace(0, np.nan)
+
+    _add_level_features(out, df, extra)
+    _add_fib_features(out, df, extra)
 
     htf = _higher_tf_features(df, cfg)
     for col in htf.columns:
@@ -263,9 +477,11 @@ def _add_feature_extras(
 
     from forex_lab.ta_pack import add_pandas_ta_features
     from forex_lab.fred import add_fred_features
+    from forex_lab.dxy_yields import add_dxy_yield_features
 
     add_pandas_ta_features(out, df, extra)
     add_fred_features(out, df, extra, cfg, pair=pair)
+    add_dxy_yield_features(out, df, extra, cfg)
 
     other = extra.get("cross_pair")
     if not other:

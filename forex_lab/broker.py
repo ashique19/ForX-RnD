@@ -197,10 +197,13 @@ class PaperBroker(BrokerPort):
         *,
         default_size: float = 1.0,
         cfg: dict[str, Any] | None = None,
+        autosave: bool = True,
     ) -> None:
         self.store = Path(store)
         self.default_size = float(default_size)
         self.cfg = cfg or {}
+        self.autosave = bool(autosave)
+        self._dirty = False
         self._state = self._load()
 
     def _empty(self) -> dict[str, Any]:
@@ -227,10 +230,32 @@ class PaperBroker(BrokerPort):
         return data
 
     def _save(self) -> None:
+        """Persist when autosave is on; otherwise mark dirty for a later flush.
+
+        Replay keeps books in memory and checkpoints sparsely via ``flush()``.
+        Live desk / UI paths leave autosave True (default) so behavior is unchanged.
+        """
+        if not self.autosave:
+            self._dirty = True
+            return
+        self._flush()
+
+    def flush(self) -> None:
+        """Write the in-memory journal when dirty.
+
+        With autosave off (replay), empty/untouched books stay off disk.
+        Live desk uses autosave and never relies on flush for every fill.
+        """
+        if not self.autosave and not self._dirty:
+            return
+        self._flush()
+
+    def _flush(self) -> None:
         self.store.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.store.with_suffix(self.store.suffix + ".tmp")
         tmp.write_text(json.dumps(self._state, indent=2, default=str), encoding="utf-8")
         tmp.replace(self.store)
+        self._dirty = False
 
     def reload(self) -> None:
         self._state = self._load()
@@ -279,7 +304,8 @@ class PaperBroker(BrokerPort):
         if champion is not None:
             auto["champion"] = str(champion)
         self._state["auto"] = auto
-        self._save()
+        self._dirty = True
+        self._flush()
         return self.read_auto()
 
     def submit(

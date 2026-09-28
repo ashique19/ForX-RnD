@@ -1,20 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { collapsedBriefTitle } from "../briefTitle";
 import { eventChip } from "../countdown";
-import type { AdviceCard, Consensus, NextEvent, PaperState, Suggestion } from "../types";
-
-const BRIEF_EXPANDED_KEY = "forx.desk.signalBriefExpanded";
-
-function loadBriefExpanded(): boolean {
-  try {
-    const saved = localStorage.getItem(BRIEF_EXPANDED_KEY);
-    // No saved choice: open collapsed. "1" / "0" (and any other stored token) stay as saved.
-    if (saved == null) return false;
-    return saved !== "0";
-  } catch {
-    return false;
-  }
-}
+import type { AdviceCard, Consensus, ForecastRow, NextEvent, PaperState, Suggestion } from "../types";
 
 function shownText(text: string | null | undefined): string {
   const value = (text ?? "").trim();
@@ -32,7 +20,7 @@ function failureReason(suggestion: Suggestion | null | undefined): string {
     suggestion.validity === "ERROR" ||
     suggestion.status === "need_fetch";
   if (failed) return text;
-  if (suggestion.status === "need_train" && /not copied|failed:/i.test(text)) return text;
+  if (suggestion.status === "need_train" && /not copied|needs .+ train|failed:/i.test(text)) return text;
   return "";
 }
 
@@ -125,11 +113,40 @@ function topText(consensus: Consensus): string {
   return `${agg.top_side} · ${Math.round(agg.confidence * 100)}% agree`;
 }
 
+
+/** SKIPPED / RANGE / by-design gaps — not attempted Failures. */
+function isUnavailable(row: ForecastRow): boolean {
+  if (row.status === "SKIPPED" || row.status === "RANGE") return true;
+  // StockTwits is an hourly tag stream; daily MISSING is by design.
+  if (
+    row.status === "MISSING" &&
+    row.source === "StockTwits" &&
+    /not a daily call/i.test(row.reason || "")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Real attempted problems only: ERROR and MISSING that were fetched. */
+function isFailure(row: ForecastRow): boolean {
+  if (isUnavailable(row)) return false;
+  return row.status === "ERROR" || row.status === "MISSING";
+}
+
+function unavailableStatus(row: ForecastRow): string {
+  if (row.status === "SKIPPED" || row.status === "RANGE") return row.status;
+  return "N/A";
+}
+
 function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: string }) {
   const counts = consensus.aggregate?.counts ?? { Buy: 0, Sell: 0, Neutral: 0 };
-  const listed = consensus.aggregate?.listed ?? consensus.forecasters.length;
-  const ok = consensus.aggregate?.ok ?? 0;
-  const failures = consensus.forecasters.filter((row) => row.status !== "OK");
+  // Unlisted / live=False adapters arrive as SKIPPED until the API omits them.
+  const listedRows = consensus.forecasters.filter((row) => row.status !== "SKIPPED");
+  const listed = listedRows.length;
+  const ok = consensus.aggregate?.ok ?? listedRows.filter((row) => row.status === "OK").length;
+  const failures = consensus.forecasters.filter(isFailure);
+  const unavailable = consensus.forecasters.filter(isUnavailable);
   return (
     <div className="consensus">
       <div className="section-lbl">Other forecasters</div>
@@ -162,9 +179,28 @@ function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: strin
         )}
       </details>
       <details className="consensus-sources">
-        <summary>Sources ({consensus.forecasters.length})</summary>
+        <summary>Unavailable / N/A ({unavailable.length})</summary>
+        {unavailable.length === 0 ? (
+          <div className="consensus-meta">No skipped or range-only sources.</div>
+        ) : (
+          <div className="forecasters">
+            {unavailable.map((row) => (
+              <div className="fc-row" key={row.source}>
+                <span className="site">
+                  {row.source}
+                  {row.tier ? <span className="tier"> {row.tier}</span> : null}
+                </span>
+                <span className={dirClass(row.direction, row.status)}>{unavailableStatus(row)}</span>
+                <span className="why">{failureDetail(row)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
+      <details className="consensus-sources">
+        <summary>Sources ({listedRows.length})</summary>
         <div className="forecasters">
-          {consensus.forecasters.map((row) => (
+          {listedRows.map((row) => (
             <div className="fc-row" key={row.source}>
               <span className="site">
                 {row.source}
@@ -333,6 +369,7 @@ export function SignalBrief({
   pair,
   bias,
   confidence = null,
+  rawSignal = null,
   biasTone,
   headline,
   sub,
@@ -355,6 +392,8 @@ export function SignalBrief({
   bias: string;
   /** Primary suggestion confidence (0–1 probability). Null when the model has none. */
   confidence?: number | null;
+  /** Ungated model class when bias was gated to HOLD. */
+  rawSignal?: string | null;
   biasTone: string;
   headline: string;
   sub: string;
@@ -375,27 +414,49 @@ export function SignalBrief({
 }) {
   const [size, setSize] = useState(paper?.default_size ?? 1);
   const [orderError, setOrderError] = useState("");
-  const [expanded, setExpanded] = useState(loadBriefExpanded);
+  const [modalOpen, setModalOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(() => setModalOpen(false));
+  onCloseRef.current = () => setModalOpen(false);
+
   useEffect(() => {
     if (paper?.default_size) setSize(paper.default_size);
   }, [paper?.default_size, pair]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(BRIEF_EXPANDED_KEY, expanded ? "1" : "0");
-    } catch {
-      /* private mode or blocked storage */
-    }
-  }, [expanded]);
   useEffect(() => {
     if (!nextEvent?.when) return;
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [nextEvent?.when]);
+  useEffect(() => {
+    if (!modalOpen) return;
+    const opener = openButtonRef.current;
+    const dialog = dialogRef.current;
+    const frame = window.requestAnimationFrame(() => dialog?.focus());
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [modalOpen]);
+
   const open = paper?.position ?? null;
   const canOpen = Boolean(paper?.allowed) && !open && !busy;
   const focus = focusSuggestion(hourly, daily, chartInterval);
-  const collapsedReason = !expanded ? failureReason(focus) : "";
+  const collapsedReason = failureReason(focus);
   const submit = (side: "BUY" | "SELL" | "CLOSE") => {
     setOrderError("");
     const fallback = side === "CLOSE" ? "Paper close failed" : "Paper order failed";
@@ -404,26 +465,29 @@ export function SignalBrief({
     });
   };
   const gateNote = !open ? paper?.block_reason ?? "" : "";
-  const collapsedNote = !expanded && (open || toast || orderError || gateNote);
+  const collapsedNote = open || toast || orderError || gateNote;
   const pairLabel = pair.trim();
-  const collapsedTitle = collapsedBriefTitle(pairLabel, bias, confidence);
+  const collapsedTitle = collapsedBriefTitle(pairLabel, bias, confidence, rawSignal);
   const caution = advice.find((card) => card.severity === "warn" || card.severity === "caution");
   const chip = nextEvent
     ? eventChip(nextEvent.currency, nextEvent.short_title || nextEvent.title, nextEvent.when, nextEvent.warn, nowMs)
     : "";
-  return (
-    <section className={expanded ? "panel brief" : "panel brief is-collapsed"}>
-      <div className="panel-hd">
-        <h2 className={expanded ? undefined : "brief-pair"} title={expanded ? undefined : collapsedTitle}>
-          {expanded ? "Signal brief" : collapsedTitle}
-        </h2>
-        {expanded ? (
-          <span className="meta">{pairLabel ? `${pairLabel} · Active` : "Active"}</span>
-        ) : (
-          <BriefMetrics suggestion={focus} chartInterval={chartInterval} />
-        )}
-        <span className="spacer" />
-        {!expanded && (
+
+  const briefDetails = (
+    <>
+      {advice.length > 0 && (
+        <div className="advice-list">
+          {advice.map((card) => (
+            <p className={`advice ${card.severity}`} key={`${card.action}-${card.window}`}>
+              <strong>{card.title}</strong> {card.detail}
+            </p>
+          ))}
+        </div>
+      )}
+      <div className="bias-block">
+        <div className="bias-row">
+          <span className={`bias-tag ${biasTone}`}>{bias}</span>
+          <div className="bias-headline">{headline}</div>
           <PaperActions
             canOpen={canOpen}
             open={open}
@@ -434,100 +498,169 @@ export function SignalBrief({
             onSubmit={submit}
             onBlocked={setOrderError}
           />
-        )}
-        <button className={`btn sm icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onRefresh}>
-          <RefreshIcon />
-        </button>
-        <button
-          className="btn sm icon panel-toggle brief-toggle"
-          type="button"
-          aria-expanded={expanded}
-          aria-controls="signal-brief-details"
-          title={expanded ? "Collapse signal brief" : "Expand signal brief"}
-          aria-label={expanded ? "Collapse signal brief" : "Expand signal brief"}
-          onClick={() => setExpanded((openBrief) => !openBrief)}
-        >
-          <Chevron open={expanded} />
-        </button>
-      </div>
-      {collapsedReason ? <div className="gap-reason brief-gap" role="status">{collapsedReason}</div> : null}
-      <div className={nextEvent?.warn || calendarStale ? "next-event is-warn" : "next-event"} role="status">
-        <span className="lbl">Next event</span>
-        {!briefReady ? (
-          <span className="quiet">Loading calendar…</span>
-        ) : nextEvent ? (
-          <>
-            <span className={nextEvent.warn ? "chip warn" : "chip"}>{chip}</span>
-            <span className="when">{nextEvent.when_dhaka || "time n/a"}</span>
-            <span className="impact">{nextEvent.impact}</span>
-            {caution ? <span className="action">{caution.title}</span> : null}
-            {calendarStale ? <span className="stale">stale cache</span> : null}
-          </>
-        ) : (
-          <span className="quiet">{calendarNote || "No high-impact event for this pair in the window."}</span>
-        )}
-      </div>
-      {collapsedNote && (
-        <div className="brief-collapsed-note">
-          {open && (
-            <span className="paper-pos">
-              Paper {open.side} {open.size} @ {open.entry_price}
-            </span>
+          <div className="bias-sub">{sub}</div>
+          {(open || paper?.block_reason || toast || orderError) && (
+            <div className="paper-status">
+              {open && (
+                <span className="paper-pos">
+                  Paper {open.side} {open.size} @ {open.entry_price} · {open.entry_time_dhaka}
+                </span>
+              )}
+              {!open && paper?.block_reason && <span className="paper-note">{paper.block_reason}</span>}
+              {toast && <span className="paper-toast">{toast}</span>}
+              {orderError && <span className="paper-note">{orderError}</span>}
+            </div>
           )}
-          {toast && <span className="paper-toast">{toast}</span>}
-          {orderError && <span className="paper-note">{orderError}</span>}
-          {gateNote && <span className="paper-note">{gateNote}</span>}
         </div>
-      )}
-      <div className="panel-body" id="signal-brief-details" hidden={!expanded}>
-        {advice.length > 0 && (
-          <div className="advice-list">
-            {advice.map((card) => (
-              <p className={`advice ${card.severity}`} key={`${card.action}-${card.window}`}>
-                <strong>{card.title}</strong> {card.detail}
-              </p>
-            ))}
-          </div>
-        )}
-        <div className="bias-block">
-          <div className="bias-row">
-            <span className={`bias-tag ${biasTone}`}>{bias}</span>
-            <div className="bias-headline">{headline}</div>
-            <PaperActions
-              canOpen={canOpen}
-              open={open}
-              busy={busy}
-              size={size}
-              blockReason={paper?.block_reason ?? ""}
-              onSize={setSize}
-              onSubmit={submit}
-              onBlocked={setOrderError}
-            />
-            <div className="bias-sub">{sub}</div>
-            {(open || paper?.block_reason || toast || orderError) && (
-              <div className="paper-status">
-                {open && (
-                  <span className="paper-pos">
-                    Paper {open.side} {open.size} @ {open.entry_price} · {open.entry_time_dhaka}
-                  </span>
-                )}
-                {!open && paper?.block_reason && <span className="paper-note">{paper.block_reason}</span>}
-                {toast && <span className="paper-toast">{toast}</span>}
-                {orderError && <span className="paper-note">{orderError}</span>}
-              </div>
-            )}
-          </div>
-        </div>
-        {hourly && daily && consensus ? (
-          <div className="tf-cards">
-            <Card title="Hourly" suggestion={hourly} consensus={consensus.hourly} pair={pair} />
-            <Card title="Daily" suggestion={daily} consensus={consensus.daily} pair={pair} />
-          </div>
-        ) : (
-          <div className="bias-sub">Loading brief…</div>
-        )}
       </div>
-    </section>
+      {hourly && daily && consensus ? (
+        <div className="tf-cards">
+          <Card title="Hourly" suggestion={hourly} consensus={consensus.hourly} pair={pair} />
+          <Card title="Daily" suggestion={daily} consensus={consensus.daily} pair={pair} />
+        </div>
+      ) : (
+        <div className="bias-sub">Loading brief…</div>
+      )}
+    </>
+  );
+
+  return (
+    <>
+      <section className="panel brief is-collapsed">
+        <div className="panel-hd">
+          <h2
+            className="brief-pair brief-open-title"
+            title={collapsedTitle}
+            role="button"
+            tabIndex={0}
+            onClick={() => setModalOpen(true)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setModalOpen(true);
+              }
+            }}
+          >
+            {collapsedTitle}
+          </h2>
+          <BriefMetrics suggestion={focus} chartInterval={chartInterval} />
+          <span className="spacer" />
+          <PaperActions
+            canOpen={canOpen}
+            open={open}
+            busy={busy}
+            size={size}
+            blockReason={paper?.block_reason ?? ""}
+            onSize={setSize}
+            onSubmit={submit}
+            onBlocked={setOrderError}
+          />
+          <button className={`btn sm icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onRefresh}>
+            <RefreshIcon />
+          </button>
+          <button
+            ref={openButtonRef}
+            className="btn sm icon panel-toggle brief-toggle"
+            type="button"
+            aria-expanded={modalOpen}
+            aria-haspopup="dialog"
+            aria-controls="signal-brief-dialog"
+            title="Open signal brief"
+            aria-label="Open signal brief"
+            onClick={() => setModalOpen(true)}
+          >
+            <Chevron open={false} />
+          </button>
+        </div>
+        {collapsedReason ? <div className="gap-reason brief-gap" role="status">{collapsedReason}</div> : null}
+        <div className={nextEvent?.warn || calendarStale ? "next-event is-warn" : "next-event"} role="status">
+          <span className="lbl">Next event</span>
+          {!briefReady ? (
+            <span className="quiet">Loading calendar…</span>
+          ) : nextEvent ? (
+            <>
+              <span className={nextEvent.warn ? "chip warn" : "chip"}>{chip}</span>
+              <span className="when">{nextEvent.when_dhaka || "time n/a"}</span>
+              <span className="impact">{nextEvent.impact}</span>
+              {caution ? <span className="action">{caution.title}</span> : null}
+              {calendarStale ? <span className="stale">stale cache</span> : null}
+            </>
+          ) : (
+            <span className="quiet">{calendarNote || "No high-impact event for this pair in the window."}</span>
+          )}
+        </div>
+        {collapsedNote ? (
+          <div className="brief-collapsed-note">
+            {open && (
+              <span className="paper-pos">
+                Paper {open.side} {open.size} @ {open.entry_price}
+              </span>
+            )}
+            {toast && <span className="paper-toast">{toast}</span>}
+            {orderError && <span className="paper-note">{orderError}</span>}
+            {gateNote && <span className="paper-note">{gateNote}</span>}
+          </div>
+        ) : null}
+      </section>
+      {modalOpen
+        ? createPortal(
+            <div
+              className="modal-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setModalOpen(false);
+              }}
+            >
+              <div
+                ref={dialogRef}
+                id="signal-brief-dialog"
+                className="modal-dialog brief-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="signal-brief-heading"
+                tabIndex={-1}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <section className="panel brief">
+                  <div className="panel-hd">
+                    <h2 id="signal-brief-heading">Signal brief</h2>
+                    <span className="meta">{pairLabel ? `${pairLabel} · Active` : "Active"}</span>
+                    <span className="spacer" />
+                    <button
+                      className="btn sm icon modal-close"
+                      type="button"
+                      aria-label="Close signal brief"
+                      title="Close signal brief"
+                      onClick={() => setModalOpen(false)}
+                    >
+                      <span aria-hidden="true">x</span>
+                    </button>
+                  </div>
+                  <div className={nextEvent?.warn || calendarStale ? "next-event is-warn" : "next-event"} role="status">
+                    <span className="lbl">Next event</span>
+                    {!briefReady ? (
+                      <span className="quiet">Loading calendar…</span>
+                    ) : nextEvent ? (
+                      <>
+                        <span className={nextEvent.warn ? "chip warn" : "chip"}>{chip}</span>
+                        <span className="when">{nextEvent.when_dhaka || "time n/a"}</span>
+                        <span className="impact">{nextEvent.impact}</span>
+                        {caution ? <span className="action">{caution.title}</span> : null}
+                        {calendarStale ? <span className="stale">stale cache</span> : null}
+                      </>
+                    ) : (
+                      <span className="quiet">{calendarNote || "No high-impact event for this pair in the window."}</span>
+                    )}
+                  </div>
+                  <div className="panel-body" id="signal-brief-details">
+                    {briefDetails}
+                  </div>
+                </section>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

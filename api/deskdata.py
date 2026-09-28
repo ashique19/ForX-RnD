@@ -26,10 +26,14 @@ from forex_lab.chart_indicators import chart_indicators_aligned, chart_price_dig
 from forex_lab.clock import fmt_display, parse_ts, timezone_name, timezone_tag
 from forex_lab.config_loader import load_config, pip_size_for_pair
 from forex_lab.data import (
+    SOURCE_DUKASCOPY,
     SOURCE_RESAMPLED_FROM_1H,
     SOURCE_YFINANCE,
+    SOURCE_YFINANCE_M1,
     ensure_interval_ohlcv,
     load_cached_ohlcv,
+    read_cache_source,
+    try_live_refresh,
     try_yfinance_refresh,
 )
 from forex_lab.features import true_range_atr
@@ -253,6 +257,24 @@ def _stop_price(row: Any) -> float | None:
     return None
 
 
+
+def _prefer_ohlcv_close(row: Any, ohlcv: pd.DataFrame | None = None) -> float | None:
+    """Prefer latest OHLCV Close; fall back to row.close then quote.last.
+
+    Keeps board ``last`` aligned with brief Now (same preference order).
+    """
+    px = None
+    if ohlcv is not None and not ohlcv.empty and "Close" in ohlcv.columns:
+        px = _num(ohlcv["Close"].iloc[-1])
+    if px is None:
+        px = _num(getattr(row, "close", None))
+    if px is None:
+        quote = getattr(row, "quote", None)
+        if quote is not None:
+            px = _num(getattr(quote, "last", None))
+    return px
+
+
 def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     pair = str(row.pair).upper()
     interval = str(row.timeframe or "1h")
@@ -260,10 +282,9 @@ def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | Non
     signal = str(row.buy_sell or "—").upper()
     if signal not in {"BUY", "SELL", "HOLD"}:
         signal = "—"
-    last_px = _num(getattr(row, "close", None))
-    quote = getattr(row, "quote", None)
-    if last_px is None and quote is not None:
-        last_px = _num(getattr(quote, "last", None))
+    # Prefer latest OHLCV Close so board last matches brief Now.
+    ohlcv_bars = load_cached_ohlcv(pair, cfg, interval) if cfg is not None else None
+    last_px = _prefer_ohlcv_close(row, ohlcv_bars)
     target = _target_price(row)
     age = _age_s(getattr(row, "last_bar_at", None), now=now)
     fetched = _age_s(getattr(row, "last_fetch_at", None), now=now)
@@ -281,6 +302,7 @@ def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | Non
         "interval": interval,
         "signal": signal,
         "raw_signal": None if not getattr(row, "raw_signal", None) else str(row.raw_signal),
+        "gate_reason": (str(getattr(row, "gate_reason", "") or "").strip() or None),
         "target": target,
         "target_text": price_text(pair, target),
         "last": last_px,
@@ -296,6 +318,7 @@ def row_json(row: Any, *, now: datetime | None = None, cfg: dict[str, Any] | Non
         "last_bar_dhaka": fmt_display(getattr(row, "last_bar_at", None), seconds=True),
         "last_fetch_dhaka": fmt_display(getattr(row, "last_fetch_at", None), seconds=True),
         "last_signal_dhaka": fmt_display(getattr(row, "last_signal_at", None), seconds=True),
+        "data_source": (read_cache_source(pair, cfg, interval) if cfg is not None else "") or str(getattr(row, "data_source", "") or "") or None,
         "status": str(getattr(row, "status", "") or ""),
         "confidence": _num(getattr(row, "confidence", None)),
         "rationale": str(getattr(row, "rationale", "") or ""),
@@ -689,11 +712,15 @@ def board_payload(
     cfg = cfg if cfg is not None else app_config()
     wl = load_wl(cfg)
     focus = active_pair(wl)
+    lab_iv = str(cfg.get("interval") or "1h")
+    regen = bool(refresh_data)
+    if focus and _signal_behind_ohlcv(str(focus), lab_iv, cfg):
+        regen = True
     rows = build_board_rows(
         wl,
         cfg,
         refresh_data=refresh_data,
-        regenerate=True if refresh_data else False,
+        regenerate=regen,
         generate_pairs={focus} if focus else set(),
     )
     bundle = load_calendar(cfg)
@@ -849,12 +876,8 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     flashed = str(row.buy_sell or "").upper()
     live = flashed in LIVE_SIGNALS and validity not in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR}
     signal = flashed if live else None
-    now_px = _num(getattr(row, "close", None))
-    quote = getattr(row, "quote", None)
-    if now_px is None and quote is not None:
-        now_px = _num(getattr(quote, "last", None))
-    if now_px is None and ohlcv is not None and not ohlcv.empty and "Close" in ohlcv.columns:
-        now_px = _num(ohlcv["Close"].iloc[-1])
+    # Prefer latest OHLCV Close so brief Now/stop/target cannot stick on a stale row.close.
+    now_px = _prefer_ohlcv_close(row, ohlcv)
     levels = _barrier_levels(ohlcv, cfg) if now_px is not None else None
     side = flashed if flashed in {"BUY", "SELL"} else str(getattr(row, "raw_signal", "") or "").upper()
     stop: float | None = None
@@ -905,8 +928,13 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         chip = "MISSING"
         tone = "miss"
     elif flashed == "HOLD":
-        chip = "HOLD"
-        tone = "hold"
+        raw_cls = str(getattr(row, "raw_signal", "") or "").upper()
+        if raw_cls in {"BUY", "SELL"}:
+            chip = f"{raw_cls} gated → HOLD"
+            tone = "hold"
+        else:
+            chip = "HOLD"
+            tone = "hold"
     else:
         chip = flashed if flashed in {"HOLD", "—"} else "—"
         tone = "miss"
@@ -961,6 +989,7 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         "rationale": rationale,
         "atr_pips": None if atr_pips is None else round(float(atr_pips), 1),
         "raw_signal": None if not getattr(row, "raw_signal", None) else str(row.raw_signal),
+        "gate_reason": (str(getattr(row, "gate_reason", "") or "").strip() or None),
         "confidence": _num(getattr(row, "confidence", None)),
     }
 
@@ -1001,23 +1030,62 @@ def _headline(pair: str, primary: dict[str, Any]) -> tuple[str, str, str]:
         return "flat", "NO LIVE BIAS", f"{pair} — data stale, not a live call"
     if validity in {VALIDITY_MISSING, VALIDITY_ERROR} or primary.get("status") in {"need_fetch", "need_train"}:
         return "flat", "NO LIVE BIAS", f"{pair} — need Fetch/Train"
-    if str(primary.get("chip")) == "HOLD":
+    chip = str(primary.get("chip") or "")
+    # True HOLD, or flash gated to HOLD (chip like "SELL gated → HOLD").
+    if chip == "HOLD" or chip.endswith("gated → HOLD") or primary.get("tone") == "hold":
         return "flat", "HOLD", f"{pair} — no directional call on {tf}"
     return "flat", "NO LIVE BIAS", f"{pair} — no live bias on {tf}"
 
+
+
+def _signal_behind_ohlcv(pair: str, interval: str, cfg: dict[str, Any]) -> bool:
+    """True when latest_signals.csv for pair+interval is older than the last OHLCV bar."""
+    from forex_lab.ui.board import _latest_csv_row
+
+    ohlcv = load_cached_ohlcv(pair, cfg, interval)
+    if ohlcv is None or ohlcv.empty:
+        return False
+    last = _latest_csv_row(pair, cfg, interval=interval)
+    if last is None:
+        return True
+    if hasattr(last, "get"):
+        raw = last.get("datetime")
+    else:
+        try:
+            raw = last["datetime"]
+        except Exception:
+            raw = None
+    sig_ts = pd.to_datetime(raw, utc=True, errors="coerce")
+    if pd.isna(sig_ts):
+        return True
+    bar_ts = pd.to_datetime(ohlcv.index.max(), utc=True, errors="coerce")
+    if pd.isna(bar_ts):
+        return False
+    if getattr(sig_ts, "tzinfo", None) is not None:
+        sig_ts = sig_ts.tz_convert("UTC").tz_localize(None)
+    if getattr(bar_ts, "tzinfo", None) is not None:
+        bar_ts = bar_ts.tz_convert("UTC").tz_localize(None)
+    return bool(bar_ts > sig_ts)
 
 def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
     primary_iv = parse_interval(tf, default=HOURLY_INTERVAL)
-    hourly_row = build_board_row(symbol, cfg, interval=HOURLY_INTERVAL, refresh_data=False, regenerate=False)
-    daily_row = build_board_row(symbol, cfg, interval=DAILY_INTERVAL, refresh_data=False, regenerate=False)
+    # Rescore when OHLCV moved past the cached signal bar (fixes stuck Hold 38% titles).
+    regen_h1 = _signal_behind_ohlcv(symbol, HOURLY_INTERVAL, cfg)
+    hourly_row = build_board_row(symbol, cfg, interval=HOURLY_INTERVAL, refresh_data=False, regenerate=regen_h1)
+    # D1 uses its own joblib; regenerate when bars moved past the cached 1d signal.
+    regen_d1 = _signal_behind_ohlcv(symbol, DAILY_INTERVAL, cfg)
+    daily_row = build_board_row(
+        symbol, cfg, interval=DAILY_INTERVAL, refresh_data=False, regenerate=regen_d1
+    )
     if primary_iv == HOURLY_INTERVAL:
         primary_row = hourly_row
     elif primary_iv == DAILY_INTERVAL:
         primary_row = daily_row
     else:
-        primary_row = build_board_row(symbol, cfg, interval=primary_iv, refresh_data=False, regenerate=False)
+        regen_primary = _signal_behind_ohlcv(symbol, primary_iv, cfg)
+        primary_row = build_board_row(symbol, cfg, interval=primary_iv, refresh_data=False, regenerate=regen_primary)
 
     hourly_bars = load_cached_ohlcv(symbol, cfg, HOURLY_INTERVAL)
     daily_bars = load_cached_ohlcv(symbol, cfg, DAILY_INTERVAL)
@@ -1103,6 +1171,8 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
         "bias": bias,
         "bias_tone": tone,
         "confidence": champ.get("confidence") if str(champ.get("id") or "brief") != "brief" else primary.get("confidence"),
+        "raw_signal": primary.get("raw_signal"),
+        "gate_reason": primary.get("gate_reason"),
         "headline": headline,
         "sub": sub,
         "champion": {
@@ -1385,11 +1455,13 @@ def refresh_watchlist(
 
 
 def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Polled yfinance refresh + cache re-read. Never writes synthetic bars.
+    """Polled live refresh (Dukascopy -> yfinance) + cache re-read. Never synthetic.
 
-    Not a broker tick stream. OHLCV is fetched even when no model is trained so
-    the chart's last bar can move. Signal regen still needs a model. This does
-    not scrape external forecasters: that runs only for the one Active pair.
+    Not a broker tick stream. Dukascopy re-pulls recent tick hours so the
+    forming H1/D1 bar can densify mid-candle; yfinance is the fallback.
+    OHLCV is fetched even when no model is trained so the chart's last bar can
+    move. Signal regen still needs a model. This does not scrape external
+    forecasters: that runs only for the one Active pair.
     """
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
@@ -1399,20 +1471,32 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
         cfg,
         iv,
         incremental=True,
-        refresh=try_yfinance_refresh,
+        refresh=try_live_refresh,
     )
     row = build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=True)
+    # Surface which provider won on the board row (sidecar may already match).
+    if source in {SOURCE_DUKASCOPY, SOURCE_YFINANCE, SOURCE_YFINANCE_M1, SOURCE_RESAMPLED_FROM_1H}:
+        row.data_source = source
     fetch_failed = fetched is None
     if fetch_failed:
         _note_failed_refresh(row, reason)
     if source == SOURCE_RESAMPLED_FROM_1H:
         source_label = SOURCE_RESAMPLED_FROM_1H
+    elif source == SOURCE_DUKASCOPY:
+        source_label = SOURCE_DUKASCOPY
+    elif source == SOURCE_YFINANCE_M1:
+        source_label = SOURCE_YFINANCE_M1
     elif source == SOURCE_YFINANCE:
         source_label = SOURCE_YFINANCE
     elif source == "cache":
         source_label = f"cache ({reason})"
     else:
         source_label = f"missing ({reason})"
+    payload_row = row_json(row, cfg=cfg)
+    if source_label and not payload_row.get("data_source"):
+        payload_row["data_source"] = source if source in {
+            SOURCE_DUKASCOPY, SOURCE_YFINANCE, SOURCE_YFINANCE_M1, SOURCE_RESAMPLED_FROM_1H
+        } else None
     return {
         "ok": True,
         "rate_limited": False,
@@ -1421,7 +1505,7 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
         "fetch_error": None if not fetch_failed else str(reason or ""),
         "pair": symbol,
         "interval": iv,
-        "row": row_json(row, cfg=cfg),
+        "row": payload_row,
         "source": source_label,
         "cache_source": source,
         "provider_note": reason if source == SOURCE_RESAMPLED_FROM_1H and reason else None,

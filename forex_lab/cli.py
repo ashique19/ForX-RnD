@@ -79,13 +79,14 @@ def cmd_backtest(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_signals(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    iv = str(getattr(args, "interval", None) or cfg.get("interval") or "1h")
     df = load_ohlcv(args.pair, cfg)
     try:
-        sigs = generate_signals(df, cfg, args.pair)
+        sigs = generate_signals(df, cfg, args.pair, interval=iv)
     except FileNotFoundError:
-        safe_print("[signals] model missing - training first")
+        safe_print(f"[signals] model missing for {iv} - training first")
         train_models(df, cfg, args.pair)
-        sigs = generate_signals(df, cfg, args.pair)
+        sigs = generate_signals(df, cfg, args.pair, interval=iv)
     path = write_signals(sigs, cfg)
     safe_print(f"[signals] csv: {path}")
     return 0
@@ -170,6 +171,10 @@ def cmd_replay(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
         replay = dict(cfg.get("replay") or {})
         replay["slippage_pips"] = float(args.slippage_pips)
         cfg = {**cfg, "replay": replay}
+    if getattr(args, "min_confidence", None) is not None:
+        signals = dict(cfg.get("signals") or {})
+        signals["min_confidence"] = float(args.min_confidence)
+        cfg = {**cfg, "signals": signals}
 
     def _progress(payload: dict[str, Any]) -> None:
         msg = payload.get("message")
@@ -225,6 +230,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     t = sub.add_parser("train", help="Train XGBoost + logistic models")
     _add_common(t)
+    t.add_argument(
+        "--interval",
+        default=None,
+        help="Bar size to train on (1h|1d|...). Non-1h writes PAIR_{interval}_*.joblib",
+    )
 
     b = sub.add_parser("backtest", help="Walk-forward backtest + report")
     _add_common(b)
@@ -232,6 +242,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("signals", help="Write signals/latest_signals.csv")
     _add_common(s)
+    s.add_argument(
+        "--interval",
+        default=None,
+        help="Bar size to score (1h|1d|...). Uses the matching TF model; merges by timeframe",
+    )
 
     d = sub.add_parser(
         "digest",
@@ -284,6 +299,13 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--no-pull", action="store_true", help="Use the cache only; do not download")
     rp.add_argument("--model", default=None, help="Champion model: xgboost | logistic")
     rp.add_argument("--slippage-pips", dest="slippage_pips", type=float, default=None)
+    rp.add_argument(
+        "--min-confidence",
+        dest="min_confidence",
+        type=float,
+        default=None,
+        help="Per-run signals.min_confidence (0..1); does not rewrite default.yaml",
+    )
 
     return p
 

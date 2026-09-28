@@ -224,3 +224,23 @@ def test_paper_session_matches_board_asia_wrap_and_overlap(tmp_path):
     )
     assert b.list_positions()[0]["session"] == "asia"
 
+
+def test_deferred_autosave_flushes_on_demand(tmp_path):
+    """Replay-style books stay in memory until flush/checkpoint."""
+    path = tmp_path / "deferred.json"
+    b = PaperBroker(path, cfg={"spread_pips": 0.0}, autosave=False)
+    b.submit("BUY", "EURUSD", price=1.10, sl=1.09, tp=1.12)
+    assert not path.exists()
+    assert b._dirty
+    assert len(b.list_positions()) == 1
+    b.flush()
+    assert path.exists()
+    assert not b._dirty
+    b2 = PaperBroker(path, cfg={"spread_pips": 0.0})
+    assert len(b2.list_positions()) == 1
+    assert b2.list_positions()[0]["pair"] == "EURUSD"
+    # Default autosave still persists immediately (live desk).
+    live = tmp_path / "live.json"
+    PaperBroker(live, cfg={"spread_pips": 0.0}).submit("SELL", "GBPUSD", price=1.25)
+    assert live.exists()
+

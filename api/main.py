@@ -103,6 +103,8 @@ class ReplayTrainBody(BaseModel):
     start: str | None = "2015-01-01"
     end: str | None = None
     pull: bool = True
+    # Per-job signals filter (0..1). Does not rewrite config/default.yaml.
+    min_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @field_validator("pair", mode="before")
     @classmethod
@@ -353,6 +355,7 @@ def create_app() -> FastAPI:
                 start=body.start,
                 end=body.end,
                 pull=body.pull,
+                min_confidence=body.min_confidence,
             )
         except ReplayBusy as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

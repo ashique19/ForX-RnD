@@ -79,10 +79,11 @@ def test_consensus_missing_without_cache(client: TestClient):
     body = res.json()
     assert body["pair"] == "EURUSD"
     assert body["status"] == "MISSING"
-    assert len(body["forecasters"]) >= 10
+    assert len(body["forecasters"]) >= 8
     assert all(row["direction"] is None for row in body["forecasters"])
     assert all(row["status"] in {"MISSING", "SKIPPED", "RANGE"} for row in body["forecasters"])
-    assert any(row["status"] == "SKIPPED" and row["reason"] for row in body["forecasters"])
+    # live=False sources are listed=False — they must not inflate Failures as SKIPPED.
+    assert "TradingView" not in {row["source"] for row in body["forecasters"]}
     assert all(row["status"] == "MISSING" for row in body["ranges"])
     agg = body["aggregate"]
     assert agg["counts"] == {"Buy": 0, "Sell": 0, "Neutral": 0}

@@ -8,6 +8,7 @@ export function FreshnessStrip({
   problem,
   auto,
   lastFetchDhaka,
+  source,
   onUpdate,
 }: {
   lastAgo: number | null;
@@ -16,13 +17,16 @@ export function FreshnessStrip({
   problem: StripProblem;
   auto: boolean;
   lastFetchDhaka: string | null;
+  /** Winning live provider from last refresh (dukascopy | yfinance). */
+  source?: string | null;
   onUpdate: () => void;
 }) {
   const reason = problemText(problem);
   const countdown = nextIn == null ? null : `Updating in ${nextIn}s`;
   const cadence = auto ? countdown : "Auto off";
   const nextLabel = updating ? "Updating…" : [reason, cadence].filter(Boolean).join(" · ");
-  const lastLabel = lastAgo == null ? "Last update —" : `Last update ${lastAgo}s ago`;
+  const src = source ? ` via ${source}` : "";
+  const lastLabel = lastAgo == null ? `Last fetch —${src}` : `Last fetch ${lastAgo}s ago${src}`;
   const buttonLabel = updating ? "Updating…" : reason ? "Retry" : "Update now";
   const title = lastFetchDhaka ? `Last successful fetch ${lastFetchDhaka}` : "Asia/Dhaka";
 

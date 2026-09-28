@@ -38,6 +38,11 @@ def _install_download(monkeypatch: pytest.MonkeyPatch, download) -> None:
     fake = types.ModuleType("yfinance")
     fake.download = download
     monkeypatch.setitem(sys.modules, "yfinance", fake)
+    # Offline: Decision live primary must not hit Dukascopy in unit tests.
+    monkeypatch.setattr(
+        "forex_lab.data.try_dukascopy_refresh",
+        lambda *a, **k: (None, "dukascopy disabled in test"),
+    )
 
 
 def _daily_frame(bars: int = 120) -> pd.DataFrame:
@@ -169,6 +174,7 @@ def test_daily_bars_do_not_reuse_the_hourly_signal(tmp_path: Path):
     assert row.status == "need_train"
     assert row.close == pytest.approx(float(daily["Close"].iloc[-1]))
     assert "not copied" in (row.validity_reason or "")
+    assert "needs 1d train" in (row.validity_reason or "")
     assert "9.999" not in (row.validity_reason or "")
     sug = suggestion_from_row(row, cfg, ohlcv=daily)
     assert sug["signal"] is None
@@ -185,3 +191,66 @@ def test_failure_reason_names_interval_and_keeps_last_ok():
     assert format_failure_reason("1h", "", last_ok="n/a") == "Hourly — failed: no OHLCV cache"
     again = format_failure_reason("1d", stamped, last_ok="2026-09-22 16:04:00 Asia/Dhaka")
     assert again.count("Last OK") == 1
+
+
+
+def test_daily_signal_generated_from_daily_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When a 1d joblib exists, board scores daily bars — not the H1 CSV side."""
+    cfg = _cfg(tmp_path)
+    hourly = generate_synthetic_ohlcv(pair="EURUSD", bars=24 * 40, interval="1h", seed=11)
+    end = pd.Timestamp.now("UTC").tz_convert(None).floor("h")
+    hourly.index = pd.date_range(end=end, periods=len(hourly), freq="h")
+    hourly.to_csv(tmp_path / "data" / "EURUSD_1h.csv")
+    daily = aggregate_hourly_to_daily(hourly)
+    daily.to_csv(tmp_path / "data" / "EURUSD_1d.csv")
+    models = tmp_path / "models"
+    models.mkdir()
+    # H1 joblib present (must not be used). D1 joblib present (presence gate).
+    (models / "EURUSD_xgboost.joblib").write_bytes(b"h1-model")
+    (models / "EURUSD_1d_xgboost.joblib").write_bytes(b"d1-model")
+    signals = tmp_path / "signals"
+    signals.mkdir()
+    (signals / "latest_signals.csv").write_text(
+        "datetime,pair,timeframe,close,signal,raw_signal,confidence,model\n"
+        "2024-06-01 07:00:00,EURUSD,1h,9.999,SELL,SELL,0.9,xgboost\n",
+        encoding="utf-8",
+    )
+
+    fake = pd.DataFrame(
+        [
+            {
+                "datetime": daily.index[-1],
+                "pair": "EURUSD",
+                "timeframe": "1d",
+                "close": float(daily["Close"].iloc[-1]),
+                "signal": "BUY",
+                "raw_signal": "BUY",
+                "confidence": 0.71,
+                "dir_edge": 0.4,
+                "p_buy": 0.71,
+                "p_sell": 0.1,
+                "p_hold": 0.19,
+                "model": "xgboost",
+            }
+        ]
+    )
+
+    def _gen(df, _cfg, pair, interval=None):
+        assert interval == "1d"
+        assert len(df) == len(daily)
+        return fake
+
+    monkeypatch.setattr("forex_lab.ui.board.generate_signals", _gen)
+    row = build_board_row("EURUSD", cfg, interval="1d", refresh_data=False, regenerate=True)
+    assert row.status == "ready" or row.buy_sell in {"BUY", "SELL", "HOLD", "—", "-"}
+    # Must not be the H1 SELL 9.999 / need_train-not-copied path.
+    assert row.status != "need_train"
+    assert "not copied" not in (row.validity_reason or "")
+    assert float(row.close) == pytest.approx(float(daily["Close"].iloc[-1]))
+    saved = pd.read_csv(tmp_path / "signals" / "latest_signals.csv")
+    assert "timeframe" in saved.columns
+    assert (saved["timeframe"] == "1d").any()
+    assert (saved["timeframe"] == "1h").any()  # H1 row preserved
+    d1 = saved[saved["timeframe"] == "1d"].iloc[-1]
+    assert str(d1["signal"]) == "BUY"
+    assert float(d1["confidence"]) == pytest.approx(0.71)

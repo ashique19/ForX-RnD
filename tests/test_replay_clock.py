@@ -24,6 +24,7 @@ from forex_lab.replay import (
     LookaheadError,
     ReplayClock,
     entry_price,
+    exit_price,
     label_ready_at,
     run_replay,
     touch_exit,
@@ -173,6 +174,10 @@ def test_entry_and_exit_quotes_use_the_executable_side():
     )
     assert entry_price(row, "BUY", bid_ask=True, slip=0.0) == pytest.approx(1.1002)
     assert entry_price(row, "SELL", bid_ask=True, slip=0.0) == pytest.approx(1.1000)
+    assert entry_price(row, "BUY", bid_ask=True, slip=0.00002) == pytest.approx(1.10022)
+    assert exit_price("BUY", 1.1010, 0.00002) == pytest.approx(1.10098)
+    assert exit_price("SELL", 1.1010, 0.00002) == pytest.approx(1.10102)
+    assert entry_price(row, "BUY", bid_ask=False, slip=0.00001) == pytest.approx(1.10001)
     # Long stop is judged on the bid, not the ask.
     hit = touch_exit("BUY", sl=1.0995, tp=1.20, row=row, bid_ask=True, bars_seen=1, horizon=8)
     assert hit == (1.0995, "sl")
@@ -297,3 +302,18 @@ def test_pull_history_uses_injected_hours_and_skips_git_sized_ticks(tmp_path, mo
     text = saved.read_text(encoding="utf-8")
     assert "1.100" in text
     assert not list((tmp_path / "history").glob("*.bi5"))
+
+
+def test_visible_uses_prefix_slice_and_hides_between_bars():
+    df = _bars(20)
+    t = df.index[7]
+    between = t + pd.Timedelta(minutes=30)
+    clock = ReplayClock(df, as_of=between)
+    view = clock.visible()
+    assert view.index.max() == t
+    assert df.index[8] not in view.index
+    clock.seek(df.index[10])
+    view2 = clock.visible()
+    assert view2.index.max() == df.index[10]
+    assert len(view2) == 11
+

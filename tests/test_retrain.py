@@ -16,6 +16,7 @@ from forex_lab.retrain import (
     format_retrain_text,
     load_champion,
     promotion_decision,
+    promotion_floors,
     run_retrain_gate,
     save_champion,
     should_promote,
@@ -40,8 +41,8 @@ def test_seed_when_no_champion():
 
 
 def test_promote_when_pf_return_and_dd_all_improve():
-    champ = _m(pf=0.90, ret=-0.05, dd=-0.10)
-    chal = _m(pf=0.95, ret=-0.02, dd=-0.07)
+    champ = _m(pf=1.00, ret=0.01, dd=-0.10, wr=0.50)
+    chal = _m(pf=1.12, ret=0.04, dd=-0.06, wr=0.52)
     d = promotion_decision(champ, chal)
     assert d.mode == MODE_IMPROVE
     assert d.promote is True
@@ -81,19 +82,20 @@ def test_null_when_challenger_missing_or_no_trades():
 
 def test_non_regression_requires_one_strict_improve():
     cfg = {"retrain": {"mode": MODE_NON_REGRESSION}}
-    champ = _m(pf=0.90, ret=-0.05, dd=-0.10)
+    champ = _m(pf=1.06, ret=0.02, dd=-0.10, wr=0.50)
     # Tiny PF tick inside 0.05, return slightly better, DD unchanged -> promote
-    chal_ok = _m(pf=0.91, ret=-0.049, dd=-0.10)
+    chal_ok = _m(pf=1.07, ret=0.021, dd=-0.10, wr=0.51)
     d = promotion_decision(champ, chal_ok, cfg)
     assert d.mode == MODE_NON_REGRESSION
     assert d.promote is True
+    assert d.floors_ok is True
     # Equal within eps and no improve -> null
-    chal_flat = _m(pf=0.90, ret=-0.05, dd=-0.10)
+    chal_flat = _m(pf=1.06, ret=0.02, dd=-0.10, wr=0.50)
     d2 = promotion_decision(champ, chal_flat, cfg)
     assert d2.promote is False
     assert d2.verdict == VERDICT_NULL
     # PF crash beyond 0.05 bar
-    chal_bad = _m(pf=0.80, ret=-0.04, dd=-0.09)
+    chal_bad = _m(pf=0.80, ret=0.04, dd=-0.09, wr=0.55)
     d3 = promotion_decision(champ, chal_bad, cfg)
     assert d3.promote is False
     assert d3.pf_ok is False
@@ -127,19 +129,19 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
     }
     champ = {
         "pair": "EURUSD",
-        "metrics": _m(pf=0.90, ret=-0.05, dd=-0.10),
+        "metrics": _m(pf=1.00, ret=0.01, dd=-0.10, wr=0.50),
         "verdict": "seed",
     }
     save_champion("EURUSD", cfg, champ)
     loaded = load_champion("EURUSD", cfg)
     assert loaded is not None
-    assert loaded["metrics"]["profit_factor"] == 0.90
+    assert loaded["metrics"]["profit_factor"] == 1.00
 
     trained = {"n": 0}
 
     def _wf(_df, _cfg, _pair):
         return (
-            {"pair": "EURUSD", "model": _m(pf=0.96, ret=-0.01, dd=-0.06, n=40)},
+            {"pair": "EURUSD", "model": _m(pf=1.12, ret=0.04, dd=-0.06, n=40, wr=0.52)},
             None,
             None,
         )
@@ -164,7 +166,7 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
     assert promoted["live_edge"] is False
     assert "not a live edge" in promoted["honest_note"].lower()
     stored = load_champion("EURUSD", cfg)
-    assert stored["metrics"]["profit_factor"] == 0.96
+    assert stored["metrics"]["profit_factor"] == 1.12
     text = format_retrain_text(promoted)
     assert "verdict=promote" in text
     assert HONEST_NOTE.split("—")[0].strip()[:12] in text or "Walk-forward" in text
@@ -190,7 +192,7 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
     assert kept["trained"] is False
     assert trained["n"] == 0
     still = load_champion("EURUSD", cfg)
-    assert still["metrics"]["profit_factor"] == 0.96
+    assert still["metrics"]["profit_factor"] == 1.12
     chal_path = tmp_path / "champion" / "EURUSD_challenger.json"
     assert chal_path.exists()
     chal = json.loads(chal_path.read_text(encoding="utf-8"))
@@ -254,11 +256,11 @@ def test_dry_run_does_not_write_champion(tmp_path):
     assert "not written" in text.lower()
     text.encode("ascii")
 
-    save_champion("EURUSD", cfg, {"pair": "EURUSD", "metrics": _m(pf=0.90, ret=-0.05, dd=-0.10)})
+    save_champion("EURUSD", cfg, {"pair": "EURUSD", "metrics": _m(pf=1.00, ret=0.01, dd=-0.10, wr=0.50)})
     better = run_retrain_gate(
         "EURUSD",
         cfg,
-        challenger_metrics=_m(pf=1.20, ret=0.05, dd=-0.04, n=40),
+        challenger_metrics=_m(pf=1.20, ret=0.05, dd=-0.04, n=40, wr=0.55),
         dry_run=True,
         persist=True,
     )
@@ -267,7 +269,7 @@ def test_dry_run_does_not_write_champion(tmp_path):
     assert better["champion_written"] is False
     assert better["trained"] is False
     still = load_champion("EURUSD", cfg)
-    assert still["metrics"]["profit_factor"] == 0.90
+    assert still["metrics"]["profit_factor"] == 1.00
     assert "dry-run" in format_retrain_text(better).lower()
 
 
@@ -307,3 +309,51 @@ def test_retrain_module_does_not_import_broker():
     assert sorted(BrokerPort.__abstractmethods__) == sorted(
         {"submit", "close", "list_positions", "list_fills"}
     )
+
+
+def test_absolute_pf_floor_blocks_less_bad_loser():
+    """Relative improve alone must not promote a still-sub-1.05 PF challenger."""
+    champ = _m(pf=0.90, ret=-0.05, dd=-0.10, wr=0.48)
+    chal = _m(pf=0.98, ret=-0.01, dd=-0.07, wr=0.50, n=80)
+    d = promotion_decision(champ, chal)
+    assert d.pf_ok is True
+    assert d.return_ok is True
+    assert d.dd_ok is True
+    assert d.floors_ok is False
+    assert d.pf_floor_ok is False
+    assert d.promote is False
+    assert d.verdict == VERDICT_NULL
+    assert any("PF floor" in r for r in d.reasons)
+
+
+def test_absolute_dd_and_wr_floors():
+    champ = _m(pf=1.00, ret=0.01, dd=-0.08, wr=0.50)
+    deep = _m(pf=1.20, ret=0.10, dd=-0.22, wr=0.55, n=80)
+    d = promotion_decision(champ, deep)
+    assert d.pf_floor_ok is True
+    assert d.dd_floor_ok is False
+    assert d.promote is False
+    assert any("DD floor" in r for r in d.reasons)
+    low_wr = _m(pf=1.20, ret=0.10, dd=-0.05, wr=0.35, n=80)
+    d2 = promotion_decision(champ, low_wr)
+    assert d2.wr_floor_ok is False
+    assert d2.promote is False
+    assert any("WR floor" in r for r in d2.reasons)
+
+
+def test_floors_can_be_disabled():
+    cfg = {"retrain": {"promotion": {"enabled": False}, "min_trades": 1}}
+    champ = _m(pf=0.90, ret=-0.05, dd=-0.10)
+    chal = _m(pf=0.95, ret=-0.02, dd=-0.07, n=10)
+    d = promotion_decision(champ, chal, cfg)
+    assert d.floors_ok is True
+    assert d.promote is True
+    assert promotion_floors(cfg)["enabled"] is False
+
+
+def test_min_trades_floor_from_promotion_block():
+    champ = _m(pf=1.00, ret=0.01, dd=-0.08, wr=0.50)
+    chal = _m(pf=1.20, ret=0.05, dd=-0.04, wr=0.55, n=10)
+    d = promotion_decision(champ, chal)
+    assert d.promote is False
+    assert "min_trades" in d.reasons[0]

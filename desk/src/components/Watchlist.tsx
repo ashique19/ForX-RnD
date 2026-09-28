@@ -271,8 +271,8 @@ function WatchlistPanel({
                   <td className="wl-fresh">
                     <span
                       className={`fresh-pill ${dataClass(row.data.tone)}`}
-                      title={row.validity_reason || row.validity}
-                      aria-label={`Freshness ${row.data.text}`}
+                      title={[row.data_source ? `Source ${row.data_source}` : null, row.validity_reason || row.validity].filter(Boolean).join(" · ")}
+                      aria-label={`Freshness ${row.data.text}${row.data_source ? ` via ${row.data_source}` : ""}`}
                     >
                       {row.data.text}
                     </span>
@@ -359,5 +359,6 @@ function barAgeLabel(row: BoardRow): string {
 function ageTitle(row: BoardRow): string {
   const fetch = row.last_fetch_dhaka && row.last_fetch_dhaka !== "n/a" ? `Last fetch ${row.last_fetch_dhaka}` : "No successful fetch";
   const bar = row.last_bar_dhaka && row.last_bar_dhaka !== "n/a" ? `Bar open ${row.last_bar_dhaka}` : "";
-  return bar ? `${fetch} · ${bar}` : fetch;
+  const src = row.data_source ? `Source ${row.data_source}` : "";
+  return [fetch, bar, src].filter(Boolean).join(" · ");
 }

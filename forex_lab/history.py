@@ -650,12 +650,41 @@ def _pull_dukascopy(
     _emit(progress, phase="pull", fraction=0.0, message=f"Dukascopy {pair} {len(todo)} hours", rows=0 if existing is None else len(existing))
 
     rows: list[pd.DataFrame] = []
+    # Bars already on disk (or empty). Checkpoint merges flush into this so a kill mid-pull keeps progress.
+    saved_base = existing if existing is not None and not existing.empty else _empty_bars()
+    # ~1% of hours, clamped so small pulls still flush and huge pulls are not IO-bound.
+    ckpt_every = max(100, min(500, max(1, total // 100)))
     errors = 0
     failed: list[datetime] = []
     causes: list[BaseException] = []
     done = 0
+    last_ckpt = 0
     lock = threading.Lock()
     last_emit = 0.0
+
+    def _flush_checkpoint(*, force: bool = False) -> None:
+        nonlocal saved_base, last_ckpt
+        if not force and (done - last_ckpt) < ckpt_every:
+            return
+        if rows:
+            fresh = pd.concat(rows)
+            rows.clear()
+            if not fresh.empty:
+                fresh = fresh[~fresh.index.duplicated(keep="last")].sort_index()
+            saved_base = _merge(saved_base, fresh)
+            if not saved_base.empty:
+                _save_bars(pair, grain, saved_base, SOURCE_DUKA, cfg)
+                _emit(
+                    progress,
+                    phase="pull",
+                    fraction=min(1.0, done / total),
+                    message=(
+                        f"Dukascopy {pair} checkpoint {done}/{total} hours "
+                        f"({len(saved_base)} bars on disk)"
+                    ),
+                    rows=len(saved_base),
+                )
+        last_ckpt = done
 
     def _one(hour: datetime) -> None:
         nonlocal done, errors, last_emit
@@ -681,8 +710,9 @@ def _pull_dukascopy(
                     phase="pull",
                     fraction=done / total,
                     message=f"Dukascopy {pair} {done}/{total} hours",
-                    rows=(0 if existing is None else len(existing)) + sum(len(r) for r in rows),
+                    rows=(0 if saved_base is None else len(saved_base)) + sum(len(r) for r in rows),
                 )
+            _flush_checkpoint(force=(done == total))
 
     worker_n = 1 if fetch_hour is not None else max(1, min(int(workers or 8), 16))
     if worker_n == 1:
@@ -703,11 +733,15 @@ def _pull_dukascopy(
                 continue
             if bars is not None and not bars.empty:
                 rows.append(bars)
+        _flush_checkpoint(force=True)
 
-    fresh = pd.concat(rows) if rows else _empty_bars()
-    if not fresh.empty:
-        fresh = fresh[~fresh.index.duplicated(keep="last")].sort_index()
-    merged = _merge(existing, fresh)
+    merged = saved_base if saved_base is not None else _empty_bars()
+    if rows:
+        fresh = pd.concat(rows)
+        rows.clear()
+        if not fresh.empty:
+            fresh = fresh[~fresh.index.duplicated(keep="last")].sort_index()
+        merged = _merge(merged, fresh)
     if merged.empty and errors and fetch_hour is None:
         first = causes[0] if causes else None
         detail = ""
@@ -755,8 +789,16 @@ def _download_bi5(pair: str, hour: datetime) -> bytes | None:
             last_status = res.status_code
             if res.status_code == 404:
                 return None
+            if res.status_code in (429, 503):
+                # Fail fast — live Decision polls must not burn retries on rate limits.
+                raise HistoryError(
+                    f"Dukascopy HTTP {res.status_code} for {url}",
+                    reason="download",
+                )
             if res.status_code == 200 and res.content:
                 return res.content
+        except HistoryError:
+            raise
         except Exception:
             last_status = "network"
         time.sleep(0.4 * (attempt + 1))
@@ -765,6 +807,73 @@ def _download_bi5(pair: str, hour: datetime) -> bytes | None:
     if last_status not in (None, 404, 200):
         raise HistoryError(f"Dukascopy HTTP {last_status} for {url}", reason="download")
     return None
+
+
+
+def fetch_dukascopy_recent_bars(
+    pair: str,
+    *,
+    lookback_hours: int = 8,
+    grain: str = "1h",
+    end: datetime | None = None,
+    fetch_hour: Callable[[datetime], bytes | None] | None = None,
+) -> pd.DataFrame:
+    """Recent Dukascopy mid OHLC for live Decision refresh.
+
+    Always re-downloads the lookback window (including the current UTC hour)
+    so the forming H1 bar can move as ticks arrive. Does **not** write
+    ``data/history/`` — Replay pulls stay on :func:`ensure_history`.
+    Returns an empty frame when nothing usable is available (never invents).
+    """
+    pair_u = str(pair).upper().replace("/", "")
+    grain_key = GRAIN_15M if str(grain).strip().lower() in {"15m", "m15"} else GRAIN_1H
+    rule = "15min" if grain_key == GRAIN_15M else "1h"
+    end_dt = end or datetime.now(timezone.utc).replace(tzinfo=None)
+    if end_dt.tzinfo is not None:
+        end_dt = end_dt.astimezone(timezone.utc).replace(tzinfo=None)
+    end_hour = end_dt.replace(minute=0, second=0, microsecond=0)
+    n = max(1, int(lookback_hours))
+    start_hour = end_hour - timedelta(hours=n - 1)
+    hours = [h for h in _iter_hours(start_hour, end_hour) if fx_hour_open(h)]
+    if not hours:
+        return _empty_bars()
+    point = dukascopy_point(pair_u)
+    rows: list[pd.DataFrame] = []
+    lock = threading.Lock()
+    rate_limited = False
+
+    def _one(hour: datetime) -> None:
+        nonlocal rate_limited
+        if rate_limited:
+            return
+        try:
+            blob = fetch_hour(hour) if fetch_hour is not None else _download_bi5(pair_u, hour)
+            if not blob:
+                return
+            bars = ticks_to_bars(parse_bi5(blob, hour, point), rule)
+        except Exception as exc:
+            text = str(exc).lower()
+            if "503" in text or "429" in text or "rate limit" in text:
+                rate_limited = True
+            return
+        if bars is not None and not bars.empty:
+            with lock:
+                rows.append(bars)
+
+    # Keep concurrency modest — Dukascopy 503s under bursty live polls.
+    workers = 1 if fetch_hour is not None else max(1, min(3, len(hours)))
+    if workers == 1:
+        for hour in hours:
+            _one(hour)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(_one, hours))
+    if not rows:
+        return _empty_bars()
+    out = pd.concat(rows)
+    out = out[~out.index.duplicated(keep="last")].sort_index()
+    out.index.name = "Datetime"
+    return out
 
 
 def _pull_histdata(

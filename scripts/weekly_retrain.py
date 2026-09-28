@@ -7,7 +7,11 @@
 Walk-forward compare vs the saved champion. Promote only if PF / total return /
 max DD improve (or the non-regression bar). Else keep champion and report null.
 
-Same as ``python -m forex_lab retrain``. Fail-soft. No live broker. Not a live edge.
+Same as `python -m forex_lab retrain`. Fail-soft. No live broker. Not a live edge.
+
+For AFTER-COST Replay promote-only (rolling weekly pin + scoreboard), use
+`scripts/weekly_replay_promote.py` instead — that compares Replay scoreboards
+and does not silently overwrite `data/champion`.
 """
 from __future__ import annotations
 
@@ -24,3 +28,4 @@ from forex_lab.cli import main
 if __name__ == "__main__":
     argv = ["retrain", *sys.argv[1:]]
     raise SystemExit(main(argv))
+

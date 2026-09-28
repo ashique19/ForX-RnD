@@ -114,10 +114,28 @@ def apply_signal_filters(pred_frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.Se
         keep = keep & (pred_frame["dir_edge"] >= min_edge)
     sessions = sig_cfg.get("sessions") or []
     if sessions:
+        # Alias map so overlap/ldn_ny/london_ny resolve to feature columns.
+        _sess_alias = {
+            "overlap": "sess_ldn_ny",
+            "ldn_ny": "sess_ldn_ny",
+            "london_ny": None,  # expanded below to london|ny
+            "london+ny": None,
+            "union": None,
+        }
         sess_keep = pd.Series(False, index=pred_frame.index)
         have_col = False
+        names: list[str] = []
         for name in sessions:
-            col = f"sess_{str(name).strip().lower()}"
+            key = str(name).strip().lower()
+            if key in ("london_ny", "london+ny", "union", "ldn+ny"):
+                names.extend(["london", "ny"])
+            elif key in _sess_alias and _sess_alias[key]:
+                names.append(key)  # resolved via alias col below
+            else:
+                names.append(key)
+        for name in names:
+            key = str(name).strip().lower()
+            col = _sess_alias.get(key) or f"sess_{key}"
             if col in pred_frame.columns:
                 have_col = True
                 sess_keep = sess_keep | (pred_frame[col].astype(float) > 0.5)
@@ -251,7 +269,7 @@ def fit_predict_bundle(
         frame["p_buy"] = proba[:, LABEL_MAP["BUY"]]
         frame["confidence"] = proba.max(axis=1)
         frame["dir_edge"] = np.abs(proba[:, LABEL_MAP["BUY"]] - proba[:, LABEL_MAP["SELL"]])
-    for extra in ("sess_asia", "sess_london", "sess_ny", "vol_regime", "atr_pct"):
+    for extra in ("sess_asia", "sess_london", "sess_ny", "vol_regime", "atr_pct", "vol_pct", "atr_pctile"):
         if extra in X_te.columns:
             frame[extra] = X_te[extra].to_numpy()
     return predictor, frame, cols
@@ -263,8 +281,24 @@ def model_dir(cfg: dict[str, Any]) -> Path:
     return d
 
 
-def model_paths(pair: str, cfg: dict[str, Any], model_type: str) -> dict[str, Path]:
-    base = model_dir(cfg) / f"{pair.upper()}_{model_type}"
+def model_paths(
+    pair: str,
+    cfg: dict[str, Any],
+    model_type: str,
+    interval: str | None = None,
+) -> dict[str, Path]:
+    """Joblib + meta paths for one pair/model.
+
+    Lab default ``1h`` keeps legacy ``{PAIR}_{type}.joblib`` names so existing
+    H1 artifacts stay loadable. Other intervals use ``{PAIR}_{interval}_{type}``
+    (e.g. ``EURUSD_1d_xgboost.joblib``) so a D1 score never silently loads H1.
+    """
+    iv = str(interval or cfg.get("interval") or "1h").strip()
+    if iv in {"1h", "H1", "h1"}:
+        stem = f"{pair.upper()}_{model_type}"
+    else:
+        stem = f"{pair.upper()}_{iv}_{model_type}"
+    base = model_dir(cfg) / stem
     return {
         "model": Path(str(base) + ".joblib"),
         "meta": Path(str(base) + "_meta.json"),
@@ -313,6 +347,7 @@ def train_models(
         imp = feature_importance_table(inner, used_cols)
         meta = {
             "pair": pair.upper(),
+            "interval": str(cfg.get("interval") or "1h"),
             "model_type": name,
             "features": used_cols,
             "val_accuracy": acc,
@@ -335,10 +370,18 @@ def train_models(
     return results
 
 
-def load_model(pair: str, cfg: dict[str, Any], model_type: str | None = None):
+def load_model(
+    pair: str,
+    cfg: dict[str, Any],
+    model_type: str | None = None,
+    interval: str | None = None,
+):
     mtype = (model_type or (cfg.get("model") or {}).get("type") or "xgboost").lower()
-    paths = model_paths(pair, cfg, mtype)
+    iv = str(interval or cfg.get("interval") or "1h")
+    paths = model_paths(pair, cfg, mtype, interval=iv)
     if not paths["model"].exists():
-        raise FileNotFoundError(f"No model at {paths['model']}. Run train first.")
+        raise FileNotFoundError(
+            f"No model at {paths['model']} for interval={iv}. Run train --interval {iv} first."
+        )
     bundle = joblib.load(paths["model"])
     return bundle["model"], bundle["features"], mtype
