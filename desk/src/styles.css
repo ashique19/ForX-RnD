@@ -1604,6 +1604,50 @@
     }
     .add-pop input { width: 92px; text-transform: uppercase; }
     .chart-canvas { flex: 1; min-height: 320px; position: relative; }
+    .pos-pop-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+    }
+    .pos-pop {
+      position: absolute;
+      width: 228px;
+      pointer-events: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: var(--shadow), 0 8px 24px rgba(16, 24, 40, 0.08);
+      padding: 10px;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .pos-pop header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+    }
+    .pos-pop .pos-x {
+      margin-left: auto;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0 2px;
+    }
+    .pos-pop dl {
+      margin: 8px 0;
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 2px 8px;
+    }
+    .pos-pop dt { color: var(--muted); }
+    .pos-pop dd { margin: 0; font-variant-numeric: tabular-nums; }
+    .pos-pop .pos-err { margin: 0 0 6px; color: #b42318; font-size: 11px; }
+    .pos-pop .pos-note { margin: 6px 0 0; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
     /* Candlestick / RSI / MACD dividers. Color is layout.panes.separatorColor;
        Lightweight Charts only allocates a 1px row, so the band is widened here. */
     .chart-canvas table tr:has(> td[colspan="3"]) {

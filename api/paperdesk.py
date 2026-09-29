@@ -125,10 +125,32 @@ def paper_order(
     *,
     size: float | None = None,
     interval: str | None = None,
+    position_id: str | None = None,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with _PAPER_LOCK:
-        return _paper_order_impl(pair, side, size=size, interval=interval, cfg=cfg)
+        return _paper_order_impl(
+            pair,
+            side,
+            size=size,
+            interval=interval,
+            position_id=position_id,
+            cfg=cfg,
+        )
+
+
+def _position_to_close(broker: Any, symbol: str, book: str, position_id: str | None) -> dict[str, Any] | None:
+    """Champion book when no id is given. An id closes that open row on this pair."""
+    wanted = str(position_id or "").strip()
+    if not wanted:
+        return position_for_pair(broker, symbol, book)
+    for pos in broker.list_positions():
+        if str(pos.get("id") or "") != wanted:
+            continue
+        if str(pos.get("pair") or "").upper() != symbol:
+            return None
+        return pos
+    return None
 
 
 def _paper_order_impl(
@@ -137,6 +159,7 @@ def _paper_order_impl(
     *,
     size: float | None = None,
     interval: str | None = None,
+    position_id: str | None = None,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     desk = _desk()
@@ -150,7 +173,7 @@ def _paper_order_impl(
     action = str(side or "").upper()
     book = _champion_id(broker) if isinstance(broker, PaperBroker) else BRIEF
     if action == "CLOSE":
-        pos = position_for_pair(broker, symbol, book)
+        pos = _position_to_close(broker, symbol, book, position_id)
         if pos is None:
             raise BrokerError(f"no open paper position for {symbol}")
         price, _bar = _price_from_cache(symbol, cfg, iv, row)
@@ -908,6 +931,7 @@ def _row_view(
         "confidence_text": conf_label(confidence),
         "entry_price": entry,
         "entry_price_text": desk.price_text(pair, entry),
+        "entry_time": int(start.timestamp()) if start is not None else None,
         "entry_time_dhaka": entry_at,
         "exit_price": exit_px,
         "exit_price_text": desk.price_text(pair, exit_px) if exit_px is not None else "—",

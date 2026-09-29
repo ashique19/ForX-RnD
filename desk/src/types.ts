@@ -387,7 +387,10 @@ export interface PortfolioRow {
   entry_price_text: string;
   sl: number | null;
   tp: number | null;
+  /** Unix seconds UTC from the paper journal. Null when the fill time cannot be parsed. */
+  entry_time?: number | null;
   entry_time_dhaka: string | null;
+  size?: number | null;
   exit_price: number | null;
   exit_price_text: string;
   exit_time_dhaka: string | null;

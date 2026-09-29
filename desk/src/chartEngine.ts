@@ -11,6 +11,7 @@ import {
   type IPriceLine,
   type ISeriesApi,
   type LogicalRange,
+  type MouseEventParams,
   type SeriesMarker,
   type SeriesType,
   type Time,
@@ -18,6 +19,12 @@ import {
 } from "lightweight-charts";
 import { PatternOverlayPrimitive } from "./patternOverlay";
 import type { PatternHit } from "./patterns";
+import {
+  pickPositionId,
+  positionIdFromObject,
+  type DrawnPositions,
+  type PositionHit,
+} from "./openPositions";
 import type { Bar, IndicatorSeries } from "./types";
 
 export type ToggleKey = "ema21" | "ema50" | "sma200" | "bb" | "rsi" | "macd" | "stoch" | "atr";
@@ -124,12 +131,18 @@ export type ChartUpdate = {
   precision: number;
   /** Research overlay markers; empty/omitted clears. Not a signal input. */
   patterns?: PatternHit[];
+  /** Open paper positions for the Active pair. Empty clears the overlay. */
+  positions?: DrawnPositions;
 };
+
+export type PositionPick = { id: string; x: number; y: number };
 
 export class DeskChart {
   private chart: IChartApi;
   private candle: ISeriesApi<"Candlestick">;
   private patternMarkers: { setMarkers: (markers: SeriesMarker<Time>[]) => void } | null = null;
+  private patternMarkerList: SeriesMarker<Time>[] = [];
+  private positionMarkerList: SeriesMarker<Time>[] = [];
   private patternOverlay: PatternOverlayPrimitive | null = null;
   private volume: ISeriesApi<"Histogram">;
   private overlays = new Map<string, ISeriesApi<"Line">>();
@@ -140,6 +153,11 @@ export class DeskChart {
   private paneLabels: string[] = [];
   private levelLines: IPriceLine[] = [];
   private levelsKey = "\0";
+  private positionLines: IPriceLine[] = [];
+  private positionKey = "\0";
+  private positionHits: PositionHit[] = [];
+  /** Set by the desk. A click on an open-position line or marker reports that id. */
+  onPositionPick: ((pick: PositionPick | null) => void) | null = null;
   private viewKey = "";
   private barKey = "";
   private alive = true;
@@ -171,6 +189,7 @@ export class DeskChart {
       handleScroll: true,
       handleScale: true,
     });
+    this.chart.subscribeClick(this.onChartClick);
     this.candle = this.chart.addSeries(CandlestickSeries, {
       upColor: "#12b76a",
       downColor: "#f04438",
@@ -195,6 +214,7 @@ export class DeskChart {
 
   destroy() {
     this.alive = false;
+    this.chart.unsubscribeClick(this.onChartClick);
     if (this.tagFrame) cancelAnimationFrame(this.tagFrame);
     if (this.patternOverlay) {
       this.candle.detachPrimitive(this.patternOverlay);
@@ -243,6 +263,8 @@ export class DeskChart {
     this.syncPatternMarkers(input.patterns ?? []);
     this.syncPatternOverlay(input.patterns ?? []);
     this.syncLevels(input.stop, input.target);
+    this.syncPositionOverlay(input.positions);
+    this.flushMarkers();
     this.syncOverlays(bars, indicators, toggles, format);
     this.syncOscillators(bars, indicators, toggles, precision);
     this.applyPriceMargins();
@@ -534,12 +556,65 @@ export class DeskChart {
     });
   }
 
-  private syncPatternMarkers(hits: PatternHit[]) {
+  private onChartClick = (param: MouseEventParams<Time>) => {
+    if (!this.alive || !this.onPositionPick || !param.point) return;
+    if (param.paneIndex != null && param.paneIndex !== 0) return;
+    const hovered = positionIdFromObject(param.hoveredInfo?.objectId);
+    const time = typeof param.time === "number" ? param.time : null;
+    const id =
+      hovered ??
+      pickPositionId(this.positionHits, param.point.y, time, (price) => this.candle.priceToCoordinate(price));
+    this.onPositionPick(id ? { id, x: param.point.x, y: param.point.y } : null);
+  };
+
+  private syncPositionOverlay(drawn: DrawnPositions | undefined) {
+    const view = drawn ?? { lines: [], markers: [], hits: [] };
+    this.positionHits = view.hits;
+    this.positionMarkerList = view.markers.map((marker) => ({
+      time: marker.time as UTCTimestamp,
+      position: "atPriceMiddle",
+      price: marker.price,
+      shape: "square",
+      color: marker.color,
+      id: marker.objectId,
+      text: marker.text,
+      size: 2,
+    }));
+    const key = view.lines
+      .map((line) => `${line.objectId}@${line.price}|${line.title}|${line.color}|${line.style}`)
+      .join(";");
+    if (key === this.positionKey) return;
+    this.positionKey = key;
+    for (const line of this.positionLines) {
+      try {
+        this.candle.removePriceLine(line);
+      } catch {
+        /* series already removed */
+      }
+    }
+    this.positionLines = view.lines.map((line) =>
+      this.candle.createPriceLine({
+        id: line.objectId,
+        price: line.price,
+        color: line.color,
+        lineWidth: line.width,
+        lineStyle: line.style === "dotted" ? LineStyle.Dotted : LineStyle.Solid,
+        axisLabelVisible: true,
+        title: line.title,
+      }),
+    );
+  }
+
+  private flushMarkers() {
     let plugin = this.patternMarkers;
     if (!plugin) {
       plugin = createSeriesMarkers(this.candle, []);
       this.patternMarkers = plugin;
     }
+    plugin.setMarkers([...this.patternMarkerList, ...this.positionMarkerList]);
+  }
+
+  private syncPatternMarkers(hits: PatternHit[]) {
     // Multi-point patterns are drawn as lines. Candle patterns stay as markers.
     const markers: SeriesMarker<Time>[] = [];
     for (const hit of hits) {
@@ -554,7 +629,7 @@ export class DeskChart {
         text: hit.label,
       });
     }
-    plugin.setMarkers(markers);
+    this.patternMarkerList = markers;
   }
 
   private syncPatternOverlay(hits: PatternHit[]) {
