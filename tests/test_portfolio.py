@@ -941,6 +941,88 @@ def test_manual_buy_without_stop_or_target_is_rejected(tmp_path: Path, monkeypat
     assert portfolio_payload(cfg, sync=False, now=T0)["open"] == []
 
 
+def test_chart_close_targets_the_clicked_book(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Active-pair chart close uses the same journal. An id closes that book only."""
+    store = tmp_path / "paper.json"
+    cfg = _cfg(store)
+    monkeypatch.setenv("FORX_PAPER_STORE", str(store))
+    monkeypatch.setenv("FORX_WATCHLIST_PATH", str(tmp_path / "watchlist.yaml"))
+    monkeypatch.setenv("FORX_ALERT_STATE", str(tmp_path / "alerts.json"))
+    monkeypatch.setenv("FORX_CONSENSUS_CACHE", str(tmp_path / "consensus.json"))
+    monkeypatch.setenv("FORX_CONSENSUS_NETWORK", "0")
+    monkeypatch.setattr("api.deskdata.build_board_row", lambda *_a, **_k: _row())
+    monkeypatch.setattr("api.paperdesk.load_cached_ohlcv", lambda *_a, **_k: _frame(1.10))
+    from forex_lab.broker import BrokerError, PaperBroker
+    from api.paperdesk import paper_order
+
+    stamp = T0.strftime("%Y-%m-%d %H:%M:%S UTC")
+    broker = PaperBroker(store, cfg=cfg)
+    broker.submit(
+        "BUY",
+        "EURUSD",
+        price=1.10,
+        sl=1.09,
+        tp=1.12,
+        size=1,
+        timestamp=stamp,
+        strategy_id="brief",
+        strategy_name="Brief",
+    )
+    broker.submit(
+        "SELL",
+        "EURUSD",
+        price=1.101,
+        sl=1.12,
+        tp=1.08,
+        size=2,
+        timestamp=stamp,
+        strategy_id="consensus",
+        strategy_name="Consensus",
+    )
+    broker.submit(
+        "BUY",
+        "GBPUSD",
+        price=1.25,
+        sl=1.24,
+        tp=1.27,
+        size=1,
+        timestamp=stamp,
+        strategy_id="brief",
+        strategy_name="Brief",
+    )
+    book = portfolio_payload(cfg, sync=False, now=T0)
+    by = {row["strategy_id"]: row for row in book["open"] if row["pair"] == "EURUSD"}
+    assert by["brief"]["entry_time"] == int(T0.timestamp())
+    assert by["brief"]["size"] == pytest.approx(1)
+    assert by["consensus"]["size"] == pytest.approx(2)
+    assert "16:00" in (by["brief"]["entry_time_dhaka"] or "")
+
+    paper_order("EURUSD", "CLOSE", position_id=by["consensus"]["id"], cfg=cfg)
+    left = [row["strategy_id"] for row in portfolio_payload(cfg, sync=False, now=T0)["open"] if row["pair"] == "EURUSD"]
+    assert left == ["brief"]
+    with pytest.raises(BrokerError, match="no open paper position"):
+        paper_order("EURUSD", "CLOSE", position_id="pos_missing", cfg=cfg)
+    gbp = next(row["id"] for row in portfolio_payload(cfg, sync=False, now=T0)["open"] if row["pair"] == "GBPUSD")
+    with pytest.raises(BrokerError, match="no open paper position"):
+        paper_order("EURUSD", "CLOSE", position_id=gbp, cfg=cfg)
+
+    from api.limiter import reset as reset_limiter
+    from api.main import create_app
+
+    reset_limiter()
+    client = TestClient(create_app())
+    res = client.post(
+        "/paper/order",
+        json={"pair": "EURUSD", "side": "CLOSE", "position_id": by["brief"]["id"]},
+    )
+    assert res.status_code == 200
+    assert [row["pair"] for row in portfolio_payload(cfg, sync=False, now=T0)["open"]] == ["GBPUSD"]
+    # Omitted id still closes the champion book on that pair.
+    gone = client.post("/paper/order", json={"pair": "GBPUSD", "side": "CLOSE"})
+    assert gone.status_code == 200
+    assert portfolio_payload(cfg, sync=False, now=T0)["open"] == []
+
+
 def test_auto_exception_is_an_api_error_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     store = tmp_path / "paper.json"
     cfg = _cfg(store)

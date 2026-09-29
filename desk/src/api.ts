@@ -237,10 +237,16 @@ export const api = {
         ...(active ? { active } : {}),
       }),
     }),
-  paperOrder: (pair: string, side: string, size?: number, interval?: string) =>
+  paperOrder: (pair: string, side: string, size?: number, interval?: string, positionId?: string) =>
     request<{ ok: boolean; message: string; paper: PaperState }>("/paper/order", {
       method: "POST",
-      body: JSON.stringify({ pair, side, size: size ?? null, interval: interval || null }),
+      body: JSON.stringify({
+        pair,
+        side,
+        size: size ?? null,
+        interval: interval || null,
+        ...(positionId ? { position_id: positionId } : {}),
+      }),
     }),
   pipeline: (pair: string, fetchBars: boolean) =>
     request<{ ok: boolean; failed: string | null; steps: { step: string; ok: boolean; log: string }[] }>(
@@ -275,7 +281,9 @@ export const api = {
     const q = params.toString();
     return request<CalendarFeed>(`/calendar${q ? `?${q}` : ""}`, { cache: "no-store" });
   },
-  portfolio: () => request<PortfolioFeed>("/portfolio", { cache: "no-store" }),
+  /** ``sync`` false reads the journal and does not run the auto step. */
+  portfolio: (sync = true) =>
+    request<PortfolioFeed>(sync ? "/portfolio" : "/portfolio?sync=false", { cache: "no-store" }),
   setAutoPaper: (body: {
     enabled?: boolean;
     max_opens_per_hour?: number;

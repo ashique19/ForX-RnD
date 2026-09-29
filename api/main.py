@@ -67,6 +67,8 @@ class PaperOrderBody(BaseModel):
     side: str = Field(..., min_length=1)
     size: float | None = None
     interval: str | None = None
+    # Optional. CLOSE of one open book. Omitted CLOSE still uses the champion book.
+    position_id: str | None = None
 
 
 class RefreshTarget(BaseModel):
@@ -338,7 +340,13 @@ def create_app() -> FastAPI:
     @app.post("/paper/order")
     def post_paper_order(body: PaperOrderBody) -> dict:
         try:
-            return paper_order(body.pair, body.side, size=body.size, interval=body.interval)
+            return paper_order(
+                body.pair,
+                body.side,
+                size=body.size,
+                interval=body.interval,
+                position_id=body.position_id,
+            )
         except PaperBlocked as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (BrokerError, WatchlistError) as exc:

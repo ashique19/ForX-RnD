@@ -501,6 +501,9 @@ export function App() {
                 stop={levels?.stop ?? null}
                 target={levels?.target ?? null}
                 busy={refreshing}
+                closeInterval={rowTf}
+                refreshKey={tick}
+                onPositionsChanged={() => setTick((n) => n + 1)}
               />
             </div>
             <WatchlistModal
