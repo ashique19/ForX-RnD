@@ -48,8 +48,10 @@ export function ModelBuildStrip({
   const championTitle = [active?.champion?.honest_note, champion].filter(Boolean).join(" — ");
   const tone = toneOf(status);
 
+  const tip = [reason, gateNote, championTitle].filter(Boolean).join(" — ");
+
   return (
-    <div className={`model-build ${tone}`} role="status" aria-live="polite" title={reason}>
+    <div className={`model-build ${tone}`} role="status" aria-live="polite" title={tip || reason}>
       <span className="tag">Model</span>
       <span className="model-type">{modelType}</span>
       <span className="sep" aria-hidden="true">
@@ -71,7 +73,7 @@ export function ModelBuildStrip({
         aria-busy={busy}
         title="Run the champion/challenger retrain gate for this Active pair. Walk-forward can take several minutes. Not automatic, and not a live edge."
       >
-        {busy ? "Running gate…" : "Run retrain gate"}
+        {busy ? "Running…" : "Retrain gate"}
       </button>
       <button
         className="btn sm icon model-dismiss"
