@@ -2,17 +2,80 @@
 
 import type { Bar } from "./types";
 
+const RESEARCH =
+  " Research overlay only - not a Buy/Sell signal and unused by gates.";
+
 export const PATTERN_DEFS = [
-  { id: "engulfing", label: "Engulfing", title: "Bullish/bearish engulfing (2 bars)" },
-  { id: "doji", label: "Doji", title: "Doji (small body vs range)" },
-  { id: "hammer", label: "Hammer", title: "Hammer (long lower wick)" },
-  { id: "shooting_star", label: "Shooting star", title: "Shooting star (long upper wick)" },
-  { id: "inside_bar", label: "Inside bar", title: "Inside bar (range inside prior bar)" },
-  { id: "head_shoulders", label: "H&S", title: "Head and shoulders (visible window)" },
-  { id: "inv_head_shoulders", label: "Inv H&S", title: "Inverse head and shoulders" },
-  { id: "double_top", label: "Double top", title: "Double top (two similar highs)" },
-  { id: "double_bottom", label: "Double bottom", title: "Double bottom (two similar lows)" },
-  { id: "triangle", label: "Triangle", title: "Simple converging triangle / squeeze" },
+  {
+    id: "engulfing",
+    label: "Engulfing",
+    title:
+      "Engulfing: 2-bar reverse where the second body covers the first. Strength: clear shift after a swing. Weakness: common in chop; needs context. Pros: simple, directional. Cons: many false flips in ranges." +
+      RESEARCH,
+  },
+  {
+    id: "doji",
+    label: "Doji",
+    title:
+      "Doji: tiny body vs range - buyers/sellers roughly even. Strength: hesitation at extremes. Weakness: very frequent mid-trend. Pros: flags indecision. Cons: not directional alone; easy to over-read." +
+      RESEARCH,
+  },
+  {
+    id: "hammer",
+    label: "Hammer",
+    title:
+      "Hammer: long lower wick, small body near highs (rejection of lower prices). Strength: better after a decline. Weakness: looks similar mid-range. Pros: clear visual rejection. Cons: needs confirmation; fails in strong downtrends." +
+      RESEARCH,
+  },
+  {
+    id: "shooting_star",
+    label: "Shooting star",
+    title:
+      "Shooting star: long upper wick, small body near lows (rejection of higher prices). Strength: better after a rally. Weakness: noise on thin sessions. Pros: mirrors hammer upside. Cons: needs follow-through; weak alone." +
+      RESEARCH,
+  },
+  {
+    id: "inside_bar",
+    label: "Inside bar",
+    title:
+      "Inside bar: range fully inside the prior bar (compression). Strength: coiled move before break. Weakness: many nested insides do nothing. Pros: marks contraction. Cons: breakout direction unknown; fake breaks common." +
+      RESEARCH,
+  },
+  {
+    id: "head_shoulders",
+    label: "H&S",
+    title:
+      "Head & shoulders: three peaks, middle highest - classic topping sketch. Strength: when shoulders similar and neckline breaks. Weakness: rarely clean on FX; window-dependent. Pros: widely recognized structure. Cons: hindsight-heavy; late when confirmed." +
+      RESEARCH,
+  },
+  {
+    id: "inv_head_shoulders",
+    label: "Inv H&S",
+    title:
+      "Inverse H&S: three troughs, middle lowest - classic basing sketch. Strength: similar shoulders + neckline reclaim. Weakness: noisy on lower TFs. Pros: mirrors H&S for bottoms. Cons: late confirmation; many lookalikes fail." +
+      RESEARCH,
+  },
+  {
+    id: "double_top",
+    label: "Double top",
+    title:
+      "Double top: two similar highs with a pullback between - failed retest higher. Strength: clearer with equal peaks + lower mid. Weakness: 'almost equal' noise. Pros: simple failed-break idea. Cons: early calls; trend often resumes." +
+      RESEARCH,
+  },
+  {
+    id: "double_bottom",
+    label: "Double bottom",
+    title:
+      "Double bottom: two similar lows with a bounce between - failed retest lower. Strength: clearer with equal lows + higher mid. Weakness: same noise as double top. Pros: simple support retest. Cons: early calls; needs reclaim confirmation." +
+      RESEARCH,
+  },
+  {
+    id: "triangle",
+    label: "Triangle",
+    title:
+      "Triangle / squeeze: highs and lows converging (volatility contraction). Strength: energy for a later expansion. Weakness: direction unknown; can drift. Pros: flags compression. Cons: breakouts fake out; not a trade call." +
+      RESEARCH,
+  },
 ] as const;
 
 export type PatternId = (typeof PATTERN_DEFS)[number]["id"];
@@ -98,7 +161,7 @@ function lowerWick(bar: Bar): number {
 
 type Pivot = { i: number; price: number; time: number };
 
-/** Local extrema on a short lookback — cheap, visible-window only. */
+/** Local extrema on a short lookback - cheap, visible-window only. */
 function pivots(bars: Bar[], left = 3, right = 3): { highs: Pivot[]; lows: Pivot[] } {
   const highs: Pivot[] = [];
   const lows: Pivot[] = [];
