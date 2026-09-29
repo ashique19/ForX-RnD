@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_PATTERN_FILTERS, DEFAULT_PATTERN_PREFS, PATTERN_DEFS, detectPatterns, type PatternFilters } from "./patterns.ts";
 import type { Bar } from "./types.ts";
@@ -91,3 +91,16 @@ test("detects double top and head-and-shoulders on synthetic swings", () => {
     JSON.stringify(hits.map((h) => h.id)),
   );
 });
+
+test("pattern filter tooltips explain meaning and stay research-only", () => {
+  for (const def of PATTERN_DEFS) {
+    assert.ok(def.title && def.title.length > 40, def.id);
+    assert.match(def.title, /Research overlay only/i, def.id);
+    assert.match(def.title, /not a Buy\/Sell/i, def.id);
+    assert.match(def.title, /Strength:/i, def.id);
+    assert.match(def.title, /Weakness:/i, def.id);
+    assert.match(def.title, /Pros:/i, def.id);
+    assert.match(def.title, /Cons:/i, def.id);
+  }
+});
+

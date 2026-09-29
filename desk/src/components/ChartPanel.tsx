@@ -219,7 +219,7 @@ export function ChartPanel({
         {patternPrefs.show && (
           <div className="pattern-filters">
             {PATTERN_DEFS.map((item) => (
-              <label key={item.id} className="pattern-filter" title={item.title}>
+              <label key={item.id} className="pattern-filter" title={item.title} aria-label={`${item.label}: ${item.title}`}>
                 <input
                   type="checkbox"
                   checked={patternPrefs.filters[item.id]}
@@ -233,7 +233,7 @@ export function ChartPanel({
                 {item.label}
               </label>
             ))}
-            <span className="pattern-note">Research overlay · not a signal</span>
+            <span className="pattern-note">Research overlay - not a signal</span>
           </div>
         )}
       </div>
@@ -247,7 +247,7 @@ export function ChartPanel({
               <span className="item" key={item.label}>
                 <span className="swatch" style={{ background: item.color }} />
                 {item.label}
-                {cold ? " · warming" : ""}
+                {cold ? " Â· warming" : ""}
               </span>
             );
           })}
@@ -263,3 +263,4 @@ export function ChartPanel({
     </section>
   );
 }
+
