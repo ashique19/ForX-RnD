@@ -51,21 +51,22 @@ vol_window: 20
 vol_long_window: 100
 range_windows: [20, 50]
 
+# Production pin: EURUSD_xgboost.joblib is the intentional base 36-feature champion; extras stay off until an explicit retrain.
 # Extra causal features (the committed EURUSD joblib ignores unknown columns
 # until you retrain). Not walk-forward screened as an upgrade â€” HTF/cross-pair
 # did not earn a default *filter*. pandas-ta / FRED packs stay **off**: EURUSD
 # WF showed a ~0.01 PF tick for TA (noise, still PF<1) and a null FRED pack
 # with a slightly worse drawdown. See reports/experiments.md.
 feature_extras:
-  higher_tf: ["4h"]        # resample of the SAME pair CSV; add "1D" if wanted; [] disables
+  higher_tf: []        # resample of the SAME pair CSV; add "1D" if wanted; [] disables
   htf_sma_window: 20
   htf_slope_span: 3        # HTF bars for SMA slope
-  session_overlap: true    # sess_ldn_ny feature (Londonâˆ©NY); not a trade filter
-  vol_percentile_window: 100  # 0 = off; causal min-max position of short vol
+  session_overlap: false    # sess_ldn_ny feature (Londonâˆ©NY); not a trade filter
+  vol_percentile_window: 0  # 0 = off; causal min-max position of short vol
   cross_pair: null         # e.g. GBPUSD; skipped if that CSV is missing (EURUSD-only safe)
   # Causal S/R style levels (SERIAL step 9). As-of only; requires retrain for joblib match.
   levels:
-    enabled: true
+    enabled: false
     prior_day: true          # dist to prior completed day H/L/C + range_pos
     week_open: true          # dist to current week open (first bar of W-SUN period)
     swing_order: 3           # fractal confirm bars each side (causal: right side known)
@@ -75,7 +76,7 @@ feature_extras:
   # ratios: retracements of [min(SH,SL), max(SH,SL)]. extensions: stub distances beyond range.
   # fail_soft_fill when swings sparse / range=0 (schema stable; no crash).
   fib:
-    enabled: true
+    enabled: false
     swing_order: 3
     ratios: [0.236, 0.382, 0.5, 0.618]
     extensions: [1.272, 1.618]

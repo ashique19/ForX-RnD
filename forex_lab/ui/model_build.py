@@ -171,6 +171,10 @@ def _schema_detail(
         bits.append(f"meta model_type is {saved_type}, config model.type is {current_type}")
 
     expected = set(expected_model_features(cfg, pair, volume_varies=volume_varies))
+    # Legacy pinned joblibs may predate the always-emitted vol_z column; scoring selects
+    # the saved columns, so do not reject that compatible legacy artifact.
+    if "vol_z" not in saved_features:
+        expected.discard("vol_z")
     # A model may list vol_z only when the CSV that trained it had volume.
     # If this cache is flat, vol_z in the joblib is a column scoring cannot build.
     saved = set(saved_features)
