@@ -92,6 +92,37 @@ export type PatternHit = {
   id: PatternId;
   side: "bull" | "bear" | "neutral";
   label: string;
+  /** Structural strokes. Absent for single-candle marks. */
+  strokes?: PatternStroke[];
+};
+
+/** A pivot used to draw a pattern (bar time + wick price). */
+export type PatternPoint = {
+  time: number;
+  price: number;
+  role: string;
+};
+
+export type PatternStroke = {
+  points: PatternPoint[];
+  /** Neckline is dashed; the price path is solid. */
+  style: "solid" | "dashed";
+};
+
+export type PatternSegment = {
+  id: PatternId;
+  side: PatternHit["side"];
+  label: string;
+  style: PatternStroke["style"];
+  points: PatternPoint[];
+};
+
+export type PatternLabel = {
+  time: number;
+  price: number;
+  text: string;
+  side: PatternHit["side"];
+  kind: "name" | "neck";
 };
 
 export const DEFAULT_PATTERN_FILTERS: PatternFilters = {
@@ -183,6 +214,132 @@ function near(a: number, b: number, tol: number): boolean {
   return Math.abs(a - b) <= tol;
 }
 
+function anchor(pivot: Pivot, role: string): PatternPoint {
+  return { time: pivot.time, price: pivot.price, role };
+}
+
+/** Lowest or highest wick strictly between two pivot indexes. */
+function extremeBetween(bars: Bar[], from: number, to: number, mode: "high" | "low"): Pivot | null {
+  if (to - from < 2) return null;
+  let best = from + 1;
+  for (let i = from + 2; i < to; i++) {
+    const better = mode === "low" ? bars[i].low < bars[best].low : bars[i].high > bars[best].high;
+    if (better) best = i;
+  }
+  const bar = bars[best];
+  return { i: best, price: mode === "low" ? bar.low : bar.high, time: bar.time };
+}
+
+const STROKE_COLOR: Record<PatternHit["side"], string> = {
+  bull: "#067647",
+  bear: "#b42318",
+  neutral: "#5925dc",
+};
+
+export function patternStrokeColor(side: PatternHit["side"]): string {
+  return STROKE_COLOR[side];
+}
+
+/**
+ * Head-and-shoulders (or inverse) as a zigzag through the five anchors,
+ * plus a neckline between the two neck points. Same shape for both sides;
+ * the caller passes highs or lows.
+ */
+export function headShouldersStrokes(anchors: {
+  leftShoulder: PatternPoint;
+  neckLeft: PatternPoint;
+  head: PatternPoint;
+  neckRight: PatternPoint;
+  rightShoulder: PatternPoint;
+}): PatternStroke[] {
+  const { leftShoulder, neckLeft, head, neckRight, rightShoulder } = anchors;
+  return [
+    { style: "solid", points: [leftShoulder, neckLeft, head, neckRight, rightShoulder] },
+    { style: "dashed", points: [neckLeft, neckRight] },
+  ];
+}
+
+/** Double top / bottom: path through the two extremes and the neck, plus a horizontal neckline. */
+export function doubleSwingStrokes(first: PatternPoint, neck: PatternPoint, second: PatternPoint): PatternStroke[] {
+  return [
+    { style: "solid", points: [first, neck, second] },
+    {
+      style: "dashed",
+      points: [
+        { time: first.time, price: neck.price, role: "neck_left" },
+        { time: second.time, price: neck.price, role: "neck_right" },
+      ],
+    },
+  ];
+}
+
+/** Converging boundaries. Each side is the polyline of that side's pivots. */
+export function triangleStrokes(upper: PatternPoint[], lower: PatternPoint[]): PatternStroke[] {
+  const strokes: PatternStroke[] = [];
+  if (upper.length >= 2) strokes.push({ style: "solid", points: upper });
+  if (lower.length >= 2) strokes.push({ style: "solid", points: lower });
+  return strokes;
+}
+
+/** Drawable segments for hits that have structural points. Candle hits contribute nothing. */
+export function overlaySegments(hits: readonly PatternHit[]): PatternSegment[] {
+  const segments: PatternSegment[] = [];
+  for (const hit of hits) {
+    for (const stroke of hit.strokes ?? []) {
+      if (stroke.points.length < 2) continue;
+      segments.push({
+        id: hit.id,
+        side: hit.side,
+        label: hit.label,
+        style: stroke.style,
+        points: stroke.points,
+      });
+    }
+  }
+  return segments;
+}
+
+function labelAnchor(hit: PatternHit): PatternPoint | null {
+  const strokes = hit.strokes;
+  if (!strokes?.length || !strokes[0].points.length) return null;
+  const points = strokes.flatMap((stroke) => stroke.points);
+  return (
+    points.find((point) => point.role === "head") ??
+    points.find((point) => point.role === "second_top" || point.role === "second_bottom") ??
+    strokes[0].points[strokes[0].points.length - 1]
+  );
+}
+
+/** One name label per structural hit, plus "neck" when a neckline exists. */
+export function overlayLabels(hits: readonly PatternHit[]): PatternLabel[] {
+  const labels: PatternLabel[] = [];
+  for (const hit of hits) {
+    const anchorPoint = labelAnchor(hit);
+    if (!anchorPoint) continue;
+    labels.push({
+      time: anchorPoint.time,
+      price: anchorPoint.price,
+      text: hit.label,
+      side: hit.side,
+      kind: "name",
+    });
+    const neck = hit.strokes?.find((stroke) => stroke.style === "dashed" && stroke.points.length >= 2);
+    if (!neck) continue;
+    const at = neck.points[neck.points.length - 1];
+    labels.push({ time: at.time, price: at.price, text: "neck", side: hit.side, kind: "neck" });
+  }
+  return labels;
+}
+
+/** Short status for the draw control. Research copy only. */
+export function summarizePatternHits(hits: readonly PatternHit[]): string {
+  if (!hits.length) return "None on this chart";
+  const lines = hits.filter((hit) => (hit.strokes?.length ?? 0) > 0).length;
+  if (!lines) return `${hits.length} identified`;
+  const noun = lines === 1 ? "line pattern" : "line patterns";
+  return `${hits.length} identified · ${lines} ${noun}`;
+}
+
 function detectCandles(bars: Bar[], filters: PatternFilters, out: PatternHit[]): void {
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
@@ -232,7 +389,9 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
   const span = Math.max(...prices) - Math.min(...prices);
   const tol = Math.max(span * 0.015, range(bars[bars.length - 1]) * 0.5);
 
+  // One drawing per structure: the latest match in this window, so it sits on recent price.
   if (filters.double_top && highs.length >= 2) {
+    let last: PatternHit | null = null;
     for (let a = 0; a < highs.length - 1; a++) {
       for (let b = a + 1; b < highs.length; b++) {
         const p1 = highs[a];
@@ -241,14 +400,20 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
         if (!near(p1.price, p2.price, tol)) continue;
         const midLow = lows.find((l) => l.i > p1.i && l.i < p2.i);
         if (!midLow || midLow.price >= Math.min(p1.price, p2.price) - tol * 0.2) continue;
-        out.push({ time: p2.time, id: "double_top", side: "bear", label: "Double top" });
-        a = highs.length;
-        break;
+        last = {
+          time: p2.time,
+          id: "double_top",
+          side: "bear",
+          label: "Double top",
+          strokes: doubleSwingStrokes(anchor(p1, "first_top"), anchor(midLow, "neck"), anchor(p2, "second_top")),
+        };
       }
     }
+    if (last) out.push(last);
   }
 
   if (filters.double_bottom && lows.length >= 2) {
+    let last: PatternHit | null = null;
     for (let a = 0; a < lows.length - 1; a++) {
       for (let b = a + 1; b < lows.length; b++) {
         const p1 = lows[a];
@@ -257,14 +422,24 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
         if (!near(p1.price, p2.price, tol)) continue;
         const midHigh = highs.find((h) => h.i > p1.i && h.i < p2.i);
         if (!midHigh || midHigh.price <= Math.max(p1.price, p2.price) + tol * 0.2) continue;
-        out.push({ time: p2.time, id: "double_bottom", side: "bull", label: "Double bot." });
-        a = lows.length;
-        break;
+        last = {
+          time: p2.time,
+          id: "double_bottom",
+          side: "bull",
+          label: "Double bot.",
+          strokes: doubleSwingStrokes(
+            anchor(p1, "first_bottom"),
+            anchor(midHigh, "neck"),
+            anchor(p2, "second_bottom"),
+          ),
+        };
       }
     }
+    if (last) out.push(last);
   }
 
   if (filters.head_shoulders && highs.length >= 3) {
+    let last: PatternHit | null = null;
     for (let i = 0; i < highs.length - 2; i++) {
       const l = highs[i];
       const h = highs[i + 1];
@@ -272,12 +447,28 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
       if (!(h.price > l.price && h.price > r.price)) continue;
       if (!near(l.price, r.price, tol * 1.5)) continue;
       if (h.price - Math.max(l.price, r.price) < tol * 0.5) continue;
-      out.push({ time: r.time, id: "head_shoulders", side: "bear", label: "H&S" });
-      break;
+      const neckLeft = extremeBetween(bars, l.i, h.i, "low");
+      const neckRight = extremeBetween(bars, h.i, r.i, "low");
+      if (!neckLeft || !neckRight) continue;
+      last = {
+        time: r.time,
+        id: "head_shoulders",
+        side: "bear",
+        label: "H&S",
+        strokes: headShouldersStrokes({
+          leftShoulder: anchor(l, "left_shoulder"),
+          neckLeft: anchor(neckLeft, "neck_left"),
+          head: anchor(h, "head"),
+          neckRight: anchor(neckRight, "neck_right"),
+          rightShoulder: anchor(r, "right_shoulder"),
+        }),
+      };
     }
+    if (last) out.push(last);
   }
 
   if (filters.inv_head_shoulders && lows.length >= 3) {
+    let last: PatternHit | null = null;
     for (let i = 0; i < lows.length - 2; i++) {
       const l = lows[i];
       const h = lows[i + 1];
@@ -285,9 +476,24 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
       if (!(h.price < l.price && h.price < r.price)) continue;
       if (!near(l.price, r.price, tol * 1.5)) continue;
       if (Math.min(l.price, r.price) - h.price < tol * 0.5) continue;
-      out.push({ time: r.time, id: "inv_head_shoulders", side: "bull", label: "Inv H&S" });
-      break;
+      const neckLeft = extremeBetween(bars, l.i, h.i, "high");
+      const neckRight = extremeBetween(bars, h.i, r.i, "high");
+      if (!neckLeft || !neckRight) continue;
+      last = {
+        time: r.time,
+        id: "inv_head_shoulders",
+        side: "bull",
+        label: "Inv H&S",
+        strokes: headShouldersStrokes({
+          leftShoulder: anchor(l, "left_shoulder"),
+          neckLeft: anchor(neckLeft, "neck_left"),
+          head: anchor(h, "head"),
+          neckRight: anchor(neckRight, "neck_right"),
+          rightShoulder: anchor(r, "right_shoulder"),
+        }),
+      };
     }
+    if (last) out.push(last);
   }
 
   if (filters.triangle && highs.length >= 3 && lows.length >= 3) {
@@ -306,8 +512,22 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
       const converging = lastWidth > 0 && firstWidth > 0 && lastWidth < firstWidth * 0.72;
       const opposing = hiSlope < 0 && loSlope > 0;
       if (converging && (opposing || Math.abs(hiSlope) + Math.abs(loSlope) > 0)) {
-        const t = bars[bars.length - 1].time;
-        out.push({ time: t, id: "triangle", side: "neutral", label: "Triangle" });
+        const upper = recentHighs.map((pivot, index) =>
+          anchor(pivot, index === 0 ? "upper_start" : index === recentHighs.length - 1 ? "upper_end" : `upper_${index}`),
+        );
+        const lower = recentLows.map((pivot, index) =>
+          anchor(pivot, index === 0 ? "lower_start" : index === recentLows.length - 1 ? "lower_end" : `lower_${index}`),
+        );
+        const strokes = triangleStrokes(upper, lower);
+        if (strokes.length) {
+          out.push({
+            time: bars[bars.length - 1].time,
+            id: "triangle",
+            side: "neutral",
+            label: "Triangle",
+            strokes,
+          });
+        }
       }
     }
   }

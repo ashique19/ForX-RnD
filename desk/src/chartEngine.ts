@@ -16,6 +16,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { PatternOverlayPrimitive } from "./patternOverlay";
 import type { PatternHit } from "./patterns";
 import type { Bar, IndicatorSeries } from "./types";
 
@@ -129,6 +130,7 @@ export class DeskChart {
   private chart: IChartApi;
   private candle: ISeriesApi<"Candlestick">;
   private patternMarkers: { setMarkers: (markers: SeriesMarker<Time>[]) => void } | null = null;
+  private patternOverlay: PatternOverlayPrimitive | null = null;
   private volume: ISeriesApi<"Histogram">;
   private overlays = new Map<string, ISeriesApi<"Line">>();
   private oscLines = new Map<string, ISeriesApi<"Line">>();
@@ -194,6 +196,10 @@ export class DeskChart {
   destroy() {
     this.alive = false;
     if (this.tagFrame) cancelAnimationFrame(this.tagFrame);
+    if (this.patternOverlay) {
+      this.candle.detachPrimitive(this.patternOverlay);
+      this.patternOverlay = null;
+    }
     this.chart.remove();
   }
 
@@ -235,6 +241,7 @@ export class DeskChart {
       })),
     );
     this.syncPatternMarkers(input.patterns ?? []);
+    this.syncPatternOverlay(input.patterns ?? []);
     this.syncLevels(input.stop, input.target);
     this.syncOverlays(bars, indicators, toggles, format);
     this.syncOscillators(bars, indicators, toggles, precision);
@@ -533,18 +540,29 @@ export class DeskChart {
       plugin = createSeriesMarkers(this.candle, []);
       this.patternMarkers = plugin;
     }
-    const markers: SeriesMarker<Time>[] = hits.map((hit) => {
+    // Multi-point patterns are drawn as lines. Candle patterns stay as markers.
+    const markers: SeriesMarker<Time>[] = [];
+    for (const hit of hits) {
+      if (hit.strokes?.length) continue;
       const bull = hit.side === "bull";
       const bear = hit.side === "bear";
-      return {
+      markers.push({
         time: hit.time as UTCTimestamp,
         position: bull ? "belowBar" : "aboveBar",
         shape: bull ? "arrowUp" : bear ? "arrowDown" : "circle",
         color: bull ? "#12b76a" : bear ? "#f04438" : "#667085",
         text: hit.label,
-      };
-    });
+      });
+    }
     plugin.setMarkers(markers);
+  }
+
+  private syncPatternOverlay(hits: PatternHit[]) {
+    if (!this.patternOverlay) {
+      this.patternOverlay = new PatternOverlayPrimitive();
+      this.candle.attachPrimitive(this.patternOverlay);
+    }
+    this.patternOverlay.setHits(hits);
   }
 
   private paintTags() {
