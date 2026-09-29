@@ -108,6 +108,7 @@ ASSET_ALLOW = (
     "GBPJPY",
     "XAUUSD",
     "XAGUSD",
+    "BTCUSD",  # crypto via yfinance (BTC-USD); not Dukascopy
 )
 PROXIMITY_PIPS = 6.0
 LIVE_SIGNALS = frozenset({"BUY", "SELL"})

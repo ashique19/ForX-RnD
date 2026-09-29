@@ -5,3 +5,5 @@ interval: null
 active: EURUSD
 pairs:
 - EURUSD
+- USDJPY
+- BTCUSD

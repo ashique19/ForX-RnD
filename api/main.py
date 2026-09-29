@@ -6,6 +6,8 @@ Streamlit (`streamlit run streamlit_app.py`, port 8501) is unchanged.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query
@@ -38,6 +40,7 @@ from api.deskdata import (
 from api.learnings import MAX_LIMIT, learnings_payload
 from api.paperdesk import PaperBlocked, paper_order, portfolio_payload, set_auto_settings
 from api.replayjob import ReplayBusy, ReplayJobError, get_job, job_file, latest_replay, start_pull, start_replay
+from api.gapfill import start_gapfill, stop_gapfill, status as gapfill_status
 from api.strategies import STRATEGY_IDS
 from forex_lab.ui.model_build import model_build_status
 from forex_lab.ui.pipeline import run_retrain
@@ -119,11 +122,23 @@ class PaperAutoBody(BaseModel):
     champion: str | None = None
 
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Idle history/tip gap filler. Skips while a manual pull/Replay holds the lock."""
+    start_gapfill()
+    try:
+        yield
+    finally:
+        stop_gapfill()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="ForX Decision API",
         version=api_version,
         description="JSON for the Decision desk. Research only — no live orders.",
+        lifespan=_lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -149,6 +164,12 @@ def create_app() -> FastAPI:
     def get_assets() -> dict:
         return assets_payload()
 
+    @app.get("/gapfill/status")
+    def get_gapfill_status() -> dict:
+        """Background idle gap-filler status (history/tip). Not a broker feed."""
+        return gapfill_status()
+
+    
     @app.get("/watchlist")
     def get_watchlist() -> dict:
         return watchlist_json()
@@ -215,7 +236,7 @@ def create_app() -> FastAPI:
     def post_model_retrain(pair: str, dry_run: bool = Query(default=False)) -> dict:
         """Explicit champion/challenger gate. Not called on a timer.
 
-        Walk-forward can take several minutes. Research only — not a live edge.
+        Walk-forward can take several minutes. Research only â€” not a live edge.
         """
         try:
             symbol = normalize_pair(pair)
@@ -419,3 +440,4 @@ def _job_download(job_id: str, name: str, media: str) -> FileResponse:
 
 
 app = create_app()
+

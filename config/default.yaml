@@ -6,6 +6,7 @@ pairs:
   USDJPY: "USDJPY=X"
   AUDUSD: "AUDUSD=X"
   USDCAD: "USDCAD=X"
+  BTCUSD: "BTC-USD"  # crypto; yfinance only (no Dukascopy)
 
 # OHLCV defaults
 interval: "1h"
