@@ -13,6 +13,7 @@ import {
   detectPatterns,
   loadPatternPrefs,
   savePatternPrefs,
+  summarizePatternHits,
   type PatternPrefs,
 } from "../patterns";
 import { RefreshIcon } from "./SignalBrief";
@@ -62,6 +63,10 @@ const LEGEND: { toggle?: ToggleKey; color: string; label: string; key?: keyof In
   { toggle: "bb", color: "#98a2b3", label: "BB 20,2", key: "bb_mid" },
 ];
 
+function selectedPatternCount(filters: PatternPrefs["filters"]): number {
+  return PATTERN_DEFS.reduce((count, def) => count + (filters[def.id] ? 1 : 0), 0);
+}
+
 function initialPatternPrefs(): PatternPrefs {
   if (typeof window === "undefined") {
     return { ...DEFAULT_PATTERN_PREFS, filters: { ...DEFAULT_PATTERN_PREFS.filters } };
@@ -106,6 +111,13 @@ export function ChartPanel({
     if (!patternPrefs.show || !bars.length) return [];
     return detectPatterns(bars, patternPrefs.filters);
   }, [bars, patternPrefs.show, patternPrefs.filters]);
+  const selectedPatterns = selectedPatternCount(patternPrefs.filters);
+  const canDrawPatterns = bars.length > 0 && selectedPatterns > 0;
+  const drawTitle = !bars.length
+    ? "No bars on this chart yet"
+    : selectedPatterns === 0
+      ? "Select at least one pattern filter"
+      : "Identify and draw the checked pattern types on this chart. Research overlay only — not a Buy/Sell signal.";
 
   useEffect(() => {
     savePatternPrefs(patternPrefs);
@@ -216,6 +228,19 @@ export function ChartPanel({
           />
           Show patterns
         </label>
+        <button
+          className={patternPrefs.show ? "btn sm pattern-draw" : "btn sm primary pattern-draw"}
+          type="button"
+          title={drawTitle}
+          aria-label="Draw selected patterns"
+          disabled={!canDrawPatterns}
+          onClick={() => setPatternPrefs((cur) => (cur.show ? cur : { ...cur, show: true }))}
+        >
+          Draw selected
+        </button>
+        <span className="pattern-count" aria-live="polite">
+          {patternPrefs.show ? summarizePatternHits(patternHits) : ""}
+        </span>
         {patternPrefs.show && (
           <div className="pattern-filters">
             {PATTERN_DEFS.map((item) => (
