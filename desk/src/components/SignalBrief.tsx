@@ -384,7 +384,6 @@ export function SignalBrief({
   calendarStale = false,
   advice = [],
   briefReady = false,
-  onRefresh,
   onOrder,
   busy,
 }: {
@@ -408,7 +407,8 @@ export function SignalBrief({
   calendarStale?: boolean;
   advice?: AdviceCard[];
   briefReady?: boolean;
-  onRefresh: () => void;
+  /** @deprecated Collapsed strip opens the modal; use FreshnessStrip Update now. */
+  onRefresh?: () => void;
   onOrder: (side: "BUY" | "SELL" | "CLOSE", size: number) => Promise<void>;
   busy: boolean;
 }) {
@@ -456,7 +456,6 @@ export function SignalBrief({
   const open = paper?.position ?? null;
   const canOpen = Boolean(paper?.allowed) && !open && !busy;
   const focus = focusSuggestion(hourly, daily, chartInterval);
-  const collapsedReason = failureReason(focus);
   const submit = (side: "BUY" | "SELL" | "CLOSE") => {
     setOrderError("");
     const fallback = side === "CLOSE" ? "Paper close failed" : "Paper order failed";
@@ -464,8 +463,6 @@ export function SignalBrief({
       setOrderError(err instanceof Error ? err.message : fallback);
     });
   };
-  const gateNote = !open ? paper?.block_reason ?? "" : "";
-  const collapsedNote = open || toast || orderError || gateNote;
   const pairLabel = pair.trim();
   const collapsedTitle = collapsedBriefTitle(pairLabel, bias, confidence, rawSignal);
   const caution = advice.find((card) => card.severity === "warn" || card.severity === "caution");
@@ -526,7 +523,7 @@ export function SignalBrief({
 
   return (
     <>
-      <section className="panel brief is-collapsed">
+      <section className="panel brief is-collapsed" aria-label="Signal brief">
         <div className="panel-hd">
           <h2
             className="brief-pair brief-open-title"
@@ -545,19 +542,6 @@ export function SignalBrief({
           </h2>
           <BriefMetrics suggestion={focus} chartInterval={chartInterval} />
           <span className="spacer" />
-          <PaperActions
-            canOpen={canOpen}
-            open={open}
-            busy={busy}
-            size={size}
-            blockReason={paper?.block_reason ?? ""}
-            onSize={setSize}
-            onSubmit={submit}
-            onBlocked={setOrderError}
-          />
-          <button className={`btn sm icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onRefresh}>
-            <RefreshIcon />
-          </button>
           <button
             ref={openButtonRef}
             className="btn sm icon panel-toggle brief-toggle"
@@ -572,35 +556,6 @@ export function SignalBrief({
             <Chevron open={false} />
           </button>
         </div>
-        {collapsedReason ? <div className="gap-reason brief-gap" role="status">{collapsedReason}</div> : null}
-        <div className={nextEvent?.warn || calendarStale ? "next-event is-warn" : "next-event"} role="status">
-          <span className="lbl">Next event</span>
-          {!briefReady ? (
-            <span className="quiet">Loading calendar…</span>
-          ) : nextEvent ? (
-            <>
-              <span className={nextEvent.warn ? "chip warn" : "chip"}>{chip}</span>
-              <span className="when">{nextEvent.when_dhaka || "time n/a"}</span>
-              <span className="impact">{nextEvent.impact}</span>
-              {caution ? <span className="action">{caution.title}</span> : null}
-              {calendarStale ? <span className="stale">stale cache</span> : null}
-            </>
-          ) : (
-            <span className="quiet">{calendarNote || "No high-impact event for this pair in the window."}</span>
-          )}
-        </div>
-        {collapsedNote ? (
-          <div className="brief-collapsed-note">
-            {open && (
-              <span className="paper-pos">
-                Paper {open.side} {open.size} @ {open.entry_price}
-              </span>
-            )}
-            {toast && <span className="paper-toast">{toast}</span>}
-            {orderError && <span className="paper-note">{orderError}</span>}
-            {gateNote && <span className="paper-note">{gateNote}</span>}
-          </div>
-        ) : null}
       </section>
       {modalOpen
         ? createPortal(

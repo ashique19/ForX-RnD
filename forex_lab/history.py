@@ -998,7 +998,16 @@ def _merge(existing: pd.DataFrame, fresh: pd.DataFrame) -> pd.DataFrame:
     if not parts:
         return _empty_bars()
     out = pd.concat(parts)
+    coalesced_vol = None
+    if "Volume" in out.columns:
+        vol = pd.to_numeric(out["Volume"], errors="coerce")
+        # Later positive volume wins per stamp; never let a trailing 0 wipe a prior >0.
+        last_pos = vol.where(vol > 0).groupby(level=0).last()
+        last_any = vol.groupby(level=0).last()
+        coalesced_vol = last_pos.fillna(last_any)
     out = out[~out.index.duplicated(keep="last")].sort_index()
+    if coalesced_vol is not None:
+        out["Volume"] = coalesced_vol.reindex(out.index).fillna(0.0)
     out.index.name = "Datetime"
     return out
 

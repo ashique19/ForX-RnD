@@ -367,12 +367,12 @@ def _align_live_volume_to_model(
     *,
     existing: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Keep denser OHLC; keep real volume only when joblib already has ``vol_z``.
+    """Keep denser OHLC; flatten volume when joblib lacks `vol_z`.
 
-    Dukascopy tick counts make Volume vary. That flips Decision schema to
-    expect ``vol_z``. Until a matching retrain persists ``vol_z``, flatten
-    volume so the Model strip does not report a schema mismatch. yfinance
-    fallback stays flat either way.
+    Dukascopy tick counts make Volume vary and can flip Decision schema to
+    expect `vol_z`. Until a matching retrain persists `vol_z`, flatten
+    volume so Decision schema stays matched. When joblib already has
+    `vol_z`, keep real tick volume. Never invent synthetic OHLC here.
     """
     if frame is None or frame.empty or "Volume" not in frame.columns:
         return frame
@@ -382,6 +382,7 @@ def _align_live_volume_to_model(
     flat = _flat_volume_value(existing)
     out["Volume"] = flat
     return out
+
 
 
 def _merge_live_ohlcv_parts(parts: list[pd.DataFrame]) -> pd.DataFrame:

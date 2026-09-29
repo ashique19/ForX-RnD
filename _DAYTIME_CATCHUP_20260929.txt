@@ -1,0 +1,17 @@
+﻿# ForX daytime catch-up note — 2026-09-29 Asia/Dhaka
+
+## Done this session
+- Killed stalled Dukascopy hole PIDs 11416/11556 (confirmed hole job).
+- EURUSD H1 hole fill soft-stopped: Dukascopy HTTP 503 sustained; HistData empty. Hole ~9661 FX hours remain in 2022-02→2024-09. Existing history 61974 bars 2015-01-01→2026-09-28. Volume-safe `_merge` patched.
+- USDJPY history backfill: DEFERRED (same Dukascopy 503).
+- BTCUSD (BTC-USD) added to watchlist + ASSET_ALLOW + config ticker. Active kept EURUSD. History via yfinance (NOT Dukascopy): 1h=15237 bars (2025-01-01→2026-09-29; yf 730d cap), 1d=4290 bars (2015-01-01→2026-09-29).
+- Desk idle gap-filler wired: `api/gapfill.py` + FastAPI lifespan in `api/main.py` (`/gapfill/status`). Skips when manual pull/Replay lock held; one pair/chunk; volume-safe merge; BTCUSD uses yfinance path.
+- Daytime champion Replay: SKIPPED — EURUSD H1 hole not complete (503). Challenger/paper floors skipped.
+
+## Overnight 12:30
+- Pause overnight idle batch for tonight so it does not double-run with this catch-up (parent may also pause).
+- RESUME overnight cron AFTER desk comes back up and Dukascopy recovers. Priority then: gapfill + EURUSD hole remainder → USDJPY Dukascopy backfill → optional Replay if hole closed.
+- Soft-stop on UPS/outage / sustained 503.
+
+## Leftovers
+- EURUSD hole ~9661 hours; USDJPY no data/history yet; gapfill inactive until API restart with new main.py.

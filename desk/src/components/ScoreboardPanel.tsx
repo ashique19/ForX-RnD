@@ -53,7 +53,7 @@ export function ScoreboardPanel({
   const reasons = (job.promotion?.reasons || []).map((item) => item.trim()).filter(Boolean).join(" · ");
   const chart = showChart && job.report?.equity_png ? `${job.report.equity_png}?t=${job.job_id}` : null;
   const note = (advisory || job.advisory || REPLAY_ADVISORY).trim();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(!collapsible);
   const bodyId = useId();
   const collapsed = collapsible && !expanded;
 
@@ -96,7 +96,7 @@ export function ScoreboardPanel({
             title="Dismiss last scoreboard"
             onClick={onDismiss}
           >
-            <span aria-hidden="true">x</span>
+            <span aria-hidden="true">×</span>
           </button>
         ) : null}
       </div>

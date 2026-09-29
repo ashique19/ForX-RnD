@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_PATTERN_FILTERS, PATTERN_DEFS, detectPatterns, type PatternFilters } from "./patterns.ts";
+import { DEFAULT_PATTERN_FILTERS, DEFAULT_PATTERN_PREFS, PATTERN_DEFS, detectPatterns, type PatternFilters } from "./patterns.ts";
 import type { Bar } from "./types.ts";
 
 function bar(time: number, o: number, h: number, l: number, c: number): Bar {
@@ -8,6 +8,11 @@ function bar(time: number, o: number, h: number, l: number, c: number): Bar {
 }
 
 const allOn: PatternFilters = { ...DEFAULT_PATTERN_FILTERS };
+
+
+test("Show patterns defaults off for Decision chart", () => {
+  assert.equal(DEFAULT_PATTERN_PREFS.show, false);
+});
 
 test("pattern filter checklist covers candles and structures", () => {
   const ids = PATTERN_DEFS.map((d) => d.id);
