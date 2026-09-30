@@ -1604,6 +1604,51 @@
     }
     .add-pop input { width: 92px; text-transform: uppercase; }
     .chart-canvas { flex: 1; min-height: 320px; position: relative; }
+
+    /* Tip-edge open-position dots: keep lines, hide wide axis labels; label on hover only. */
+    .pos-level-dot {
+      position: absolute;
+      z-index: 5;
+      width: 8px;
+      height: 8px;
+      margin: 0;
+      padding: 0;
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.25);
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+      pointer-events: auto;
+      background: #1570ef;
+    }
+    .pos-level-dot:hover,
+    .pos-level-dot:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(16, 24, 40, 0.35);
+    }
+    .pos-level-tip {
+      display: none;
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      white-space: nowrap;
+      padding: 3px 7px;
+      border-radius: 4px;
+      background: rgba(16, 24, 40, 0.92);
+      color: #f9fafb;
+      font-size: 11px;
+      font-weight: 500;
+      font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      line-height: 1.3;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(16, 24, 40, 0.2);
+    }
+    .pos-level-dot:hover .pos-level-tip,
+    .pos-level-dot:focus-visible .pos-level-tip {
+      display: block;
+    }
+
     .pos-pop-layer {
       position: absolute;
       inset: 0;

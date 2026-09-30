@@ -367,17 +367,23 @@ def _align_live_volume_to_model(
     *,
     existing: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Keep denser OHLC; flatten volume when joblib lacks `vol_z`.
+    """Keep denser OHLC; keep real volume when present or when joblib has ``vol_z``.
 
-    Dukascopy tick counts make Volume vary and can flip Decision schema to
-    expect `vol_z`. Until a matching retrain persists `vol_z`, flatten
-    volume so Decision schema stays matched. When joblib already has
-    `vol_z`, keep real tick volume. Never invent synthetic OHLC here.
+    Dukascopy tick counts make Volume vary. That can flip Decision schema to
+    expect ``vol_z``. Until a matching retrain persists ``vol_z``, flatten
+    volume **only when the merged frame has no positive volume** (typical
+    yfinance_1m path). Never clobber denser Dukascopy / history tick volume
+    with a flat 0 taken from an all-zero cache mode. Features always emit
+    ``vol_z`` (fail-soft 0.0 when flat); model_build already drops ``vol_z``
+    from expected features when the pinned joblib lacks it.
     """
     if frame is None or frame.empty or "Volume" not in frame.columns:
         return frame
     out = frame.copy()
     if _joblib_has_vol_z(pair, cfg, interval):
+        return out
+    cur = pd.to_numeric(out["Volume"], errors="coerce")
+    if (cur.fillna(0.0) > 0).any():
         return out
     flat = _flat_volume_value(existing)
     out["Volume"] = flat
@@ -553,8 +559,8 @@ def try_dukascopy_refresh(
     # Require an actual denser contribution; otherwise fall through to 1h yfinance.
     if not used_duka and not used_m1:
         return None, duka_err or m1_err or "dukascopy empty"
-    # Prefer denser OHLC + real volume when joblib has vol_z; otherwise flatten
-    # volume so Decision schema stays matched until a catch-up Train.
+    # Prefer denser OHLC + real volume when present (or joblib has vol_z).
+    # Flatten only when the merged frame is all-zero volume (yfinance FX path).
     df = _align_live_volume_to_model(df, pair, cfg, iv, existing=existing)
     df.to_csv(out_path)
     source = SOURCE_DUKASCOPY if used_duka else SOURCE_YFINANCE_M1

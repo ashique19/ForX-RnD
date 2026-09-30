@@ -156,6 +156,9 @@ export class DeskChart {
   private positionLines: IPriceLine[] = [];
   private positionKey = "\0";
   private positionHits: PositionHit[] = [];
+  /** Titles kept off the price-line axis; painted as tip dots + hover tooltips. */
+  private positionDotMeta: { price: number; title: string; color: string; positionId: string }[] = [];
+  private positionPrecision = 5;
   /** Set by the desk. A click on an open-position line or marker reports that id. */
   onPositionPick: ((pick: PositionPick | null) => void) | null = null;
   private viewKey = "";
@@ -216,6 +219,9 @@ export class DeskChart {
     this.alive = false;
     this.chart.unsubscribeClick(this.onChartClick);
     if (this.tagFrame) cancelAnimationFrame(this.tagFrame);
+    this.positionDotMeta = [];
+    const pane0 = this.chart.panes()[0]?.getHTMLElement();
+    pane0?.querySelectorAll(":scope > .pos-level-dot").forEach((el) => el.remove());
     if (this.patternOverlay) {
       this.candle.detachPrimitive(this.patternOverlay);
       this.patternOverlay = null;
@@ -263,6 +269,7 @@ export class DeskChart {
     this.syncPatternMarkers(input.patterns ?? []);
     this.syncPatternOverlay(input.patterns ?? []);
     this.syncLevels(input.stop, input.target);
+    this.positionPrecision = precision;
     this.syncPositionOverlay(input.positions);
     this.flushMarkers();
     this.syncOverlays(bars, indicators, toggles, format);
@@ -279,9 +286,13 @@ export class DeskChart {
     }
     this.barKey = barKey;
     this.paintTags();
+    this.paintPositionDots();
     if (this.tagFrame) cancelAnimationFrame(this.tagFrame);
     this.tagFrame = requestAnimationFrame(() => {
-      if (this.alive) this.paintTags();
+      if (this.alive) {
+        this.paintTags();
+        this.paintPositionDots();
+      }
     });
   }
 
@@ -570,20 +581,30 @@ export class DeskChart {
   private syncPositionOverlay(drawn: DrawnPositions | undefined) {
     const view = drawn ?? { lines: [], markers: [], hits: [] };
     this.positionHits = view.hits;
+    // Small dots only — full labels live in tip-dot hover tooltips (not chart text boxes).
     this.positionMarkerList = view.markers.map((marker) => ({
       time: marker.time as UTCTimestamp,
       position: "atPriceMiddle",
       price: marker.price,
-      shape: "square",
+      shape: "circle",
       color: marker.color,
       id: marker.objectId,
-      text: marker.text,
-      size: 2,
+      text: "",
+      size: 1,
+    }));
+    this.positionDotMeta = view.lines.map((line) => ({
+      price: line.price,
+      title: line.title,
+      color: line.color,
+      positionId: line.positionId,
     }));
     const key = view.lines
       .map((line) => `${line.objectId}@${line.price}|${line.title}|${line.color}|${line.style}`)
       .join(";");
-    if (key === this.positionKey) return;
+    if (key === this.positionKey) {
+      this.paintPositionDots();
+      return;
+    }
     this.positionKey = key;
     for (const line of this.positionLines) {
       try {
@@ -592,6 +613,7 @@ export class DeskChart {
         /* series already removed */
       }
     }
+    // Keep horizontal lines; hide wide axis title boxes that cover tip candles.
     this.positionLines = view.lines.map((line) =>
       this.candle.createPriceLine({
         id: line.objectId,
@@ -599,10 +621,54 @@ export class DeskChart {
         color: line.color,
         lineWidth: line.width,
         lineStyle: line.style === "dotted" ? LineStyle.Dotted : LineStyle.Solid,
-        axisLabelVisible: true,
-        title: line.title,
+        axisLabelVisible: false,
+        title: "",
       }),
     );
+    this.paintPositionDots();
+  }
+
+  /** Tiny tip-edge dots for open entry/SL/TP; full label text only on hover. */
+  private paintPositionDots() {
+    const panes = this.chart.panes();
+    const host = panes[0]?.getHTMLElement();
+    if (!host) return;
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    host.querySelectorAll(":scope > .pos-level-dot").forEach((el) => el.remove());
+    const meta = this.positionDotMeta;
+    if (!meta.length) return;
+    const width = host.clientWidth;
+    const digits = Math.max(0, Math.min(8, Math.round(this.positionPrecision)));
+    for (const row of meta) {
+      const y = this.candle.priceToCoordinate(row.price);
+      if (y == null || !Number.isFinite(y)) continue;
+      const px = row.price.toFixed(digits);
+      const label = `${row.title} ${px}`;
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "pos-level-dot";
+      dot.style.background = row.color;
+      dot.style.top = `${y}px`;
+      dot.style.left = `${Math.max(0, width - 14)}px`;
+      dot.dataset.positionId = row.positionId;
+      dot.setAttribute("aria-label", label);
+      const tip = document.createElement("span");
+      tip.className = "pos-level-tip";
+      tip.textContent = label;
+      dot.appendChild(tip);
+      dot.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (!this.onPositionPick) return;
+        const rect = host.getBoundingClientRect();
+        this.onPositionPick({
+          id: row.positionId,
+          x: ev.clientX - rect.left,
+          y: ev.clientY - rect.top,
+        });
+      });
+      host.appendChild(dot);
+    }
   }
 
   private flushMarkers() {

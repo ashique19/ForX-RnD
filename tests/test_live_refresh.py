@@ -156,10 +156,15 @@ def test_try_live_refresh_reason_chains_both_failures(tmp_path: Path, monkeypatc
     assert "yfinance rate limited" in reason
 
 
-def test_dense_write_flattens_volume_when_joblib_lacks_vol_z(
+def test_dense_write_keeps_positive_volume_when_joblib_lacks_vol_z(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Dukascopy tick volume must not flip schema before a vol_z retrain."""
+    """Positive Dukascopy volume must survive even when joblib lacks vol_z.
+
+    Schema is safe: features always emit vol_z (fail-soft); model_build drops
+    vol_z from expected when the pinned joblib does not list it. Flattening
+    only applies when the merged frame is all-zero (yfinance FX path).
+    """
     cfg = _cfg(tmp_path)
     existing = _seed_cache(cfg)
     # Flat volume like yfinance.
@@ -195,10 +200,8 @@ def test_dense_write_flattens_volume_when_joblib_lacks_vol_z(
     )
     monkeypatch.setattr("forex_lab.data._joblib_has_vol_z", lambda *a, **k: False)
 
-    # Call align path through ensure via a thin wrapper that uses our _duka
     from forex_lab.data import try_live_refresh, load_cached_ohlcv
 
-    # Re-bind try_live_refresh internals: patch try_dukascopy at module used by try_live
     frame, source, reason = ensure_interval_ohlcv(
         "EURUSD", cfg, "1h", incremental=True, refresh=try_live_refresh
     )
@@ -208,8 +211,25 @@ def test_dense_write_flattens_volume_when_joblib_lacks_vol_z(
     assert float(frame["Close"].iloc[-1]) == pytest.approx(float(denser["Close"].iloc[-1]))
     cached = load_cached_ohlcv("EURUSD", cfg, "1h")
     assert cached is not None
-    assert float(cached["Volume"].std() or 0.0) == pytest.approx(0.0)
-    assert float(cached["Volume"].iloc[-1]) == pytest.approx(0.0)
+    assert float(cached["Volume"].iloc[-1]) == pytest.approx(4321.0)
+    assert float(cached["Volume"].std() or 0.0) > 0.0
+
+
+def test_dense_write_flattens_only_when_merged_volume_all_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """All-zero yfinance volume still flattens when joblib lacks vol_z."""
+    cfg = _cfg(tmp_path)
+    existing = _seed_cache(cfg)
+    existing["Volume"] = 0.0
+    existing.to_csv(Path(cfg["paths"]["data_dir"]) / "EURUSD_1h.csv")
+
+    monkeypatch.setattr("forex_lab.data._joblib_has_vol_z", lambda *a, **k: False)
+    from forex_lab.data import _align_live_volume_to_model
+
+    out = _align_live_volume_to_model(existing, "EURUSD", cfg, "1h", existing=existing)
+    assert float(out["Volume"].std() or 0.0) == pytest.approx(0.0)
+    assert float(out["Volume"].iloc[-1]) == pytest.approx(0.0)
 
 
 def test_dense_write_keeps_volume_when_joblib_has_vol_z(
