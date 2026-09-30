@@ -437,9 +437,9 @@ replay:
   # Meta-label secondary filter (NEW family). enabled=false = bit-identical.
   # HOLD when atr_pctile<=atr_max AND confidence<conf_max. Does NOT raise min_confidence.
   meta_label:
-    enabled: true            # STRIKE 3/3 asia_loud_weak challenger vs pin 2cee7e71 (revert after)
+    enabled: false           # FREEZE meta-label family 3/3 - asia_loud_weak FAIL vs pin 2cee7e71
     mode: rule
-    rule: asia_loud_weak     # quiet_weak|asia_quiet|conf_atr|asia_loud_weak
+    rule: asia_loud_weak     # last challenger; quiet_weak|asia_quiet|conf_atr|asia_loud_weak
     atr_max: 0.20
     atr_min: 0.60            # asia_loud_weak HIGH atr
     conf_max: 0.70           # asia_loud_weak / quiet_weak

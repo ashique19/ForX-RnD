@@ -1,0 +1,46 @@
+﻿# EURUSD meta-label asia_loud_weak Replay - meta-label family strike 3/3 FREEZE - 2026-10-01 05:44 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+Prior FREEZEs stay closed (measured-intel 3/3; NEW track purge/size 3/3).
+
+## Hypothesis
+Opposite of asia_quiet: HOLD when Asia-only AND atr_pctile>=0.60 AND confidence<0.70
+(Asia spike-chop / weak conviction). conf_atr product rejected offline (return collapse).
+See `_HYPOTHESIS_20261001_EURUSD_META_LABEL_S3.txt`.
+
+## Change
+- Code: `forex_lab/meta_label.py` rule asia_loud_weak + atr_min; tests extended.
+- Challenger yaml: meta_label.enabled=true rule=asia_loud_weak atr_min=0.60 conf_max=0.70 for this job only.
+- **REVERTED** enabled=false after fail. Module/params kept (family FREEZE - do not re-challenge).
+
+## Job
+- job_id: **c2f9814b619a4c4bac72a291e0bef8b8**
+- started: ~2026-10-01 05:38 Asia/Dhaka
+- finished: **2026-10-01 05:44 Asia/Dhaka**
+- EURUSD 1h; start=2015-01-01; pull=false; min_confidence=0.60; costs ON; meta_label asia_loud_weak ON
+
+## Before / after vs pin
+
+| | pin 2cee7e71 | asia_loud_weak c2f9814b | delta |
+|---|---:|---:|---:|
+| Champ PF | **1.989** | 1.972 | **-0.017** |
+| WR | 64.8% | 64.5% | -0.3pp |
+| n | 3791 | 3745 | **-46** (filter fired lightly) |
+| max DD | **-10.00%** | -10.75% | worse |
+| total_return | **11.17** | 10.62 | **-0.55** |
+| SMA PF | 0.883 | 0.883 | flat |
+
+Within-job logistic challenger PF 1.949 / ret 9.97 / DD -6.6% — advisory only; promote null for live.
+
+## Verdict: FAIL adoption — **FREEZE meta-label family 3/3**
+- Not a clean dominate: PF down, return down, DD worse.
+- Offline least-bad opposite rule did not transfer to full Replay pin-dominate.
+- conf_atr was correctly skipped (offline return-destructive).
+- **REVERTED** `replay.meta_label.enabled=false`.
+- **FREEZE**: no further meta-label strikes (quiet_weak / asia_quiet / asia_loud_weak / conf_atr).
+- No promote. Live conf 0.60 untouched.
+- Do NOT re-enable purge/size_by_conf/trend_regime/conf 0.65.
+
+## Strike log (meta-label family) — CLOSED
+1. quiet_weak atr<=0.15 & conf<0.65 `d5908db6` - DD regression; PF flat; barely fired
+2. asia_quiet Asia-only atr<=0.20 `df06b935` - return -2.98; DD micro-worse; PF +0.018
+3. asia_loud_weak Asia-only atr>=0.60 & conf<0.70 `c2f9814b` - PF/ret/DD all miss pin — FREEZE

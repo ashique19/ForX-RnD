@@ -1,0 +1,4 @@
+﻿# FREEZE - meta-label family 3/3 - 2026-10-01 05:45 Asia/Dhaka
+Family CLOSED. Do not open another meta-label / secondary HOLD-filter strike on EURUSD vs pin 2cee7e71
+without a NEW written family (different mechanism). Last challenger asia_loud_weak `c2f9814b` FAIL.
+enabled=false. Live min_confidence=0.60. No promote.
