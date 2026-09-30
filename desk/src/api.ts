@@ -262,6 +262,8 @@ export const api = {
     ),
   learnings: (limit = 50) =>
     request<LearningsFeed>(`/learnings?limit=${limit}`, { cache: "no-store" }),
+  pinScoreboard: () =>
+    request<any>("/pins/scoreboard", { cache: "no-store" }),
   /** Cached weekly feed. ``force`` retries the live JSON; the auto timer must not set it. */
   historyPull: (body: { pair: string; interval?: string; start?: string; end?: string | null }) =>
     request<ReplayJob>("/history/pull", { method: "POST", body: JSON.stringify(body) }),

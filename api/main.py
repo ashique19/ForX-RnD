@@ -226,6 +226,13 @@ def create_app() -> FastAPI:
     def get_learnings(limit: int = Query(default=50, ge=1, le=MAX_LIMIT)) -> dict:
         return learnings_payload(limit=limit)
 
+    @app.get("/pins/scoreboard")
+    def get_pins_scoreboard() -> dict:
+        """Research-only multi-pair after-cost pin rank. Promote=null."""
+        from api.deskdata import pin_scoreboard_payload
+        return pin_scoreboard_payload()
+
+
     @app.get("/model/status/{pair}")
     def get_model_status(pair: str) -> dict:
         """Core AI joblib status for one pair. Does not train or retrain."""

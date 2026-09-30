@@ -3,6 +3,7 @@
 No model rewrite. STALE and MISSING stay visible; prices are never invented.
 """
 from __future__ import annotations
+import json
 
 import os
 from datetime import datetime, timedelta, timezone
@@ -1574,3 +1575,18 @@ def run_pipeline_pair(
     if rc != 0:
         return {"ok": False, "pair": symbol, "failed": "signals", "steps": steps}
     return {"ok": True, "pair": symbol, "failed": None, "steps": steps}
+
+
+def pin_scoreboard_payload(cfg: dict | None = None) -> dict:
+    """Research multi-pair pin rank table. Promote always null."""
+    from forex_lab.paths import project_root
+
+    _ = cfg  # reserved for future workspace scoping
+    path = project_root() / "data" / "pin_scoreboard.json"
+    if not path.exists():
+        return {"as_of_dhaka": None, "disclaimer": "pin scoreboard missing", "rows": [], "freezes": {}}
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception as exc:
+        return {"as_of_dhaka": None, "disclaimer": f"pin scoreboard unreadable: {exc}", "rows": [], "freezes": {}}
+

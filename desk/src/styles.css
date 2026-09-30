@@ -2242,3 +2242,32 @@
       line-height: 1;
       flex-shrink: 0;
     }
+
+
+/* Research multi-pair pin rank (promote=null) */
+.pin-rank {
+  margin: 0 0 0.75rem;
+}
+.pin-rank-disclaimer,
+.pin-rank-freezes {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin: 0.25rem 0 0.5rem;
+}
+.pin-rank-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.pin-rank-table th,
+.pin-rank-table td {
+  padding: 0.28rem 0.4rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.pin-rank-table tr.is-active {
+  background: rgba(80, 160, 255, 0.08);
+}
+.pin-rank .tag.active {
+  outline: 1px solid rgba(80, 160, 255, 0.5);
+}

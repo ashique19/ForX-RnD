@@ -1,0 +1,44 @@
+# EURUSD meta-label quiet_weak Replay - meta-label family strike 1/3 - 2026-10-01 05:17 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+Prior FREEZEs stay closed (measured-intel 3/3; NEW track purge/size 3/3).
+
+## Hypothesis
+Secondary filter HOLD when atr_pctile<=0.15 AND confidence<0.65 (quiet+weak).
+Features family analyzed offline (spread/ATR/session/conf); logistic AUC~0.55 and tree non-transfer;
+pre-registered mild rule was least-bad post-hoc. See _HYPOTHESIS_20261001_EURUSD_META_LABEL.txt.
+
+## Change
+- Code: orex_lab/meta_label.py + wired in 
+eplay._predict_window / report line.
+- Challenger yaml: meta_label.enabled=true for this job only.
+- **REVERTED** enabled=false after fail. Module/params kept.
+
+## Job
+- job_id: **d5908db64eea41a2bfb59db6c01c92ae**
+- started: ~2026-10-01 05:10 Asia/Dhaka
+- finished: **2026-10-01 05:16 Asia/Dhaka**
+- EURUSD 1h; start=2015-01-01; pull=false; min_confidence=0.60; costs ON; meta_label quiet_weak ON
+
+## Before / after vs pin
+
+| | pin 2cee7e71. | meta quiet_weak d5908db6. | delta |
+|---|---:|---:|---:|
+| Champ PF | **1.989** | 1.989 | ~0 |
+| WR | 64.8% | 64.6% | -0.2pp |
+| n | 3791 | 3767 | -24 |
+| max DD | **-10.00%** | -10.77% | worse |
+| total_return | 11.17 | **11.21** | +0.04 |
+| SMA PF | 0.883 | 0.883 | flat |
+
+Within-job: challenger logistic PF 1.957 / return 10.38 / DD -6.6% — advisory only; promote null.
+
+## Verdict: FAIL adoption (meta-label family **strike 1 of 3**)
+- Not a clean dominate: PF flat, return micro-up, **DD worse**.
+- Filter barely fired (n -24 only) — offline post-hoc overstated removals (feature/gate path differs from pin-book join).
+- **REVERTED** 
+eplay.meta_label.enabled=false.
+- No promote. Live conf 0.60 untouched.
+- Do NOT re-enable purge/size_by_conf/trend_regime/conf 0.65.
+
+## Strike log (meta-label family)
+1. quiet_weak atr<=0.15 & conf<0.65 d5908db6 - DD regression; PF flat

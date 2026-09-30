@@ -1,0 +1,37 @@
+﻿# Morning autonomy blunt scoreboard - 2026-10-01 ~05:20 Asia/Dhaka
+Commit pending (this note). Machine FREE for weekly gate well before 07:40. **No promote.** Live min_confidence=0.60.
+
+## Landed this window
+
+| item | result | blunt |
+|---|---|---|
+| Meta-label hyp (written first) | done | `_HYPOTHESIS_20261001_EURUSD_META_LABEL.txt` — logistic AUC~0.55; tree non-transfer; no neg-sum buckets |
+| Meta-label Replay quiet_weak `d5908db6` | **FAIL revert** | vs pin `2cee7e71`: PF 1.989≈flat / ret 11.21 (+0.04) / **DD -10.77% worse** / n 3767 (−24). Filter barely fired. |
+| Desk pin-rank UX | landed | `GET /pins/scoreboard` + Learnings-tab `PinRankPanel` from `data/pin_scoreboard.json` |
+| Cross-pair disagreement / BTC pin | **skipped** | No 2nd Replay; leave CPU for weekly gate. Sketch stands. |
+
+## Meta-label family vs EURUSD pin `2cee7e71` (PF 1.989 / ret 11.17 / DD -10%)
+
+| # | challenger | job | PF | return | DD | verdict |
+|---|---|---|---:|---:|---:|---|
+| 1 | quiet_weak atr≤0.15 & conf<0.65 | `d5908db6` | 1.989 | 11.21 | -10.77% | FAIL revert |
+
+Code kept (`forex_lab/meta_label.py`). `replay.meta_label.enabled=false`.
+
+## Standing FREEZEs (unchanged / do not reopen)
+
+- measured-intel 3/3 CLOSED (conf 0.65 / ADX 0.20 / ADX 0.15)
+- NEW track purge/size 3/3 CLOSED — **do not re-enable purge / size_by_conf / trend_regime / conf 0.65 without clean dominate**
+- meta-label 1/3 FAIL — no thr/coef retweak without new written hyp
+
+## Pin rank (research PF only; not deploy)
+
+1. USDJPY 3.04 TRUST → 2. AUDUSD 2.98 → 3. NZDUSD 2.85 → 4. USDCAD 2.74 → 5. GBPUSD 2.60 → 6. EURUSD 1.99 Active
+
+## Explicit non-actions
+- No promote. No live-gate change.
+- size_by_conf.enabled=false; purge_bars=0; trend_regime.enabled=false; meta_label.enabled=false; portfolio_brain.enabled=false.
+- Flag parent: nothing to promote; user decision N/A (no clean win).
+
+## CPU
+Replay done ~05:16. Uvicorn desk/API may need restart to pick `/pins/scoreboard` if not auto-reload. Ready for weekly retrain ~08:04.

@@ -1,0 +1,35 @@
+# Hypothesis - EURUSD meta-label / secondary filter (NEW family)
+Date: 2026-10-01 05:07 Asia/Dhaka
+Pin: cee7e7163134266ad8c2b39234442d8\ (PF 1.989 / ret 11.17 / DD -10.0% / n 3791)
+Prior FREEZEs stay closed (measured-intel 3/3; NEW track purge/size 3/3). This opens a **meta-label** family - not another size-band or conf-floor tweak.
+
+## Idea
+Train a secondary filter on whether the primary BUY/SELL was RIGHT/WRONG.
+Features at entry (causal): spread_pips, atr_pctile (ATR regime), session, confidence.
+Apply as Replay HOLD veto after existing policy gates. Does NOT raise live min_confidence (stays 0.60).
+Does NOT re-enable purge / size_by_conf / trend_regime.
+
+## Offline analysis (pin closed book + history mesh) - written BEFORE Replay
+- LogisticRegression (fit entry < 2020-01-01, class_weight=balanced): OOS AUC ~0.55. Threshold sweeps show classic **PF up / compound return down** (same mode as conf-0.65 and size_by_conf).
+- Depth-3 tree: train-bad leaves do NOT stay bad on 2020+ (distribution shift; veto would delete good OOS trades).
+- Groupby search: **zero** session x conf_bin x atr_bin buckets with n>=40 and negative sumPnL. Primary edge is positive almost everywhere in these features.
+- Mild rule post-hoc (least-bad DD/return tradeoff among tested vetoes):
+  HOLD when \tr_pctile <= 0.15 AND confidence < 0.65  Post-hoc KEEP: n~3366 WR 0.663 PF ~2.12 compound ~11.63 DD proxy ~-8.9% vs pin compound 12.17 / DD -10%.
+  Expected Replay: PF/DD may improve; **return unlikely to dominate**. Clean WIN still requires PF+return+DD all beat pin.
+
+## Pre-registered challenger (frozen before job)
+- eplay.meta_label.enabled=true- \mode: rule- ule: quiet_weak\ => atr_pctile <= 0.15 AND confidence < 0.65
+- Coefficients/ML path kept available but NOT used this job (AUC too weak / non-transfer).
+- Fail-soft if atr_pctile missing on pred.
+
+## Why this rule (not thr on P(win))
+P(win) threshold and bottom-decile veto were either return-destructive or anti-predictive on OOS. Quiet+weak is the only simple rule with material DD help and compound still near pin in post-hoc deletion.
+
+## Protocol
+- ONE costs-on EURUSD Replay vs pin cee7e71\ (start 2015-01-01, pull=false, min_confidence=0.60).
+- Clean WIN = champ PF + total_return + DD all dominate pin -> flag parent, **DO NOT promote**.
+- FAIL = revert enabled=false; document strike 1 on meta-label family.
+- Never re-enable purge/size_by_conf/trend_regime/conf 0.65 from this job.
+
+## Explicit non-goals
+- No live gate change. Promote=null. No portfolio_brain enable.

@@ -19,6 +19,7 @@ import { AlertMessage } from "./components/AlertMessage";
 import { CalendarPanel } from "./components/CalendarPanel";
 import { ChartPanel } from "./components/ChartPanel";
 import { LearningsPanel } from "./components/Learnings";
+import { PinRankPanel } from "./components/PinRankPanel";
 import { Placeholder } from "./components/Placeholder";
 import { PortfolioPanel } from "./components/Portfolio";
 import { SignalBrief } from "./components/SignalBrief";
@@ -389,7 +390,10 @@ export function App() {
       <TopNav mode={mode} onMode={setMode} />
       <main className={deskClass}>
         {mode === "learnings" ? (
-          <LearningsPanel />
+          <>
+            <PinRankPanel />
+            <LearningsPanel />
+          </>
         ) : mode === "calendar" ? (
           <CalendarPanel selected={selected} />
         ) : mode === "paper" ? (
