@@ -1,0 +1,114 @@
+﻿# Portfolio-brain design - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Measured-intel FREEZE (3/3 fails). Design note only - no Buy/Sell model change, no promote, no gate challengers.
+
+## Problem
+Decision desk is **one Active subject** (`config/watchlist.yaml` `active: EURUSD`). Paper auto and Replay pull/train one pair at a time. Watchlist can hold EURUSD / USDJPY / GBPUSD / BTCUSD, and open paper rows on non-Active pairs stay frozen until that pair is Active again (`api/paperdesk.py` auto_tick). That is correct for model focus, but **cross-pair risk is unsupervised**:
+
+- Per-pair `one_position` / "already has an open paper position" only blocks same-symbol re-entry.
+- `max_opens_per_hour` is a per-strategy rolling budget, not a book-wide risk budget.
+- Correlated FX legs (EURUSD + GBPUSD both long-USD shorts; USDJPY long-USD) can stack USD / risk / DD without a portfolio veto.
+- Portfolio panel today is a journal + auto-cap UI (`desk/src/components/Portfolio.tsx`), not a risk brain.
+
+## Non-goals (hard)
+- Do **not** change the Active-pair Buy/Sell model, feature schema, `signals.min_confidence` (0.60), or Replay improve gates.
+- Do **not** train a multi-pair model or add cross_pair features by default.
+- Do **not** promote or rewrite live champion joblibs.
+- Portfolio-brain is a **post-signal risk overlay** on Decision / paper, not a second alpha.
+
+## Placement in the Decision desk (plug-in point)
+Keep the existing pipeline order:
+
+1. Active pair OHLCV + features + champion score -> raw flash BUY/SELL/HOLD
+2. Existing gates (`forex_lab/gates.py`: min_confidence, MTF, event, weekday, ...) -> GateDecision
+3. **NEW: PortfolioBrain.check(open_intent)** -> allow | block | size_scale  (fail-soft)
+4. Advise cards / paper snapshot / auto_open consume the combined decision
+
+The brain never rewrites P(class) or the model flash. It only:
+- may force HOLD / block paper open,
+- may scale `default_size` down,
+- may emit a desk badge ("corr block", "DD budget", "max concurrent").
+
+Manual CLOSE always bypasses the brain (same as freshness blocks opens only).
+
+## Inputs (read-only)
+| Source | Use |
+|---|---|
+| `watchlist.active` + `watchlist.pairs` | Subject vs monitored peers |
+| `data/paper_broker.json` open rows | Concurrent count, sides, sizes, unrealized |
+| Peer mid caches `data/<PAIR>_1h.csv` | Rolling return correlation (causal, last N closed bars) |
+| Config `portfolio_brain:` (new block; default off) | Caps and toggles |
+| Optional: Replay paper equity curve per pair | DD budget baseline (research); live paper equity for desk |
+
+## Policy v0 (concrete numbers - research defaults, tunable)
+All defaults **enabled: false** until an explicit desk enable. Numbers below are the proposed first on-switch.
+
+### 1) Max concurrent opens (desk-wide)
+- `max_concurrent_opens: 2` across all pairs/strategies combined (open status only).
+- Active subject still obeys per-pair one-position.
+- If count >= cap and intent is a new open -> **block** with note `portfolio:max_concurrent`.
+- Rationale: one Active focus + at most one correlated satellite; three FX USD-legs is how DD stacks.
+
+### 2) Correlation veto (same-direction risk)
+- Window: last `corr_bars: 120` H1 log-returns (causal; drop incomplete bar).
+- Peers: other watchlist FX pairs with a live/history cache (skip BTCUSD for FX corr; optional separate crypto bucket later).
+- If `|corr(active, peer)| >= corr_threshold: 0.70` **and** proposed side has the **same USD-risk direction** as an open peer position -> **block** (`portfolio:corr_cluster`).
+- USD-risk direction helper (v0, explicit map, not inferred magic):
+  - Long EURUSD / GBPUSD / AUDUSD = short USD
+  - Long USDJPY / USDCAD = long USD
+  - Invert for SELL.
+- If peer cache missing -> fail-soft **allow** + note (never crash Decision poll).
+
+### 3) Drawdown budget (book-level)
+- Track paper equity mark-to-mid for all open + closed since session start (or rolling 7d).
+- `dd_budget_pct: -0.05` (shallower than research Replay floors; desk practice budget).
+- If current book DD <= budget -> **block new opens** (`portfolio:dd_budget`); exits/CLOSE still allowed.
+- Optional soft mode: `dd_scale: true` scales size by `1 - dd/budget` before hard block at budget.
+
+### 4) Size / notional (optional v0.1)
+- `max_book_units: 2.0` sum of abs(size) across opens.
+- New open size = min(broker.default_size, remaining budget). If remaining < `min_size: 0.25` -> block.
+
+## Config sketch (do not apply yet)
+```yaml
+portfolio_brain:
+  enabled: false          # desk overlay off until accepted
+  fail_soft: true
+  max_concurrent_opens: 2
+  corr_bars: 120
+  corr_threshold: 0.70
+  corr_skip_pairs: [BTCUSD]
+  dd_budget_pct: -0.05
+  dd_scale: false
+  max_book_units: 2.0
+  min_size: 0.25
+  apply_to_paper: true    # block/size paper opens
+  apply_to_flash: true    # force HOLD on Decision flash when blocked
+  apply_to_replay: false  # keep Replay single-pair pure unless explicitly on
+```
+
+## API / desk surface (when implemented)
+- `GET /portfolio/brain` -> {enabled, open_count, book_dd, clusters[], last_block}
+- Decision signal payload gains `portfolio: {allowed, scale, blocked_by[], notes[]}` alongside gates.
+- Portfolio panel: small "Risk brain" strip under auto caps (concurrent used/max, DD used/budget, last veto). Not a second promote control.
+
+## Acceptance criteria
+1. With `enabled: false`, Decision + paper behavior bit-identical to today (no flash/HOLD change, no open blocks from brain).
+2. With `enabled: true` and two opens already (any pairs), a third open intent is blocked; CLOSE still works; model score unchanged.
+3. Open long EURUSD + propose long GBPUSD with rolling corr >= 0.70 -> block `corr_cluster`; propose short GBPUSD (opposite USD risk) -> allow (subject to concurrent/DD).
+4. Missing peer CSV -> allow + fail_soft note; Decision poll never 500s.
+5. Unit tests: corr direction map; concurrent cap; DD hard block; enabled:false noop. No Replay gate / promote tests required for v0.
+6. Docs: one desk tooltip "Portfolio brain does not change Buy/Sell model - risk overlay only."
+
+## Implementation order (later ops; not this turn)
+1. Config block + pure functions in `forex_lab/portfolio_brain.py`
+2. Hook after `evaluate_gates` in desk signal build + `paper_snapshot` / `_open_auto`
+3. Desk badge + Portfolio strip
+4. Enable on paper only behind a desk toggle; keep Replay off
+5. Only after dry paper week: consider `apply_to_flash: true` default
+
+## Out of scope until un-freeze
+- Measured-intel challengers, regime/conf gate flips, full-history Replay for portfolio rules.
+- Multi-Active scoring or auto-rotating Active by portfolio heat.
+
+## Status
+Design accepted for idle ops under FREEZE. No code shipped this turn (stub deferred - design+AC preferred).

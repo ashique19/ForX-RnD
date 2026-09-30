@@ -1,0 +1,52 @@
+﻿# Tip densify / gap ops - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Measured-intel FREEZE. PC-local. No promote. No full-history Replay. No gate/model challengers.
+
+## Jetta Sep probe (this turn)
+| Instrument | Side | /2026/8 | /2026/9 |
+|---|---|---|---|
+| EUR-USD | BID/ASK | 200 | **400 Bad Request** |
+| USD-JPY | BID/ASK | 200 | **400 Bad Request** |
+| GBP-USD | BID/ASK | 200 | **400 Bad Request** |
+
+Sep still unpublished on Jetta. Path used: **live mid (yfinance fetch) + synth BA** from Aug mesh half-spread mean. No classic Dukascopy bi5 (PC SSL dead; prior notes).
+
+## Live refresh
+```
+python -m forex_lab fetch --pair EURUSD|USDJPY|GBPUSD --interval 1h
+```
+| pair | live rows | range (after fetch) |
+|---|---:|---|
+| EURUSD | 12321 | 2024-09-30 20:00 -> **2026-09-30 20:00** |
+| USDJPY | 12254 | 2024-09-30 20:00 -> **2026-09-30 20:00** |
+| GBPUSD | 12323 | 2024-09-30 20:00 -> **2026-09-30 20:00** |
+
+## History tip remesh (body thru 2026-08-31 23:00 Jetta; Sep = live+synth)
+Backups: `data/history/<PAIR>_1h.csv.bak_pre_tipdensify_20261001` (gitignored with history/).
+
+| pair | before rows / end | after rows / end | n_tip | half_spread (Aug mean) | high<low / neg_spread |
+|---|---|---|---:|---:|---|
+| EURUSD | 71941 / 2026-09-30 19:00 | **71935** / **2026-09-30 20:00** | 521 | 0.0000251300 | 0 / 0 |
+| USDJPY | 73215 / 2026-09-30 18:00 | **73223** / **2026-09-30 20:00** | 519 | 0.0035226824 | 0 / 0 |
+| GBPUSD | 73055 / 2026-09-28 08:00 | **73223** / **2026-09-30 20:00** | 521 | 0.0000530769 | 0 / 0 |
+
+Daily remesh: EURUSD 3671, USDJPY 3674, GBPUSD 3673 -> 2026-09-30. meta.source=jetta; tip_note updated (`densify_20261001`). Machine JSON: `_TIP_DENSIFY_RESULTS_20261001.json`.
+
+gaps>72h after remesh: New Year long weekends only (max 75h). Sep gaps>6h: four weekend ~50h gaps per pair (normal Fri->Sun). **No multi-day tip cliffs.**
+
+## GBPUSD 158h tip hole - STATUS: CLOSED
+- Prior (`_GBPUSD_HOLE_FILL_20261001.txt`): cliff **158h** `2026-09-21 09:00 -> 2026-09-27 23:00` caused by **stale/sparse live GBPUSD cache** ending 2026-09-28 08:00 (not a Jetta body hole).
+- This turn: yfinance live fetch restored continuous H1 through that window (Sep20-28 live bars=121; weekend gaps only).
+- After remesh: gaps>72h on GBPUSD = 4 (NY weekends only). The 158h cliff is **gone**. sep21_27_bars=110.
+- Caveat: Sep tip is still **live-mid + synth BA**, not tick-true Jetta. Re-pull when `/2026/9` returns 200; then tip-only remesh (still no full-history Replay unless multi-day real BA replaces synth at scale).
+
+## Replay?
+**SKIP** for all three. Tip densify only; pins stand:
+- EURUSD `2cee7e71...`
+- USDJPY `ef6fe062...`
+- GBPUSD `d6a6f7a6...`
+Promote=null. Live min_confidence=0.60 untouched. trend_regime.enabled=false.
+
+## Constraints honored
+- No promote / no new model/regime/conf challengers / no Replays that change gates
+- Jetta Sep 400 noted; live+synth only
+- History CSVs remain gitignored; notes + EURUSD live demo cache committed as applicable
