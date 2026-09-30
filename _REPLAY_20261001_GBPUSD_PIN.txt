@@ -1,0 +1,35 @@
+﻿# GBPUSD full-history after-cost pin Replay - 2026-10-01 Asia/Dhaka
+STRICT SERIAL step 2. Do NOT promote.
+
+## Pair chosen
+- Prefer **GBPUSD** (live cache existed; no history mesh). Watchlist had EURUSD/USDJPY/BTCUSD — not BTC.
+- Hole fill: `_GBPUSD_HOLE_FILL_20261001.txt` (72702 Jetta + 353 synth Sep tip = **73055** H1; daily 3667)
+
+## Request
+- job_id: **d6a6f7a60036404aabb1e57dd1da8725**
+- started: ~2026-10-01 01:27 Asia/Dhaka
+- finished: **2026-10-01 01:34 Asia/Dhaka**
+- start=2015-01-01; pull=false; min_confidence=0.60; costs on (bid_ask fills); **no promote**
+
+## Result
+- source=jetta; bid_ask=true; rows=**73055**
+- champion PF **2.6011** DD **-2.61%** n=**6149** WR **70.1%**
+- challenger PF **2.5487** DD **-1.97%** n=**5930** WR **69.7%**
+- sma baseline PF **0.822** (sanity: dumb baseline not rich)
+- promote: **null** (challenger did not beat champion on PF/total_return improve gate)
+
+## Cost / pip sanity vs EURUSD / USDJPY
+- pip_size_for_pair: EURUSD=0.0001, **GBPUSD=0.0001**, USDJPY=0.01 (same as EUR for GBP)
+- After-cost pins (costs on, min_conf 0.60):
+  | pair | job | champ PF | WR | n | DD | SMA PF |
+  |---|---|---|---|---|---|---|
+  | EURUSD | 2cee7e71... | ~1.99 | 64.8% | 3791 | -10.0% | ~0.88 |
+  | USDJPY | ef6fe062... | 3.04 | 72.8% | 5694 | -3.3% | 0.85 |
+  | GBPUSD | d6a6f7a6... | 2.60 | 70.1% | 6149 | -2.6% | 0.82 |
+- GBPUSD PF~2.6 sits between EURUSD and USDJPY; driven by high WR (~70%) like USDJPY, not by a pip-unit bug (GBP pip matches EUR).
+- **QA FLAG**: PF still looks rich vs EURUSD~1.99. Same research disclaimer as USDJPY QA (`_QA_USDJPY_PIN_20261001.txt`) — do not treat as deployable edge. Optional morning QA (cost/pip/trade spot-check) before trusting; not blocking this pin note.
+
+## Constraints honored
+- No levels/dxy/fib/pattern gate flips
+- No promote (advisory null only; live champion untouched)
+- Desk left up

@@ -1,0 +1,34 @@
+﻿# EURUSD tip refresh - 2026-10-01 Asia/Dhaka
+STRICT SERIAL step 1. PC-local. Do NOT promote. No full-history Replay (tip-only).
+
+## Before
+- data/history/EURUSD_1h.csv: **71897** rows, 2015-01-01 22:00 -> **2026-09-28 23:00**
+- Backup: EURUSD_1h.csv.bak_pre_tip_20261001
+
+## Jetta probe
+- `/2026/8` BID: HTTP **200** (month published)
+- `/2026/9` BID: HTTP **400** Bad Request (Sep not published yet) — same as USDJPY hole-fill
+
+## Tip path used
+- Live mid+synth BA tip only (Jetta Sep unavailable)
+- Source live: data/EURUSD_1h.csv (yfinance_1m densify tip through 2026-09-30 19:00)
+- Newer bars after mesh tip: **44** (2026-09-29 00:00 -> 2026-09-30 19:00)
+- Synth half_spread = Aug 2026 mesh mean (AskClose-BidClose)/2 = **0.00002513**
+- Bid/Ask O/H/L/C = mid +/- hs; wick sanitize max/min; Volume left as live (trailing zeros OK)
+- Body through 2026-09-28 unchanged (existing BA mesh)
+
+## After
+- H1 rows: **71941** (+44 tip)
+- Range: **2015-01-01 22:00 -> 2026-09-30 19:00**
+- high<low: **0** (mid/bid/ask); neg_spread AskClose<BidClose: **0**
+- Daily remesh: **3671** rows, 2015-01-01 -> 2026-09-30
+- meta.source: jetta; tip_note recorded in EURUSD_1h.meta.json
+
+## Replay?
+- **SKIP**. Tip-only synth (~2 calendar days / 44 H1 bars). Not large enough to move full-history pin. Prior pin 2cee7e71... stands.
+- Re-pull Sep via Jetta when `/2026/9` returns 200; then optional tip-only remesh (still no full Replay unless multi-day real BA replaces synth at scale).
+
+## Constraints honored
+- No levels/dxy/fib/pattern gate flips
+- No promote
+- Desk left up (API health ok)

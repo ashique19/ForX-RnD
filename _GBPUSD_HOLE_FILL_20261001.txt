@@ -1,0 +1,25 @@
+﻿# GBPUSD H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+STRICT SERIAL step 2. Prefer GBPUSD (watchlist had EURUSD/USDJPY/BTCUSD; GBPUSD live cache present, no history mesh). Not BTC.
+
+## Before
+- data/history/GBPUSD_1h.csv: absent (no partial classic mesh)
+- Live data/GBPUSD_1h.csv: 12295 rows, 2024-09-22 23:00 -> 2026-09-28 08:00 (mid-only, stale tip)
+
+## Fill
+- `python -m forex_lab history --pair GBPUSD --interval 1h --start 2015-01-01 --source jetta`
+- Jetta months 2015-01 .. 2026-08 OK -> **72702** bars ending 2026-08-31 23:00
+- Jetta 2026-09: HTTP 400 (silent; bars stayed 72702) — same as EURUSD/USDJPY
+- Tip remesh: live mid OHLC from 2026-09-01 00:00 -> 2026-09-28 08:00 + synth bid/ask from Aug Jetta half-spread mean **0.0000530769**; Volume left as live (mostly 0)
+- Backup pre-tip: GBPUSD_1h.csv.bak_pre_tip_20261001
+
+## After
+- H1 rows: **73055** (72702 Jetta + 353 synth tip)
+- Range: **2015-01-01 22:00 -> 2026-09-28 08:00**
+- high<low: 0 (mid/bid/ask); neg_spread AskClose<BidClose: 0
+- Volume (Jetta body thru Aug): mean ~2433, median 1807, zero_vol 1, non-int 0
+- gaps>72h: 5 — four New Year long weekends (max 73h) + one live-tip hole **158h ending 2026-09-27 23:00** (stale/sparse live GBPUSD cache). Not a multi-month Jetta hole.
+- Daily remesh: **3667** rows, 2015-01-01 -> 2026-09-28
+- meta.source: jetta; tip_note recorded in GBPUSD_1h.meta.json
+
+## Gaps remaining
+- Jetta published history ends 2026-08-31; Sep tip is live-mid + synth BA (not tick-true). Live tip stale vs EURUSD (ends Sep 28 08:00, not Sep 30). Sufficient for full-history after-cost pin Replay; re-pull Sep via Jetta when /2026/9 returns 200; optional live GBPUSD densify to close the 158h tip hole later.
