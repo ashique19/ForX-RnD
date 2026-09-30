@@ -26,3 +26,9 @@ When Active=EURUSD is about to open:
 - Paper week on desk with logging first.
 - Then ONE multi-pair aggregate Replay or paper A/B - not a single-pair pin challenger.
 - No live-gate change without after-cost beat vs pin.
+
+## Paperdesk wire (2026-10-01 ~05:40 Asia/Dhaka)
+- pi/paperdesk.py: _cross_pair_open_check + peer flash collector + paper_snapshot.cross_pair
+- Blocks paper BUY/SELL only when cross_pair_veto.enabled=true (still **false** in default.yaml)
+- Tests: 	ests/test_paperdesk_cross_pair.py (noop / veto / allow)
+- Still NOT in Replay. Still does NOT enable portfolio_brain.

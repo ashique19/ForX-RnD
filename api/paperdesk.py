@@ -48,6 +48,57 @@ class PaperBlocked(RuntimeError):
     """STALE / MISSING / ERROR — open is refused. Close is separate."""
 
 
+
+def _peer_flashes_for_veto(cfg: dict[str, Any], active: str) -> list[dict[str, Any]]:
+    """Best-effort peer flash rows for cross_pair_veto. Fail-soft -> []."""
+    from forex_lab.cross_pair_veto import cross_pair_veto_cfg
+
+    block = cross_pair_veto_cfg(cfg)
+    peers = [str(x).upper() for x in (block.get("peers") or []) if x]
+    out: list[dict[str, Any]] = []
+    if not peers:
+        return out
+    desk = _desk()
+    iv = str(cfg.get("interval") or "1h")
+    for peer in peers:
+        if peer == str(active).upper():
+            continue
+        try:
+            row = desk.build_board_row(peer, cfg, interval=iv, refresh_data=False, regenerate=False)
+        except Exception:
+            continue
+        side = str(getattr(row, "raw_signal", None) or getattr(row, "buy_sell", None) or "").upper()
+        try:
+            conf = float(getattr(row, "confidence", None) or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        out.append({"pair": peer, "side": side, "confidence": conf})
+    return out
+
+
+def _cross_pair_open_check(
+    cfg: dict[str, Any],
+    *,
+    pair: str,
+    side: str,
+) -> Any:
+    """Post-signal cross-pair USD disagreement veto. No-op when enabled=false."""
+    from forex_lab.cross_pair_veto import (
+        cross_pair_veto_enabled,
+        evaluate_cross_pair_veto,
+    )
+
+    if not cross_pair_veto_enabled(cfg):
+        return None
+    peers = _peer_flashes_for_veto(cfg, pair)
+    return evaluate_cross_pair_veto(
+        active_pair=pair,
+        active_side=side,
+        peer_flashes=peers,
+        cfg=cfg,
+    )
+
+
 def _portfolio_open_check(
     broker: Any,
     cfg: dict[str, Any],
@@ -163,12 +214,27 @@ def paper_snapshot(pair: str, cfg: dict[str, Any], row: Any) -> dict[str, Any]:
         portfolio = status_payload(cfg=cfg, opens=opens)
     except Exception:
         portfolio = {"enabled": False}
+    cross_pair = {"enabled": False}
+    try:
+        from forex_lab.cross_pair_veto import cross_pair_veto_cfg, cross_pair_veto_enabled, cross_pair_veto_report_line
+
+        cross_pair = {
+            "enabled": bool(cross_pair_veto_enabled(cfg)),
+            "report": cross_pair_veto_report_line(cfg),
+            "cfg": {
+                "min_peer_conf": float((cross_pair_veto_cfg(cfg).get("min_peer_conf") or 0.7)),
+                "min_disagree_peers": int((cross_pair_veto_cfg(cfg).get("min_disagree_peers") or 2)),
+            },
+        }
+    except Exception:
+        cross_pair = {"enabled": False}
     return {
         "allowed": allowed,
         "block_reason": reason,
         "default_size": size,
         "position": _position_json(pos, cfg),
         "portfolio": portfolio,
+        "cross_pair": cross_pair,
     }
 
 
@@ -252,6 +318,10 @@ def _paper_order_impl(
         raise PaperBlocked(f"Paper BUY/SELL disabled — {tag}")
     if brain is not None and brain.scale < 1.0 and size is None:
         size = float((cfg.get("broker") or {}).get("default_size") or 1.0) * float(brain.scale)
+    xveto = _cross_pair_open_check(cfg, pair=symbol, side=action)
+    if xveto is not None and not xveto.allowed:
+        tag = xveto.blocked_by[0] if xveto.blocked_by else "cross_pair"
+        raise PaperBlocked(f"Paper BUY/SELL disabled — {tag}")
     price, entry_bar = _price_from_cache(symbol, cfg, iv, row)
     if price is None:
         raise BrokerError("no cached price — cannot paper-fill")

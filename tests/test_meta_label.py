@@ -1,4 +1,4 @@
-﻿"""Unit tests for meta-label asia_quiet / conf_atr / atr attach."""
+﻿"""Unit tests for meta-label asia_quiet / asia_loud_weak / conf_atr / atr attach."""
 from __future__ import annotations
 
 import numpy as np
@@ -18,6 +18,7 @@ def _cfg(rule: str, **kwargs):
         "mode": "rule",
         "rule": rule,
         "atr_max": 0.20,
+        "atr_min": 0.60,
         "conf_max": 0.65,
         "product_max": 0.10,
         "atr_window": 100,
@@ -87,3 +88,26 @@ def test_attach_atr_pctile_from_ohlcv():
     out = attach_atr_pctile_for_meta(pred, ohlcv, cfg)
     assert "atr_pctile" in out.columns
     assert out["atr_pctile"].notna().all()
+
+def test_asia_loud_weak_vetoes_asia_high_atr_low_conf():
+    cfg = _cfg("asia_loud_weak", atr_min=0.60, conf_max=0.70)
+    idx = pd.date_range("2020-01-06 01:00", periods=4, freq="h", tz="UTC")  # Asia hours
+    pred = pd.DataFrame(
+        {
+            "pred": [2, 2, 0, 2],
+            "side": ["BUY", "BUY", "SELL", "BUY"],
+            "confidence": [0.55, 0.80, 0.55, 0.55],  # low, high, low, low
+            "atr_pctile": [0.70, 0.70, 0.70, 0.40],  # loud, loud, loud, quiet
+            "sess_asia": [1.0, 1.0, 0.0, 1.0],
+            "sess_london": [0.0, 0.0, 1.0, 0.0],
+            "sess_ny": [0.0, 0.0, 0.0, 0.0],
+        },
+        index=idx,
+    )
+    out = apply_meta_label_to_pred(pred, cfg)
+    # bar0 Asia loud+weak -> veto; bar1 Asia loud+strong conf -> keep;
+    # bar2 London loud+weak -> keep; bar3 Asia quiet+weak -> keep
+    assert list(out["meta_label_block"].astype(int)) == [1, 0, 0, 0]
+    assert int(out.iloc[0]["pred"]) == 1  # HOLD
+    assert int(out.iloc[1]["pred"]) == 2
+    assert int(out.iloc[2]["pred"]) == 0

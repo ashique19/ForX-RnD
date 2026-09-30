@@ -7,6 +7,8 @@ pairs:
   AUDUSD: "AUDUSD=X"
   USDCAD: "USDCAD=X"
   BTCUSD: "BTC-USD"  # crypto; yfinance only (no Dukascopy)
+  EURJPY: "EURJPY=X"  # multi-pair pin track
+  EURGBP: "EURGBP=X"  # multi-pair pin track
 
 # OHLCV defaults
 interval: "1h"
@@ -435,11 +437,12 @@ replay:
   # Meta-label secondary filter (NEW family). enabled=false = bit-identical.
   # HOLD when atr_pctile<=atr_max AND confidence<conf_max. Does NOT raise min_confidence.
   meta_label:
-    enabled: false           # REVERT meta-label strike 2/3 asia_quiet - return lost vs pin 2cee7e71
+    enabled: true            # STRIKE 3/3 asia_loud_weak challenger vs pin 2cee7e71 (revert after)
     mode: rule
-    rule: asia_quiet         # last challenger; quiet_weak|asia_quiet|conf_atr
+    rule: asia_loud_weak     # quiet_weak|asia_quiet|conf_atr|asia_loud_weak
     atr_max: 0.20
-    conf_max: 0.65           # quiet_weak only
+    atr_min: 0.60            # asia_loud_weak HIGH atr
+    conf_max: 0.70           # asia_loud_weak / quiet_weak
     product_max: 0.10        # conf_atr only
     atr_window: 100          # policy-only atr_pctile when feature vp=0
   # step_bars / train_bars / min_train_bars default to walk_forward when omitted

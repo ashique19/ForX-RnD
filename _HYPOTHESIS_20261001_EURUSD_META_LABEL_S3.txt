@@ -1,0 +1,39 @@
+﻿# Hypothesis - EURUSD meta-label strike 3/3 (asia_loud_weak) LAST
+Date: 2026-10-01 05:37 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8` (PF 1.989 / ret 11.17 / DD -10.0% / n 3791)
+Prior: meta-label 1/3 quiet_weak FAIL (`d5908db6`); 2/3 asia_quiet FAIL (`df06b935`, return -2.98).
+FREEZEs stay closed (measured-intel 3/3; purge/size 3/3). Live min_confidence stays 0.60. No promote.
+
+## Why NOT conf_atr this strike
+Offline pin-book join (policy atr_pctile window=100 + open-fill confidence) BEFORE Replay:
+- conf_atr product_max 0.06..0.15 vetoes 598..1367; PF up ~0.12..0.30 but **compound -1.6..-4.4** (same PF-up/return-down mode as asia_quiet / conf-0.65).
+- ldn_ny_only (session strengthen via skip-rest) veto 1329; compound **-5.35** — reject.
+conf_atr kept coded but NOT the challenger for strike 3.
+
+## Idea (OPPOSITE of asia_quiet)
+**asia_loud_weak**: HOLD when Asia-only AND atr_pctile >= atr_min AND confidence < conf_max.
+- asia_quiet skipped thin+dead ATR; this skips thin+**violent** ATR with weak conviction (Asia spike-chop / stop-hunt regime).
+- Overlaps London/NY excluded (same asia-only mask).
+- Offline least-bad among opposite/conf_atr/session options:
+  atr_min=0.60, conf_max=0.70 -> veto ~72; KEEP PF ~2.002 (+0.013) / compound ~10.57 (-0.60) / DD proxy ~-8.8% (better).
+  Classic mild PF/DD help with small return risk — clean WIN still needs PF+return+DD all dominate pin (unlikely; expected FAIL -> FREEZE).
+
+## Explicit non-rules this job
+- Not conf_atr product (offline return-destructive).
+- Not re-tuning asia_quiet / quiet_weak.
+- Not London/NY size strengthen (size_by_conf family FREEZE; ldn_ny_only return-collapse).
+- Not purge / trend_regime / conf 0.65.
+
+## Pre-registered challenger (frozen before job)
+- `replay.meta_label.enabled=true`
+- `rule: asia_loud_weak`
+- `atr_min: 0.60`
+- `conf_max: 0.70`
+- `atr_window: 100` (policy-only attach; vp=0 on pin path)
+- Fail-soft if atr_pctile/confidence missing after attach.
+
+## Protocol
+- ONE costs-on EURUSD Replay vs pin `2cee7e71` (start 2015-01-01, pull=false, min_confidence=0.60).
+- Clean WIN = champ PF + total_return + DD all dominate pin -> flag parent, **DO NOT promote**.
+- FAIL = revert enabled=false; **FREEZE meta-label family 3/3**; document strike 3.
+- Never re-enable purge/size_by_conf/trend_regime/conf 0.65 from this job.

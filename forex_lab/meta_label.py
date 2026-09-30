@@ -8,9 +8,10 @@ Config under `replay.meta_label`:
     meta_label:
       enabled: false
       mode: rule
-      rule: quiet_weak | asia_quiet | conf_atr
+      rule: quiet_weak | asia_quiet | conf_atr | asia_loud_weak
       atr_max: 0.15          # quiet_weak / asia_quiet
-      conf_max: 0.65         # quiet_weak
+      atr_min: 0.60          # asia_loud_weak (HIGH atr)
+      conf_max: 0.65         # quiet_weak / asia_loud_weak
       product_max: 0.10      # conf_atr: confidence * atr_pctile < product_max
       atr_window: 100        # causal atr_pctile when feature_extras.vol_percentile_window=0
 
@@ -27,12 +28,13 @@ RESOLVED_OFF = "off"
 RESOLVED_RULE = "rule"
 
 _MODE_OFF = frozenset({"", "off", "none", "false", "0", "null"})
-_MODE_RULE = frozenset({"rule", "quiet_weak", "asia_quiet", "conf_atr", "filter", "on", "true", "1"})
+_MODE_RULE = frozenset({"rule", "quiet_weak", "asia_quiet", "conf_atr", "asia_loud_weak", "filter", "on", "true", "1"})
 
 _RULE_QUIET_WEAK = "quiet_weak"
 _RULE_ASIA_QUIET = "asia_quiet"
 _RULE_CONF_ATR = "conf_atr"
-_KNOWN_RULES = frozenset({_RULE_QUIET_WEAK, _RULE_ASIA_QUIET, _RULE_CONF_ATR})
+_RULE_ASIA_LOUD_WEAK = "asia_loud_weak"
+_KNOWN_RULES = frozenset({_RULE_QUIET_WEAK, _RULE_ASIA_QUIET, _RULE_CONF_ATR, _RULE_ASIA_LOUD_WEAK})
 
 
 def meta_label_block(cfg: dict[str, Any] | None) -> dict[str, Any]:
@@ -79,6 +81,7 @@ def apply_replay_meta_label(cfg: dict[str, Any]) -> dict[str, Any]:
         rc["meta_label_resolved"] = RESOLVED_OFF
         rc["meta_label_rule"] = ""
         rc["meta_label_atr_max"] = None
+        rc["meta_label_atr_min"] = None
         rc["meta_label_conf_max"] = None
         rc["meta_label_product_max"] = None
         rc["meta_label_atr_window"] = None
@@ -90,6 +93,7 @@ def apply_replay_meta_label(cfg: dict[str, Any]) -> dict[str, Any]:
         rc["meta_label_resolved"] = RESOLVED_OFF
         rc["meta_label_rule"] = ""
         rc["meta_label_atr_max"] = None
+        rc["meta_label_atr_min"] = None
         rc["meta_label_conf_max"] = None
         rc["meta_label_product_max"] = None
         rc["meta_label_atr_window"] = None
@@ -98,6 +102,7 @@ def apply_replay_meta_label(cfg: dict[str, Any]) -> dict[str, Any]:
         return cfg
     rule = normalize_meta_label_rule(block.get("rule"))
     atr_max = float(block.get("atr_max") if block.get("atr_max") is not None else 0.15)
+    atr_min = float(block.get("atr_min") if block.get("atr_min") is not None else 0.60)
     conf_max = float(block.get("conf_max") if block.get("conf_max") is not None else 0.65)
     product_max = float(
         block.get("product_max") if block.get("product_max") is not None else 0.10
@@ -106,12 +111,18 @@ def apply_replay_meta_label(cfg: dict[str, Any]) -> dict[str, Any]:
     rc["meta_label_resolved"] = RESOLVED_RULE
     rc["meta_label_rule"] = rule
     rc["meta_label_atr_max"] = atr_max
+    rc["meta_label_atr_min"] = atr_min
     rc["meta_label_conf_max"] = conf_max
     rc["meta_label_product_max"] = product_max
     rc["meta_label_atr_window"] = atr_window
     if rule == _RULE_ASIA_QUIET:
         note = (
             f"HOLD when Asia-only AND atr_pctile<={atr_max:g} "
+            f"(rule={rule}; attach atr_window={atr_window})"
+        )
+    elif rule == _RULE_ASIA_LOUD_WEAK:
+        note = (
+            f"HOLD when Asia-only AND atr_pctile>={atr_min:g} AND confidence<{conf_max:g} "
             f"(rule={rule}; attach atr_window={atr_window})"
         )
     elif rule == _RULE_CONF_ATR:
@@ -222,6 +233,20 @@ def build_meta_label_mask(
         block.name = "meta_label_block"
         return block.astype(bool)
 
+    if rule == _RULE_ASIA_LOUD_WEAK:
+        if "atr_pctile" not in frame.columns or "confidence" not in frame.columns:
+            return empty
+        atr_min = float(
+            rc.get("meta_label_atr_min") if rc.get("meta_label_atr_min") is not None else 0.60
+        )
+        atr = pd.to_numeric(frame["atr_pctile"], errors="coerce")
+        conf = pd.to_numeric(frame["confidence"], errors="coerce")
+        asia = _asia_only_mask(frame)
+        block = asia & (atr >= atr_min) & (conf < conf_max)
+        block = block.fillna(False)
+        block.name = "meta_label_block"
+        return block.astype(bool)
+
     if rule == _RULE_CONF_ATR:
         if "atr_pctile" not in frame.columns or "confidence" not in frame.columns:
             return empty
@@ -260,7 +285,7 @@ def apply_meta_label_to_pred(
     pred = attach_atr_pctile_for_meta(pred, ohlcv, cfg)
     rule = normalize_meta_label_rule(rc.get("meta_label_rule") or _RULE_QUIET_WEAK)
     need_atr = True
-    need_conf = rule in {_RULE_QUIET_WEAK, _RULE_CONF_ATR}
+    need_conf = rule in {_RULE_QUIET_WEAK, _RULE_CONF_ATR, _RULE_ASIA_LOUD_WEAK}
     if need_atr and "atr_pctile" not in pred.columns:
         rc["meta_label_note"] = (
             f"{rc.get('meta_label_note') or ''} | atr_pctile missing (fail-soft)"
