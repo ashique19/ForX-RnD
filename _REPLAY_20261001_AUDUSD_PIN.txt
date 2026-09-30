@@ -1,0 +1,39 @@
+﻿# AUDUSD full-history after-cost pin Replay - 2026-10-01 Asia/Dhaka
+STRICT SERIAL multi-pair proof (data, not features). Do NOT promote.
+Measured-intel FREEZE honored (no feature/regime/conf challengers).
+
+## Pair
+- **AUDUSD** added to watchlist (Active remains EURUSD).
+- Hole fill: `_AUDUSD_HOLE_FILL_20261001.txt` (72704 Jetta + 521 synth Sep tip = **73225** H1; daily 3674)
+
+## Request
+- job_id: **6a5653c8d5fc4f43aa896ca8c26a6150**
+- started: ~2026-10-01 02:32 Asia/Dhaka
+- finished: **2026-10-01 02:38 Asia/Dhaka**
+- start=2015-01-01; pull=false; min_confidence=0.60; costs on (bid_ask fills); **no promote**
+
+## Result
+- source=jetta; bid_ask=true; rows=**73225**
+- champion PF **2.9796** DD **-3.18%** n=**5977** WR **72.4%**
+- challenger PF **2.8916** DD **-4.09%** n=**5643** WR **72.2%**
+- sma baseline PF **0.786** (sanity: dumb baseline not rich)
+- total_return champ **4316.04** / chall **2256.91** (compounding; same story as high-WR USDJPY)
+- promote: **null** (challenger did not beat champion on PF/total_return/DD improve gate)
+
+## Cost / pip sanity vs EUR / GBP / JPY
+- pip_size_for_pair: EURUSD=0.0001, GBPUSD=0.0001, **AUDUSD=0.0001**, USDJPY=0.01 (AUD pip matches EUR)
+- AUDUSD H1 AskClose-BidClose: mean ~1.22 pip, med ~1.00 pip (BA present; spread_pips ignored)
+- After-cost pins (costs on, min_conf 0.60):
+  | pair | job | champ PF | WR | n | DD | SMA PF |
+  |---|---|---|---|---|---|---|
+  | EURUSD | 2cee7e71... | ~1.99 | 64.8% | 3791 | -10.0% | ~0.88 |
+  | USDJPY | ef6fe062... | 3.04 | 72.8% | 5694 | -3.3% | 0.85 |
+  | GBPUSD | d6a6f7a6... | 2.60 | 70.1% | 6149 | -2.6% | 0.82 |
+  | AUDUSD | 6a5653c8... | 2.98 | 72.4% | 5977 | -3.2% | 0.79 |
+- AUDUSD PF~2.98 sits with USDJPY (high WR ~72%), not a pip-unit bug (AUD pip matches EUR).
+- **QA FLAG**: PF looks rich vs EURUSD~1.99 (same research disclaimer as USDJPY/GBPUSD QA). Do not treat as deployable edge. Optional morning cost/pip/trade spot-check before trusting; not blocking this pin note. SMA PF 0.79 argues costs are not wildly understated.
+
+## Constraints honored
+- No levels/dxy/fib/pattern/regime/conf flips; measured-intel FREEZE
+- No portfolio_brain enable; no promote (advisory null; live champion untouched)
+- Desk left up (API :8000 healthy during/after)

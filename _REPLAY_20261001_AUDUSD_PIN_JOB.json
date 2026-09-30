@@ -1,0 +1,75 @@
+﻿{
+    "job_id":  "6a5653c8d5fc4f43aa896ca8c26a6150",
+    "kind":  "replay",
+    "status":  "done",
+    "phase":  "done",
+    "pair":  "AUDUSD",
+    "interval":  "1h",
+    "start":  "2015-01-01",
+    "end":  null,
+    "min_confidence":  0.6,
+    "fraction":  1.0,
+    "message":  "Scoreboard ready",
+    "as_of_dhaka":  "2026-10-01 02:00 Asia/Dhaka",
+    "error":  null,
+    "reason":  null,
+    "calendar_note":  "Calendar and news are not point-in-time in this replay. The desk calendar is a current-week Forex Factory dump, not a history back to the replay start, so the live event-window gate is not applied. Bar features, labels, and paper fills stay causal. No live broker orders.",
+    "promotion_line":  "Promotion null: PF did not improve (2.8916 vs champion 2.9796, delta -0.0879, need \u003e 0); total return did not improve (2256.9118 vs champion 4316.0365, delta -2059.1247, need \u003e 0); max DD worsened (-0.0409 vs champion -0.0318, delta -0.0091, bar 0); keep champion and report null. Same retrain gate as live (improve) on profit factor, total return, and max drawdown. min_confidence=0.6. trades/hour is reported only. Live promotion does not gate on it. Replay uses the retrain gate (profit factor, total return, max drawdown, min_trades) and the same min_confidence filter as signal generation.",
+    "finished_at_dhaka":  "2026-10-01 02:38 Asia/Dhaka",
+    "source":  "jetta",
+    "bid_ask":  true,
+    "rows":  73225,
+    "report":  {
+                   "csv":  "/replay/jobs/6a5653c8d5fc4f43aa896ca8c26a6150/scoreboard?format=csv",
+                   "xlsx":  "/replay/jobs/6a5653c8d5fc4f43aa896ca8c26a6150/scoreboard?format=xlsx",
+                   "equity_png":  "/replay/jobs/6a5653c8d5fc4f43aa896ca8c26a6150/equity",
+                   "report_md":  "/replay/jobs/6a5653c8d5fc4f43aa896ca8c26a6150/report"
+               },
+    "promotion":  {
+                      "verdict":  "null",
+                      "promote":  false,
+                      "reasons":  [
+                                      "PF did not improve (2.8916 vs champion 2.9796, delta -0.0879, need \u003e 0)",
+                                      "total return did not improve (2256.9118 vs champion 4316.0365, delta -2059.1247, need \u003e 0)",
+                                      "max DD worsened (-0.0409 vs champion -0.0318, delta -0.0091, bar 0)",
+                                      "keep champion and report null"
+                                  ],
+                      "mode":  "improve"
+                  },
+    "scoreboard":  [
+                       {
+                           "book":  "champion",
+                           "n_trades":  5977,
+                           "win_rate":  0.7237744687970554,
+                           "expectancy":  0.0014053279496118978,
+                           "net_pnl":  8.399645154830313,
+                           "max_drawdown":  -0.03178475453176588,
+                           "profit_factor":  2.979579948434618,
+                           "total_return":  4316.036542496492,
+                           "promotion":  "incumbent"
+                       },
+                       {
+                           "book":  "challenger",
+                           "n_trades":  5643,
+                           "win_rate":  0.721779195463406,
+                           "expectancy":  0.0013733692708138166,
+                           "net_pnl":  7.749922795202368,
+                           "max_drawdown":  -0.040893079949193445,
+                           "profit_factor":  2.891634093603473,
+                           "total_return":  2256.9118105687476,
+                           "promotion":  "null"
+                       },
+                       {
+                           "book":  "sma",
+                           "n_trades":  15328,
+                           "win_rate":  0.45048277661795405,
+                           "expectancy":  -0.0003372908322009415,
+                           "net_pnl":  -5.169993875976031,
+                           "max_drawdown":  -0.9948745513550317,
+                           "profit_factor":  0.7863040413594727,
+                           "total_return":  -0.9947539106638077,
+                           "promotion":  "baseline"
+                       }
+                   ],
+    "advisory":  "Replay promote is advisory research and does not replace the live weekly champion until the weekly retrain gate says so. This run does not overwrite the live champion."
+}

@@ -1,0 +1,30 @@
+﻿# AUDUSD H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+STRICT SERIAL multi-pair proof (data, not features). Keep Active=EURUSD. No promote.
+
+## Before
+- data/history/AUDUSD_1h.csv: absent (no partial classic mesh)
+- Live data/AUDUSD_1h.csv: refreshed via yfinance fetch -> **12386** rows, 2024-09-30 20:00 -> **2026-09-30 20:00** (mid-only)
+
+## Watchlist
+- Added **AUDUSD** to `config/watchlist.yaml` pairs (was EURUSD/USDJPY/BTCUSD).
+- **active: EURUSD** unchanged (one Active).
+
+## Fill
+- `python -m forex_lab history --pair AUDUSD --interval 1h --start 2015-01-01 --source jetta`
+- Jetta months 2015-01 .. 2026-08 OK -> **72704** bars ending 2026-08-31 23:00
+- Jetta 2026-09: HTTP 400 (silent; bars stayed 72704) - same as EURUSD/USDJPY/GBPUSD
+- Tip remesh: live mid OHLC from 2026-09-01 00:00 -> 2026-09-30 20:00 + synth bid/ask from Aug Jetta half-spread mean **0.0000559961**; Volume left as live (mostly 0)
+- Backup pre-tip: AUDUSD_1h.csv.bak_pre_tip_20261001
+- Script: scripts/_audusd_tip_remesh_20261001.py
+
+## After
+- H1 rows: **73225** (72704 Jetta + 521 synth tip)
+- Range: **2015-01-01 22:00 -> 2026-09-30 20:00**
+- high<low: 0 (mid/bid/ask); neg_spread AskClose<BidClose: 0
+- Volume (Jetta body thru Aug): mean ~1979, median 1542, zero_vol 0, non-int 0
+- gaps>72h: 4 - New Year long weekends only (max 73h). No multi-month Jetta hole; no tip cliff.
+- Daily remesh: **3674** rows, 2015-01-01 -> 2026-09-30
+- meta.source: jetta; tip_note recorded in AUDUSD_1h.meta.json
+
+## Gaps remaining
+- Jetta published history ends 2026-08-31; Sep tip is live-mid + synth BA (not tick-true). Sufficient for full-history after-cost pin Replay; re-pull Sep via Jetta when /2026/9 returns 200.
