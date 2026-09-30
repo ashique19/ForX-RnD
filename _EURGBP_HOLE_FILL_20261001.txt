@@ -1,0 +1,26 @@
+﻿# EURGBP H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+Multi-pair proof. Active=EURUSD. No promote. After meta-label FREEZE 3/3.
+
+## Before
+- history EURGBP_1h.csv: absent
+- Live: yfinance 2y -> **12341** rows, 2024-09-30 23:00 -> 2026-09-30 23:00 (mid-only)
+
+## Watchlist
+- Added **EURGBP** to `config/watchlist.yaml`. **active: EURUSD** unchanged.
+
+## Fill
+- `python -m forex_lab history --pair EURGBP --interval 1h --start 2015-01-01 --source jetta`
+- Jetta 2015-01 .. 2026-08 OK -> **72703** bars ending 2026-08-31 23:00
+- Jetta 2026-09: HTTP 400
+- Tip remesh: live mid 2026-09-01 -> 2026-09-30 23:00 + synth BA half-spread **0.0000484517** (Aug mean)
+- Backup: EURGBP_1h.csv.bak_pre_tip_20261001
+- Script: scripts/_eurgbp_tip_remesh_20261001.py
+
+## After
+- H1 rows: **73224** (72703 Jetta + 521 synth tip)
+- Range: **2015-01-01 22:00 -> 2026-09-30 23:00**
+- high<low: 0; neg_spread: 0
+- Volume body: mean ~2090, median 1648, zero 0, non-int 0
+- gaps>72h: 4 (NYE weekends only)
+- Daily remesh: **3674** rows
+- meta.source: jetta; tip_note recorded
