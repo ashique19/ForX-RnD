@@ -1,0 +1,43 @@
+﻿# Morning autonomy blunt scoreboard - 2026-10-01 ~05:03 Asia/Dhaka
+Commit `4785b8f` pushed. Machine FREE for weekly gate (well before 07:45). No promote. Live min_confidence=0.60.
+
+## Landed (deep)
+
+| item | result | blunt |
+|---|---|---|
+| AUDUSD pin QA `6a5653c8` | **TRUST** | PF 2.98 from WR 72.4%, not pip bug; SMA 0.79; RT cost > EUR |
+| NZDUSD pin QA `83c2715d` | **TRUST** | PF 2.85 from WR 70.9%; widest RT among EUR/AUD/NZD |
+| USDCAD hole+pin `a9b26129` | **TRUST** pin | PF **2.735** WR 70.5% n 6164 DD -2.46% SMA 0.80; watchlist+ |
+| Expectancy-by-conf (post-hoc) | insight | Edge↑ with conf; floor↑ kills return (explains strike-1 conf-0.65) |
+| Cost-stress proxy +2× spread | robust | Pin PF stays ~1.82 / return ~7.8 — not a thin cost artifact |
+| Portfolio brain dry-run | ok | enabled=false noop; in-memory enable blocks 3rd open; API /portfolio/brain 404 until API restart |
+| Jetta Sep probe | unpublished | EUR/CAD 2026/9 rows=0; Aug OK |
+| Paper journal stats | ok | 1 open / 9 closed EURUSD paper PF~0.71 (tiny n) |
+
+## NEW track vs EURUSD pin `2cee7e71` (PF 1.989 / ret 11.17 / DD -10%) — **3/3 FAIL FREEZE**
+
+| # | challenger | job | PF | return | DD | verdict |
+|---|---|---|---:|---:|---:|---|
+| 1 | purge/embargo=8 | `edd93e9d` | 1.971 | 10.56 | -10.9% | FAIL revert |
+| 2 | size 0.5/1.0/1.25 | `65368de6` | 2.244 | **7.22** | -7.5% | FAIL PF↑ return↓ |
+| 3 | size mild 0.85/1.0/1.10 | `b2124808` | 2.048 | **9.93** | -9.8% | FAIL return still short |
+
+Code kept (defaults OFF). Do **not** re-tweak purge N / size bands without a brand-new hypothesis family.
+
+## Pin rank (research PF only; not deploy)
+
+1. USDJPY 3.04 TRUST
+2. AUDUSD 2.98 TRUST
+3. NZDUSD 2.85 TRUST
+4. USDCAD 2.74 TRUST
+5. GBPUSD 2.60 TRUST
+6. EURUSD 1.99 (Active)
+
+## Explicit non-actions
+- No promote. No live-gate change.
+- size_by_conf.enabled=false; purge_bars=0; trend_regime.enabled=false; portfolio_brain.enabled=false.
+- Cross-pair disagreement veto: sketch only (`_SKETCH_CROSS_PAIR_DISAGREE_VETO_20261001.txt`).
+- Flag parent: nothing to promote; user decision N/A (no clean win).
+
+## CPU
+Replay processes done. Uvicorn desk/API still up. Ready for weekly retrain ~08:04.
