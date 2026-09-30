@@ -1,0 +1,23 @@
+﻿# Jetta history fetcher - 2026-10-01 Asia/Dhaka
+STRICT SERIAL step 1. PC-local. Classic datafeed.dukascopy.com dead from PC (SSL handshake timeout).
+
+## What changed
+- `forex_lab/history.py`: Jetta public REST (`https://jetta.dukascopy.com/v1/candles/trade/hour/{BASE}-{QUOTE}/{BID|ASK}/{y}/{m}`) is primary for 1h grain.
+  - Correct delta decode: later o/h/l/c = previous close + delta * multiplier (first bar uses top-level absolutes). Wick sanitize max/min.
+  - Volume divided by JETTA_TO_DUKA_VOLUME_FACTOR=2.812045180934712 and rounded to int (Dukascopy tick units).
+  - `source=auto`: Jetta -> classic bi5 -> HistData. `source=jetta|dukascopy|histdata` force one path.
+  - Monthly chunked saves with hole-aware merge (keeps existing stamps).
+- `forex_lab/cli.py`: `--source` choices include `jetta` for history/replay.
+- `tests/test_history_jetta.py`: 4 unit tests (instrument, previous-close decode, volume scale, fetch seam).
+- Backup: `forex_lab/history.py.bak_pre_jetta_20261001`
+
+## Smoke proof (PC, FORX_HISTORY_DIR=data/history/_smoke_jetta_20261001)
+- Classic CDN probe: datafeed.dukascopy.com SSL handshake timeout.
+- Jetta USDJPY ASK/2024/1: HTTP 200.
+- `python -m forex_lab history --pair EURUSD --interval 1h --start 2024-01-01 --end 2024-01-10 --source jetta`
+  -> 147 bars, 2024-01-01 22:00 -> 2024-01-10 00:00; high<low=0; neg_spread=0; vol_mean~4435
+- `python -m forex_lab history --pair USDJPY --interval 1h --start 2024-06-01 --end 2024-06-07 --source jetta`
+  -> 100 bars, 2024-06-02 21:00 -> 2024-06-07 00:00; high<low=0; neg_spread=0; vol_mean~4922
+
+## Next
+Step 2: USDJPY full H1 hole fill via Jetta + remesh.

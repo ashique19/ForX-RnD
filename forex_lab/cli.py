@@ -127,7 +127,7 @@ def cmd_retrain(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_history(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
-    """Pull Dukascopy (or HistData) OHLC into data/history. Does not write synthetic prices."""
+    """Pull Jetta / Dukascopy / HistData OHLC into data/history. Does not write synthetic prices."""
     from forex_lab.history import HistoryError, explain_failure, pull_history
 
     def _progress(payload: dict[str, Any]) -> None:
@@ -277,14 +277,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     h = sub.add_parser(
         "history",
-        help="Pull one pair of Dukascopy tick->OHLC (HistData fallback) into data/history (gitignored)",
+        help="Pull one pair of Jetta/Dukascopy OHLC (HistData fallback) into data/history (gitignored)",
         description="One pair. Does not download the rest of the watchlist.",
     )
     _add_common(h)
     h.add_argument("--interval", default="1h", help="15m | 1h | 4h | 1d")
     h.add_argument("--start", default="2015-01-01", help="UTC start (default 2015-01-01)")
     h.add_argument("--end", default=None, help="UTC end (default last closed hour)")
-    h.add_argument("--source", default="auto", choices=["auto", "dukascopy", "histdata"])
+    h.add_argument("--source", default="auto", choices=["auto", "jetta", "dukascopy", "histdata"])
 
     rp = sub.add_parser(
         "replay",
@@ -295,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--interval", default="1h", help="15m | 1h | 4h | 1d")
     rp.add_argument("--start", default="2015-01-01", help="UTC start (default 2015-01-01)")
     rp.add_argument("--end", default=None, help="UTC end (default last closed hour)")
-    rp.add_argument("--source", default="auto", choices=["auto", "dukascopy", "histdata"])
+    rp.add_argument("--source", default="auto", choices=["auto", "jetta", "dukascopy", "histdata"])
     rp.add_argument("--no-pull", action="store_true", help="Use the cache only; do not download")
     rp.add_argument("--model", default=None, help="Champion model: xgboost | logistic")
     rp.add_argument("--slippage-pips", dest="slippage_pips", type=float, default=None)
