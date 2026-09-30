@@ -1,0 +1,24 @@
+﻿# USDJPY H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+STRICT SERIAL step 2. After Jetta fetcher (commit 49f2cf8).
+
+## Before
+- data/history/USDJPY_1h.csv: 180 rows, 2015-01-01 22:00 -> 2015-01-15 04:00 (partial classic bi5)
+- Backup: USDJPY_1h.csv.bak_pre_jetta_20261001
+
+## Fill
+- `python -m forex_lab history --pair USDJPY --interval 1h --start 2015-01-01 --source jetta`
+- Jetta months 2015-01 .. 2026-08 OK; 2026-09 HTTP 400 (month file not published yet)
+- Classic bi5 tip fill attempted from box: CDN 503 — aborted
+- Tip remesh: live data/USDJPY_1h.csv mid OHLC from 2026-09-01 -> 2026-09-30 18:00 + synth bid/ask from recent Jetta half-spread ~0.003465; Volume left as live (often 0)
+
+## After
+- H1 rows: **73217** (72704 Jetta + 513 synth tip)
+- Range: **2015-01-01 22:00 -> 2026-09-30 18:00** Asia/Dhaka box UTC stamps
+- high<low: 0 (mid/bid/ask); neg_spread: 0
+- Volume (Jetta body): mean ~3535, median 2460, non-int 0, zero_vol 0 on Jetta portion
+- gaps>72h: 4 (New Year long weekends only, max 73h) — no multi-month holes
+- Daily remesh: 3674 rows, 2015-01-01 -> 2026-09-30
+- meta.source: jetta; tip_note recorded in USDJPY_1h.meta.json
+
+## Gaps remaining
+- Jetta published history ends 2026-08-31; Sep tip is live-mid + synth BA (not tick-true bid/ask). Sufficient for full-history after-cost pin Replay; re-pull Sep via Jetta when /2026/9 returns 200.

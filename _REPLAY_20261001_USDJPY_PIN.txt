@@ -1,0 +1,39 @@
+﻿# USDJPY full-history after-cost pin Replay - 2026-10-01 Asia/Dhaka
+STRICT SERIAL step 3. Do NOT promote.
+
+## Request (mirror EURUSD pin 2cee7e71)
+- pair/interval: USDJPY / 1h
+- start: 2015-01-01
+- pull: false
+- min_confidence: 0.60
+- costs: on (replay.use_bid_ask=true, slippage_pips=0.2, exit_slippage=true)
+- job_id: ef6fe062c6f84cccaf8c9d55facddeeb
+- started: ~2026-10-01 00:40 Asia/Dhaka
+- finished: 2026-10-01 00:46 Asia/Dhaka
+- data: 73217 rows; source=jetta; bid_ask=true
+
+## Challenger (after costs)
+- PF: 2.9204226832
+- WR: 0.7214859063 (72.149%)
+- n_trades: 5357
+- max DD: -0.0226321394 (-2.263%)
+- total_return: 366.50249414
+- net_pnl: 5.9247881217
+- expectancy: 0.0011059899
+
+## Champion (incumbent comparison)
+- PF: 3.0366605650
+- WR: 0.7276080084 (72.761%)
+- n_trades: 5694
+- max DD: -0.0329513054 (-3.295%)
+- total_return: 613.60999264
+
+## Verdict
+promotion: **null** — do not promote.
+PF and total return did not improve vs champion (challenger PF 2.9204 vs 3.0367; TR 366.5 vs 613.6).
+Challenger after-cost edge is strongly positive (PF>1, DD milder than champion) but not a clear promotion.
+
+## Artifacts
+- data/replay/_USDJPY_pin_start_20261001.json
+- data/replay/_USDJPY_pin_done_20261001.json
+- API report: /replay/jobs/ef6fe062c6f84cccaf8c9d55facddeeb/report
