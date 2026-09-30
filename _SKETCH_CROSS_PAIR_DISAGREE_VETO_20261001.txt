@@ -1,0 +1,22 @@
+﻿# Sketch - Cross-pair disagreement veto (research design only) - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. **No code enable. No Replay tonight.** Not a promote path.
+
+## Observation
+Multi-pair pins (EUR/JPY/GBP/AUD/NZD/CAD) all fire USD-beta heavy books. Simultaneous USD-cross BUY/SELL can stack the same USD risk. Portfolio-brain corr veto (disabled) is the intended home; this note sketches a lighter **signal disagreement** rule.
+
+## Idea (v0 sketch)
+When Active=EURUSD is about to open:
+- Peek latest flash/side for USDJPY, AUDUSD, GBPUSD, NZDUSD, USDCAD (research watchlist).
+- Map each to USD-risk direction (same map as `portfolio_brain._USD_RISK_LONG`).
+- If >=2 other pairs disagree with EURUSD's implied USD risk (opposite sign) at conf>=0.70, **veto** the EURUSD open (HOLD) — treat as USD regime conflict.
+- Fail-soft if peer flash missing.
+
+## Why not now
+- Needs peer flash cache that is point-in-time in Replay (hard) OR paper-only desk week first.
+- Overlaps portfolio_brain corr cluster — prefer one overlay, not two.
+- NEW track already at strike 2/3; do not burn strike 3 on an untested sketch.
+
+## Gate if ever tested
+- Paper week on desk with portfolio_brain-style logging first.
+- Then ONE multi-pair aggregate Replay or paper A/B — not a single-pair pin challenger.
+- No live-gate change without after-cost beat.

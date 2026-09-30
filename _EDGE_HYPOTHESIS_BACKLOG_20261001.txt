@@ -26,10 +26,8 @@ Leave CPU/IO free for weekly retrain ~08:04 Asia/Dhaka.
    - Ops, not intel: replace live-mid+synth BA tip with tick-true Jetta for EUR/JPY/GBP/AUD/NZD.
    - Optional tip-only Replay SKIP if delta rows small (same as EURUSD tip refresh).
 
-4. **Rich-PF morning QA panel**
-   - Spot-check: pip_size, mean/med spread_pips, sample trade entry/exit BA fills, SMA baseline still <1.
-   - Pairs: AUDUSD + NZDUSD first (QA FLAG); confirm not unit bug before any size talk.
-
+4. **Rich-PF morning QA panel** — DONE 2026-10-01 ~04:30 Asia/Dhaka
+   - AUDUSD + NZDUSD TRUST (_QA_AUDUSD_PIN_20261001.txt, _QA_NZDUSD_PIN_20261001.txt).
 5. **Cross-pair stability / correlation paper book**
    - Hypothesis: simultaneous USD-cross signals overweight USD beta; staggered or max-1-USD-risk rule improves portfolio DD.
    - Depends on (2); research Replay multi-pair aggregate, not live gate.
@@ -53,3 +51,4 @@ Leave CPU/IO free for weekly retrain ~08:04 Asia/Dhaka.
 - Heavy overnight work STOPPED after this note.
 - API/desk stay up; Active EURUSD; watchlist includes NZDUSD for research board only.
 - Next human/agent touch: weekly retrain window ~08:04 Asia/Dhaka, then optional morning QA on rich-PF pins.
+

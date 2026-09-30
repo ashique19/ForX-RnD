@@ -1,0 +1,29 @@
+﻿# EURUSD milder size-by-conf Replay - NEW track strike 3/3 - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays 0.60.
+
+## Hypothesis
+Strike 2 (0.5/1.0/1.25) cut return too hard. Milder 0.85/1.0/1.10 should preserve compound while still lifting PF/DD. See `_HYPOTHESIS_20261001_EURUSD_SIZE_BY_CONF_MILD.txt`.
+
+## Job
+- job_id: **b21248080375438e95a0fd3f54e435e9**
+- finished: **2026-10-01 05:02 Asia/Dhaka**
+- bands: 0.85 / 1.0 / 1.10; min_confidence=0.60; costs ON
+
+## Before / after vs pin
+
+| | pin `2cee7e71.` | aggressive size `65368de6.` | **mild size `b2124808.`** |
+|---|---:|---:|---:|
+| Champ PF | 1.989 | 2.244 | **2.048** |
+| WR | 64.8% | 64.6% | 64.6% |
+| n | 3791 | 3767 | 3767 |
+| max DD | -10.00% | -7.54% | **-9.77%** |
+| total_return | **11.17** | 7.22 | **9.93** |
+
+## Verdict: FAIL adoption (NEW track **strike 3 of 3** — FREEZE)
+- PF +0.059 and DD slightly better, but **return 9.93 < 11.17**. Still not clean dominate.
+- Milder curve recovered most return vs strike 2 but not enough.
+- **REVERTED** `replay.size_by_conf.enabled=false` (bands left at last-tested 0.85/1.0/1.10).
+- No promote. Live conf 0.60 untouched.
+
+## FREEZE this NEW track family
+No more purge_bars or size_by_conf band tweaks without a **new written hypothesis** that is not another size curve / purge N. Ops/data pins still allowed.

@@ -1,0 +1,17 @@
+﻿# NEW hypothesis track - COMPLETE FREEZE - 2026-10-01 Asia/Dhaka
+Old measured-intel FREEZE (conf/ADX 3/3) remains CLOSED.
+This NEW track is now also **3/3 FAILED**.
+
+## Strikes
+1. purge/embargo=8 `edd93e9d` - PF/return/DD mild regression - REVERT purge=0
+2. size-by-conf 0.5/1.0/1.25 `65368de6` - PF/DD up, return 7.22 - REVERT enabled=false
+3. size-by-conf mild 0.85/1.0/1.10 `b2124808` - PF 2.048 / DD -9.77% / return 9.93 < pin 11.17 - REVERT enabled=false
+
+## Frozen
+- No more purge N / size-band tweaks without a genuinely new written hypothesis (not another curve).
+- Live min_confidence=0.60. Promote=null. size_by_conf.enabled=false. purge_bars=0.
+
+## Still allowed
+- Multi-pair data pins / tip densify / Jetta Sep
+- Desk/ops / paper journal stats / portfolio_brain enabled=false
+- Brand-new hypothesis files only (e.g. meta-label model, session-local rules) — not tonight after 3/3

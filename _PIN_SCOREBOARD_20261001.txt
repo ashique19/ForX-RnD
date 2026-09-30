@@ -9,8 +9,9 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 | EURUSD | `2cee7e7163134266ad8c2b39234442d8` | 2026-09-30 01:20 | dukascopy / true | 71888 | **1.989** | 64.8% | 3791 | -10.0% | 11.17 | 0.883 | null | Tip refresh 2026-10-01: +44 synth Sep bars (71941 H1); **Replay SKIP** (tip-only). Pin stands. See `_EURUSD_TIP_REFRESH_20261001.txt`. |
 | USDJPY | `ef6fe062c6f84cccaf8c9d55facddeeb` | 2026-10-01 00:46 | jetta / true | 73217 | **3.037** | 72.8% | 5694 | -3.30% | 613.61 | 0.851 | null | Morning QA **TRUST** (`_QA_USDJPY_PIN_20261001.txt` / commit `5e56454`). High WR, not pip-unit bug. Research only. |
 | GBPUSD | `d6a6f7a60036404aabb1e57dd1da8725` | 2026-10-01 01:34 | jetta / true | 73055 | **2.601** | 70.1% | 6149 | -2.61% | 604.22 | 0.822 | null | Hole-fill Jetta+synth tip. Night QA **TRUST** (`_QA_GBPUSD_PIN_20261001.txt`). Same disclaimer as USDJPY. |
-| AUDUSD | `6a5653c8d5fc4f43aa896ca8c26a6150` | 2026-10-01 02:38 | jetta / true | 73225 | **2.980** | 72.4% | 5977 | -3.18% | 4316.04 | 0.786 | null | Hole-fill Jetta+synth tip (`_AUDUSD_HOLE_FILL_20261001.txt`). **QA FLAG** rich PF (like USDJPY); pip=0.0001 OK. Research only. |
-| NZDUSD | `83c2715df9104a099056b96812141c42` | 2026-10-01 02:49 | jetta / true | 73216 | **2.851** | 70.9% | 5695 | -2.94% | 3047.89 | 0.749 | null | Hole-fill Jetta+synth tip (`_NZDUSD_HOLE_FILL_20261001.txt`). **QA FLAG** rich PF (like AUD/JPY); pip=0.0001 OK. Research only. |
+| AUDUSD | `6a5653c8d5fc4f43aa896ca8c26a6150` | 2026-10-01 02:38 | jetta / true | 73225 | **2.980** | 72.4% | 5977 | -3.18% | 4316.04 | 0.786 | null | Hole-fill Jetta+synth tip (`_AUDUSD_HOLE_FILL_20261001.txt`). Morning QA **TRUST** (`_QA_AUDUSD_PIN_20261001.txt`). High WR + wider spread than EUR; not pip-unit bug. Research only. |
+| NZDUSD | `83c2715df9104a099056b96812141c42` | 2026-10-01 02:49 | jetta / true | 73216 | **2.851** | 70.9% | 5695 | -2.94% | 3047.89 | 0.749 | null | Hole-fill Jetta+synth tip (`_NZDUSD_HOLE_FILL_20261001.txt`). Morning QA **TRUST** (`_QA_NZDUSD_PIN_20261001.txt`). High WR + widest RT cost among EUR/AUD/NZD; not pip-unit bug. Research only. |
+| USDCAD | `a9b26129d9a44f86b2f89646d4698ff3` | 2026-10-01 04:55 | jetta / true | 73226 | **2.735** | 70.5% | 6164 | -2.46% | 238.13 | 0.798 | null | Hole-fill Jetta+synth tip. Light QA **TRUST** (`_QA_USDCAD_PIN_20261001.txt`). Research only. |
 
 ## Challenger (same jobs; all fail improve gate)
 
@@ -21,6 +22,7 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 | GBPUSD | 2.549 | 69.7% | 5930 | -1.97% | 442.22 | PF/return worse |
 | AUDUSD | 2.892 | 72.2% | 5643 | -4.09% | 2256.91 | PF/return/DD worse |
 | NZDUSD | 2.764 | 70.4% | 5443 | -3.66% | 1744.20 | PF/return/DD worse |
+| USDCAD | 2.702 | 70.9% | 5956 | -1.96% | 200.44 | PF/return worse |
 
 ## Tip refresh state (EURUSD)
 
@@ -39,13 +41,16 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 ## Rank by champ PF (research only; not deploy rank)
 
 1. USDJPY 3.04 (TRUST QA)
-2. AUDUSD 2.98 (QA FLAG - morning spot-check optional)
-3. NZDUSD 2.85 (QA FLAG - morning spot-check optional)
-4. GBPUSD 2.60 (TRUST QA)
-5. EURUSD 1.99 (tip refreshed; pin stands)
+2. AUDUSD 2.98 (TRUST QA)
+3. NZDUSD 2.85 (TRUST QA)
+4. USDCAD 2.74 (TRUST QA)
+5. GBPUSD 2.60 (TRUST QA)
+6. EURUSD 1.99 (tip refreshed; pin stands)
 
 ## Autonomy follow-ons
 
 - Measured-intel FREEZE remains (3/3 strikes). No regime/conf challengers without new written hypothesis.
 - Multi-pair proof set complete for major USD crosses on watchlist (EUR/JPY/GBP/AUD/NZD). Next: unfreeze candidates in `_EDGE_HYPOTHESIS_BACKLOG_20261001.txt` only after weekly retrain room; OR stop heavy overnight work.
 - No promote tonight even if a challenger wins a research Replay.
+
+

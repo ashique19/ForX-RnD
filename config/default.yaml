@@ -142,6 +142,9 @@ walk_forward:
   test_bars: 250
   step_bars: 250
   min_train_bars: 500
+  # LdP purge/embargo (NEW track). 0 = legacy ready_time<=as_of. Challenger Replay sets 8 (=horizon).
+  purge_bars: 0              # REVERT strike 1/3 NEW track - purge=8 lost vs pin 2cee7e71 (PF/return/DD)
+  embargo_bars: 0            # REVERT with purge
 
 # Model
 model:
@@ -420,6 +423,15 @@ replay:
   # Evidence: champion d20 same-bar SL pure losses; same-bar TP kept. TP/timeout unchanged.
   exit_hold:
     min_bars_before_sl: 2     # skip same-bar SL only; 0 = legacy immediate SL
+  # Size-by-confidence overlay (NEW track). enabled=false = bit-identical sizes.
+  # Does NOT raise min_confidence. Scales paper qty only at fill.
+  size_by_conf:
+    enabled: false           # REVERT strike 3/3 NEW track - mild 0.85/1.0/1.10 PF up return still < pin
+    default_scale: 1.0
+    bands:
+      - {max: 0.70, scale: 0.85}
+      - {max: 0.85, scale: 1.0}
+      - {max: 1.01, scale: 1.10}
   # step_bars / train_bars / min_train_bars default to walk_forward when omitted
 
 # Portfolio brain (post-signal risk overlay). Default OFF.
@@ -446,3 +458,9 @@ paths:
   models_dir: models
   signals_dir: signals
   reports_dir: reports
+
+
+
+
+
+

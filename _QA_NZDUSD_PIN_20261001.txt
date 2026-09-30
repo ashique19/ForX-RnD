@@ -1,0 +1,52 @@
+﻿# QA NZDUSD pin 83c2715d - 2026-10-01 Asia/Dhaka
+Light cost/pip QA (same shape as USDJPY / GBPUSD / AUDUSD TRUST QA). Read-only; no promote; no full re-run.
+
+## Verdict: TRUST
+Blunt reason: NZDUSD after-cost PF~2.85 is high because win rate is high (champion 70.9% vs EURUSD 64.8%), not because pip size / P&L scaling / costs are wrong for NZD. `pip_size_for_pair("NZDUSD")` = 0.0001 (same as EURUSD). Bid/ask fills ignore spread_pips; slippage is 0.2 * pip. SMA baseline PF is 0.749 - if costs were wildly understated, the dumb baseline would also look rich. It does not.
+
+Do not treat PF~2.85 as a deployable edge. Same research disclaimer. Challenger lost the improve gate (null). No promote.
+
+## Jobs compared
+| | NZDUSD 83c2715d... | AUDUSD 6a5653c8... | GBPUSD d6a6f7a6... | EURUSD 2cee7e71... |
+|---|---|---|---|---|
+| Finished | 2026-10-01 02:49 Asia/Dhaka | 2026-10-01 02:38 Asia/Dhaka | 2026-10-01 01:34 Asia/Dhaka | 2026-09-30 01:20 Asia/Dhaka |
+| Source (status) | jetta, bid_ask=true | jetta, bid_ask=true | jetta, bid_ask=true | dukascopy, bid_ask=true |
+| Rows | 73216 | 73225 | 73055 | 71888 |
+| Champ PF / WR / n | 2.851 / 70.85% / 5695 | 2.980 / 72.38% / 5977 | 2.601 / 70.13% / 6149 | 1.989 / 64.79% / 3791 |
+| Champ expectancy (frac) | 0.001414 | 0.001405 | 0.001045 | 0.000662 |
+| Champ total_return | 3047.89 | 4316.04 | 604.22 | 11.17 |
+| Champ max DD | -2.94% | -3.18% | -2.61% | -10.00% |
+| SMA PF | 0.749 | 0.786 | 0.822 | 0.883 |
+| Promote | null | null | null | null |
+
+## Cost / pip findings (numbers)
+- pip_size_for_pair("NZDUSD") = 0.0001. Slip = 0.2 * pip. BA path ignores spread_pips.
+- NZDUSD H1 AskOpen-BidOpen: mean 1.464 pip, med 1.100 pip (wider than EUR ~0.48 and AUD ~1.22).
+- Approx RT cost (mean spread + 2*0.2pip slip): NZDUSD ~1.86 pips / ~0.0285% of price - **highest** fractional drag among EUR/AUD/NZD pins. Works hard against a false-rich story.
+- Champion entry vs mid (adverse, n=2000): NZDUSD mean **0.76 pip**; better-than-mid 4.0%.
+- ATR14: NZDUSD mean **11.5 pips** => 2*ATR TP ~23.0 pips. Matches avg win ~20.2 pips.
+- total_return compound from sum frac 8.05 => 3047.89. Not a unit bug (same compounding + high WR/n as AUD/JPY).
+- pf_check from gross P/L frac = 2.851 matches reported PF.
+
+## Trade spot-check (champion)
+| | NZDUSD | AUDUSD | EURUSD |
+|---|---|---|---|
+| Exit mix tp/sl/timeout | 3537 / 1260 / 898 | 3835 / 1290 / 852 | 2123 / 1049 / 619 |
+| Avg win / avg loss (pips) | 20.15 / -17.15 | 20.67 / -18.26 | 22.56 / -21.11 |
+
+Sample NZDUSD: SELL 0.74387->0.74024 tp +36.3 pips / +0.00488 frac; SELL 0.74516->0.74203 tp +31.3 pips; BUY 0.74291->0.74009 sl -28.2 pips. Consistent.
+
+## H1 mesh (data/history/NZDUSD_1h.csv)
+- Rows: 73216. Hole-fill Jetta + synth Sep tip (`_NZDUSD_HOLE_FILL_20261001.txt`).
+- high<low: 0. AskClose never crossed.
+- Volume zero_vol 524 (= synth tip; BA fills ignore Volume).
+- Crossed AskOpen<BidOpen: NZDUSD **5.16%** (between EUR 4.8% and GBP 7.3%). Negligible vs 8.05 sum frac.
+
+## Code
+- No clear bug that inflates this pin's PF via wrong NZD pip value. No code patch.
+
+## Another Replay required?
+No. Optional later: crossed open sanitize; Jetta Sep remesh. Not done now.
+
+## Actions this QA
+- Wrote this note + pin scoreboard update. No feature flags. No promote. No Replay re-run.

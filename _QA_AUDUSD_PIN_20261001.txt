@@ -1,0 +1,60 @@
+﻿# QA AUDUSD pin 6a5653c8 - 2026-10-01 Asia/Dhaka
+Light cost/pip QA (same shape as USDJPY TRUST QA / GBPUSD TRUST QA). Read-only; no promote; no full re-run.
+
+## Verdict: TRUST
+Blunt reason: AUDUSD after-cost PF~2.98 is high because win rate is high (champion 72.4% vs EURUSD 64.8%), not because pip size / P&L scaling / costs are wrong for AUD. `pip_size_for_pair("AUDUSD")` = 0.0001 (same as EURUSD). Bid/ask fills ignore spread_pips; slippage is 0.2 * pip. SMA baseline PF is 0.786 - if costs were wildly understated, the dumb baseline would also look rich. It does not.
+
+Do not treat PF~3.0 as a deployable edge. Same research disclaimer as EURUSD / USDJPY / GBPUSD. Challenger lost the improve gate (null). No promote.
+
+## Jobs compared
+| | AUDUSD 6a5653c8... | NZDUSD 83c2715d... | USDJPY ef6fe062... | EURUSD 2cee7e71... |
+|---|---|---|---|---|
+| Finished | 2026-10-01 02:38 Asia/Dhaka | 2026-10-01 02:49 Asia/Dhaka | 2026-10-01 00:46 Asia/Dhaka | 2026-09-30 01:20 Asia/Dhaka |
+| Source (status) | jetta, bid_ask=true | jetta, bid_ask=true | jetta, bid_ask=true | dukascopy, bid_ask=true |
+| Rows | 73225 | 73216 | 73217 | 71888 |
+| Costs | BA fills; slip 0.2 pip/side; exit_slippage=true; spread_pips ignored | same | same | same |
+| Champ PF / WR / n | 2.980 / 72.38% / 5977 | 2.851 / 70.85% / 5695 | 3.037 / 72.76% / 5694 | 1.989 / 64.79% / 3791 |
+| Chall PF / WR / n | 2.892 / 72.18% / 5643 | 2.764 / 70.40% / 5443 | 2.920 / 72.15% / 5357 | 1.939 / 64.50% / 3611 |
+| Champ expectancy (frac) | 0.001405 | 0.001414 | 0.001131 | 0.000662 |
+| Champ net_pnl (sum frac) | 8.400 | 8.053 | 6.440 | 2.508 |
+| Champ total_return | 4316.04 | 3047.89 | 613.61 | 11.17 |
+| Champ max DD | -3.18% | -2.94% | -3.30% | -10.00% |
+| SMA PF | 0.786 | 0.749 | 0.851 | 0.883 |
+| Promote | null | null | null | null |
+
+## Cost / pip findings (numbers)
+- pip_size_for_pair("AUDUSD") = 0.0001; EURUSD = 0.0001; USDJPY = 0.01. Used in replay slip and PaperBroker mid-path.
+- Config: spread_pips=1.0 RT mid-only; commission_pips=0; replay.slippage_pips=0.2; exit_slippage=true. With bid/ask, spread/commission zeroed - BBO is the spread.
+- AUDUSD H1 AskOpen-BidOpen: mean 1.216 pip, med 1.000 pip. EURUSD: mean ~0.48 pip, med ~0.30 pip.
+- Approx RT cost (mean spread + 2*0.2pip slip): AUDUSD ~1.62 pips / ~0.0228% of price; EURUSD ~0.88 pips / ~0.0078%. AUD fractional drag is **higher**, not free - works against a false-rich story.
+- Champion entry vs mid (adverse, n=2000): AUDUSD mean **0.70 pip**; better-than-mid 2.15%. Expected slip 0.2 pip + half-spread.
+- ATR14: AUDUSD mean **11.9 pips** => 2*ATR TP ~23.8 pips. Matches avg win ~20.7 pips below.
+- net_pnl is fractional return (exit-entry)/entry (signed), not dollar pip-value. Same formula all pairs.
+- total_return = compound prod(1+r)-1. AUDUSD: sum r=8.40 => compound 4316 exactly. Same compounding story as high-WR JPY/GBP vs EURUSD. Not a unit bug.
+- pf_check from gross P/L frac = 2.980 matches reported PF.
+
+## Trade spot-check (champion)
+| | AUDUSD | NZDUSD | EURUSD |
+|---|---|---|---|
+| Exit mix tp/sl/timeout | 3835 / 1290 / 852 | 3537 / 1260 / 898 | 2123 / 1049 / 619 |
+| Avg win / avg loss (pips) | 20.67 / -18.26 | 20.15 / -17.15 | 22.56 / -21.11 |
+| Avg win/loss ratio (frac) | 1.13 | 1.17 | 1.08 |
+| Gross P / Gross L => PF | => 2.980 | => 2.851 | => 1.989 |
+
+Sample AUDUSD: BUY 0.78231->0.78642 tp +41.1 pips / +0.00525 frac; SELL 0.78807->0.78433 tp +37.4 pips; BUY 0.78037->0.77671 timeout -36.6 pips. Price moves and frac PnL consistent.
+
+## H1 mesh (data/history/AUDUSD_1h.csv)
+- Rows: 73225 (2015-01-01 -> tip through Sep 2026). Hole-fill Jetta + synth Sep tip (`_AUDUSD_HOLE_FILL_20261001.txt`).
+- high<low: 0. AskClose<BidClose: 0.
+- Volume: zero_vol 521 (= synth tip bars; BA fills do not use Volume).
+- Crossed AskOpen<BidOpen: AUDUSD **3.97%** of bars (milder than USDJPY 10.6% / GBP 7.3%). AskClose never crossed. Mild same-bar free-edge; not enough to explain PF 2.98 vs EURUSD 1.99.
+
+## Code
+- No clear bug that inflates this pin's PF via wrong AUD pip value. No code patch.
+- Latent (inactive): features._barrier_cfg cost_aware path uses cfg["pip_size"] without pip_size_for_pair - fine for AUD (0.0001). Default cost_aware=false.
+
+## Another Replay required?
+No. Metrics are internally consistent; a re-run would not fix a unit bug that was not found. Optional later: sanitize crossed Ask/Bid opens on ingest; Jetta Sep remesh when HTTP 200. Not done now.
+
+## Actions this QA
+- Wrote this note + pin scoreboard row. No feature flags. No promote. No Replay re-run.

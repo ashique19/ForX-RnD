@@ -1,0 +1,37 @@
+﻿# EURUSD size-by-conf Replay - NEW track strike 2/3 - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+
+## Hypothesis
+Keep floor 0.60; scale qty by conf band (0.5 / 1.0 / 1.25) so weak-conf trades shrink instead of being deleted. See `_HYPOTHESIS_20261001_EURUSD_SIZE_BY_CONF.txt` + expectancy bands note.
+
+## Change
+- Code: `size_scale_for_confidence` + qty passed into `PaperBroker.submit` on Replay fill.
+- Challenger: `replay.size_by_conf.enabled=true` with bands max 0.70/0.85/1.01.
+- **REVERTED** enabled=false after fail. Code kept.
+
+## Job
+- job_id: **65368de62113411a96a8d36f9ebe1224**
+- finished: **2026-10-01 04:45 Asia/Dhaka**
+- EURUSD 1h; start=2015-01-01; pull=false; min_confidence=0.60; costs ON; size_by_conf ON
+
+## Before / after vs pin
+
+| | pin size=1 `2cee7e71.` | size-by-conf `65368de6.` | delta |
+|---|---:|---:|---:|
+| Champ PF | 1.989 | **2.244** | +0.255 |
+| WR | 64.8% | 64.6% | ~flat |
+| n | 3791 | 3767 | -24 |
+| max DD | -10.00% | **-7.54%** | better |
+| total_return | **11.17** | 7.22 | **-3.95** |
+| SMA PF | 0.883 | 0.883 | flat |
+
+Within-job: challenger logistic PF 2.283 / return 8.29 / DD -4.9% vs champ 2.244 / 7.22 / -7.5% — still advisory (not live promote).
+
+## Verdict: FAIL adoption (NEW track **strike 2 of 3**)
+- Same structural mode as conf-floor 0.65: **PF↑ DD↑ return↓**. Not a clean dominate.
+- **REVERTED** `replay.size_by_conf.enabled=false`.
+- No promote. Live conf 0.60 untouched.
+
+## Strike log (NEW track)
+1. purge/embargo=8 `edd93e9d` - mild PF/return/DD regression
+2. size-by-conf `65368de6` - PF/DD up, return down

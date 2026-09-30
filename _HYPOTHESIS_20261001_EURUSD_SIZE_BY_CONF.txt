@@ -1,0 +1,20 @@
+﻿# Hypothesis - EURUSD meta-label / size-by-confidence (NEW track candidate)
+Date: 2026-10-01 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8`
+Depends on: `_EXPECTANCY_BY_CONF_EURUSD_20261001.txt` (bands show edge↑ with conf, floor↑ kills return).
+
+## Idea
+Keep `min_confidence=0.60` (do not raise gate). Add a **post-signal size scaler** (not a HOLD filter):
+- conf in [0.60, 0.70): size *= 0.5
+- conf in [0.70, 0.85): size *= 1.0
+- conf >= 0.85: size *= 1.25
+Caps via existing broker.default_size. No model retrain. Replay-only first (`apply_to_replay` style flag or replay.size_by_conf).
+
+## Why not floor raise
+Strike 1 already proved PF↑ return↓. Sizing keeps the many mediocre trades small instead of deleting them — compound path can survive.
+
+## Protocol (after purge-CV settles)
+- ONE costs-on EURUSD Replay vs pin.
+- Clean WIN = PF + return + DD dominate → flag parent, no promote.
+- FAIL = revert scaler; strike on NEW track.
+- Do NOT run until purge-CV Replay finishes (serial: one Replay at a time).

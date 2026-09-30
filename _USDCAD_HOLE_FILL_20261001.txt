@@ -1,0 +1,29 @@
+﻿# USDCAD H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+STRICT SERIAL multi-pair proof (data, not features). Keep Active=EURUSD. No promote.
+
+## Before
+- data/history/USDCAD_1h.csv: absent
+- Live data/USDCAD_1h.csv: yfinance fetch -> **12386** rows, 2024-09-30 22:00 -> 2026-09-30 22:00 (mid-only)
+
+## Watchlist
+- Added **USDCAD** to `config/watchlist.yaml` pairs.
+- **active: EURUSD** unchanged.
+
+## Fill
+- `python -m forex_lab history --pair USDCAD --interval 1h --start 2015-01-01 --source jetta`
+- Jetta months 2015-01 .. 2026-08 OK -> **72703** bars ending 2026-08-31 23:00
+- Jetta 2026-09: empty (unpublished) - same as other pairs
+- Tip remesh: live mid from 2026-09-01 -> 2026-09-30 22:00 + synth BA from Aug half-spread mean **0.0000724359**; Volume left as live
+- Backup: USDCAD_1h.csv.bak_pre_tip_20261001
+- Script: scripts/_usdcad_tip_remesh_20261001.py
+
+## After
+- H1 rows: **73226** (72703 Jetta + 523 synth tip)
+- Range: **2015-01-01 22:00 -> 2026-09-30 22:00**
+- high<low: 0; neg_spread AskClose<BidClose: 0
+- gaps>72h: 4 New Year weekends only
+- Daily remesh: **3674** rows
+- meta.source: jetta; tip_note recorded
+
+## Next
+- Full-history after-cost pin Replay (min_conf 0.60, costs ON, no promote).

@@ -1,0 +1,17 @@
+﻿# Hypothesis - EURUSD milder size-by-conf (NEW track strike 3/3 candidate)
+Date: 2026-10-01 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8`
+Prior: size bands 0.5/1.0/1.25 job `65368de6` — PF/DD up, return 7.22 < 11.17 (strike 2).
+
+## Why milder
+Strike 2 cut weak-conf size too hard (0.5×) and collapsed compound return the same way as raising the floor. Keep the idea (size ≠ delete) but shrink the perturbation:
+- [0.60, 0.70): **0.85×** (was 0.5)
+- [0.70, 0.85): **1.0×**
+- >= 0.85: **1.10×** (was 1.25)
+
+Expected: keep most of pin return while still lifting PF/DD a notch. Still no min_confidence change.
+
+## Protocol
+- ONE costs-on EURUSD Replay vs pin.
+- Clean WIN = PF + return + DD all dominate → flag parent, DO NOT promote.
+- FAIL = revert enabled=false; strike 3/3 FREEZE this size-by-conf family.

@@ -1,0 +1,17 @@
+﻿# Ops probes - 2026-10-01 ~04:30 Asia/Dhaka
+Standing autonomy. No promote.
+
+## Jetta /2026/9
+- Via `fetch_jetta_month(pair, 2026, 9)`: **EURUSD rows=0**, **USDCAD rows=0** (Sep still unpublished).
+- Aug `2026/8` OK: EURUSD 507 bars (max 2026-08-31 23:00), USDCAD 507 bars.
+- Tip synth path remains correct until Jetta returns Sep.
+
+## Portfolio brain dry-run (enabled still FALSE)
+- `portfolio_brain_enabled(yaml)=False`; `status_payload` tooltip OK; open_count=0.
+- In-memory `enabled=True` smoke (no yaml write): third open GBPUSD with 2 opens already → blocked `portfolio:max_concurrent` (+ book_units); `overlay_flash` → HOLD.
+- Disabled path with same opens: allow, scale=1.0, empty notes (noop preserved).
+- `GET /portfolio/brain` 404 on running API (process likely pre-stub route). Pytest `tests/test_portfolio_brain.py` **7 passed**. Restart API later to expose route; not blocking research.
+- **enabled stays false** in `config/default.yaml`.
+
+## USDCAD
+- No `data/history/USDCAD_1h.csv` yet. Jetta Jul/Aug 2026 pullable. Full 2015→now hole+pin is a multi-hour pull — defer until after purge-CV Replay frees CPU, only if time before 07:40.

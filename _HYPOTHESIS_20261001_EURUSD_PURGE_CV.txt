@@ -1,0 +1,25 @@
+﻿# Hypothesis - EURUSD walk-forward purge/embargo CV (NEW track strike 0/3)
+Date: 2026-10-01 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8` (champ PF 1.989 / DD -10.0% / n 3791 / return 11.17)
+Prior measured-intel FREEZE (3/3 ADX/conf) stays closed. This opens a **NEW** hypothesis track.
+
+## Why this idea
+- Existing walk-forward already uses `trainable_mask` so labels must be ready by the clock (`ready_time <= as_of`).
+- Residual leak: a train sample whose label settles *on* the first test bar (`ready_time == as_of`) used that bar's High/Low in the triple-barrier path — the same bar the model then predicts on. Classic Lopez-de-Prado label/path overlap.
+- Full-history after-cost PF may be mildly optimistic from that boundary overlap (and from serial correlation just before the test window).
+
+## Idea (minimal plumbing)
+- Extend `trainable_mask(..., purge_bars=N)`: require `ready_time <= bar_index[as_of_loc - N]` (purge gap on the H1 mesh).
+- `walk_forward.purge_bars` / `embargo_bars` (and optional `replay.*` overrides). Effective purge = max(purge, embargo).
+- Challenger setting: **purge_bars=8, embargo_bars=8** (= label `horizon`). Default remains 0 (bit-identical to pin when unset).
+- No model/feature/regime/conf change. Live min_confidence stays 0.60.
+
+## Expected edge vs pin
+- Honest train/test split removes boundary path overlap → OOS decisions should be less contaminated.
+- Clean WIN = after-cost champ **PF + total_return + DD** all dominate pin `2cee7e71` (same improve bar as prior track). Then leave paper-ready; **DO NOT promote** — flag parent for user decide.
+- FAIL = revert purge/embargo to 0; document **strike 1/3** on this NEW track.
+
+## Protocol
+- ONE Replay: EURUSD 1h, start 2015-01-01, pull=false, min_confidence=0.60, costs ON (bid_ask)
+- Compare champ book to pin `2cee7e71.`
+- Never promote; never raise live gate from this job alone.

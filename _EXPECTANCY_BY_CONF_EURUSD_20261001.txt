@@ -1,0 +1,48 @@
+﻿# Expectancy-by-confidence + cost-stress (EURUSD pin) - 2026-10-01 Asia/Dhaka
+Post-hoc on pin `2cee7e71` champion closed book (`paper_champion.json`). **Not a Replay.** No promote. Live min_confidence stays 0.60.
+
+## Blunt finding
+Confidence ranks edge: expectancy and PF rise almost monotonically with conf. Raising the floor still **destroys compound return** (same failure mode as measured-intel strike 1 conf-0.65). Cost-stress (extra 1× / 2× mean spread on top of BA+slip already in the pin) leaves PF > 1.8 and return >> 1 — edge is not a thin cost artifact.
+
+## Bands (after-cost realized frac)
+
+| conf band | n | WR | expectancy | PF | sum pnl |
+|---|---:|---:|---:|---:|---:|
+| [0.60, 0.65) | 1348 | 57.6% | 0.000340 | 1.44 | 0.458 |
+| [0.65, 0.70) | 922 | 63.1% | 0.000511 | 1.70 | 0.472 |
+| [0.70, 0.75) | 589 | 68.1% | 0.000749 | 2.22 | 0.441 |
+| [0.75, 0.80) | 435 | 72.9% | 0.001124 | 3.29 | 0.489 |
+| [0.80, 0.85) | 284 | 74.6% | 0.001243 | 3.54 | 0.353 |
+| [0.85, 0.90) | 160 | 78.1% | **0.001392** | **4.04** | 0.223 |
+| [0.90, 1.01) | 53 | 79.2% | 0.001378 | 3.72 | 0.073 |
+
+## Raise-floor (cumulative) — why 0.65 failed adoption
+
+| min_conf | n | WR | PF | compound return proxy |
+|---:|---:|---:|---:|---:|
+| 0.60 (pin) | 3791 | 64.8% | **1.989** | **11.17** |
+| 0.65 | 2443 | 68.7% | 2.379 | 6.72 |
+| 0.70 | 1521 | 72.1% | 2.940 | 3.83 |
+| 0.75 | 932 | 74.7% | 3.513 | 2.11 |
+| 0.80 | 497 | 76.3% | 3.711 | 0.91 |
+
+PF↑ / return↓ is structural here. Do **not** re-challenge bare min_conf raise.
+
+## Cost-stress proxy (extra RT pips subtracted from each closed trade)
+
+| stress | extra RT pips | PF | expectancy | compound return proxy |
+|---|---:|---:|---:|---:|
+| baseline (pin) | 0 | 1.989 | 0.000662 | 11.17 |
+| +1× mean EUR spread | 0.48 | 1.903 | 0.000618 | 9.33 |
+| +2× mean EUR spread | 0.96 | 1.822 | 0.000575 | 7.76 |
+
+Blunt: even a harsh +2× mean-spread tax keeps after-cost PF~1.82 and multi-bagger compound. Not "costs were understated so PF is fake."
+
+## Implications (outside-box next)
+1. **Meta-label / size-by-conf** (preferred over floor raise): keep entries at 0.60; scale size by conf band (e.g. 0.5× in [0.60,0.70), 1.0× in [0.70,0.85), 1.25× above). Hypothesis: lift PF/DD without collapsing n×return the way a hard floor does. Needs ONE costs-on Replay with size overlay only.
+2. **Do not** reopen conf-0.65 as a gate challenger (already strike 1 on old track).
+3. Optional later: true cost-stress Replay with `spread` doubled on mid-path is unnecessary while BA path is live; this proxy is enough for research.
+
+## Artifacts
+- `_EXPECTANCY_BY_CONF_EURUSD_20261001.json`
+- scripts/`_expectancy_by_conf.py`

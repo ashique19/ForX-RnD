@@ -1,0 +1,32 @@
+﻿# USDCAD full-history after-cost pin Replay - 2026-10-01 Asia/Dhaka
+STRICT SERIAL multi-pair proof (data, not features). Do NOT promote.
+Active remains EURUSD. No feature/regime/conf challengers in this job.
+
+## Pair
+- **USDCAD** added to watchlist.
+- Hole fill: `_USDCAD_HOLE_FILL_20261001.txt` (72703 Jetta + 523 synth Sep tip = **73226** H1)
+
+## Job
+- job_id: **a9b26129d9a44f86b2f89646d4698ff3**
+- finished: **2026-10-01 04:55 Asia/Dhaka**
+- start=2015-01-01; pull=false; min_confidence=0.60; costs ON; promote null
+
+## Result
+- source=jetta; bid_ask=true; rows=**73226**
+- champion PF **2.735** DD **-2.46%** n=**6164** WR **70.5%**
+- challenger PF **2.702** DD **-1.96%** n=**5956** WR **70.9%**
+- sma baseline PF **0.798**
+- total_return champ **238.13** / chall **200.44**
+- promote: **null**
+
+## Light TRUST QA (same method as AUD/NZD)
+- pip_size_for_pair(USDCAD)=**0.0001**
+- AskOpen-BidOpen mean **1.46 pip**, med 1.10; RT cost ~1.86 pips (similar NZD)
+- entry vs mid adverse mean **0.69 pip**; better-than-mid 3.3%
+- crossed AskOpen 4.88%; hl_bad 0; tip vol0=524
+- avg win/loss pips 26.4 / -23.0; exit mix tp/sl/timeout 3898/1485/781
+- SMA PF 0.80 argues costs not wildly understated
+- **Verdict: TRUST** — high WR (~70.5%), not a pip-unit bug. Research only. No re-run.
+
+## Rank context (research PF only)
+USDJPY 3.04 > AUDUSD 2.98 > NZDUSD 2.85 > **USDCAD 2.74** > GBPUSD 2.60 > EURUSD 1.99

@@ -1,0 +1,42 @@
+﻿# EURUSD purge/embargo CV Replay - NEW track strike 1/3 - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+
+## Hypothesis
+Residual label-path overlap at train/test boundary (`ready_time == as_of`) leaks first-test-bar H/L into train. `purge_bars=embargo_bars=8` (=horizon) should remove that overlap. See `_HYPOTHESIS_20261001_EURUSD_PURGE_CV.txt`.
+Opens NEW hypothesis track (old measured-intel 3/3 FREEZE stays closed).
+
+## Change
+- Code: `trainable_mask(..., purge_bars=)` + `_refit` reads `walk_forward.purge_bars` / `embargo_bars` (and replay overrides). Default 0 = legacy.
+- Challenger yaml: purge_bars=8, embargo_bars=8 for this job only.
+- **REVERTED** both to 0 after fail. Module/params kept.
+
+## Job
+- job_id: **edd93e9d146d442daffd830da9de1b07**
+- started: ~2026-10-01 04:31 Asia/Dhaka
+- finished: **2026-10-01 04:37 Asia/Dhaka**
+- pair EURUSD 1h; start=2015-01-01; pull=false; min_confidence=0.60; costs ON; purge=8/embargo=8
+- rows from mesh (~71941 tip-refreshed); within-job promote: null (challenger logistic not better)
+
+## Before / after (across jobs)
+
+| | pin (purge=0) `2cee7e71.` | purge=8 `edd93e9d.` | delta |
+|---|---:|---:|---:|
+| Champ PF | **1.989** | 1.971 | **-0.018** |
+| WR | 64.8% | 64.3% | -0.5pp |
+| n | 3791 | 3725 | -66 |
+| max DD | **-10.00%** | -10.86% | worse |
+| total_return | **11.17** | 10.56 | **-0.60** |
+| SMA PF | 0.883 | 0.883 | ~flat |
+
+## Verdict: FAIL adoption (NEW track **strike 1 of 3**)
+- PF, return, and DD all fail to dominate pin. Purge gap slightly starved the train window without a cleaner OOS book.
+- **REVERTED** `walk_forward.purge_bars=0`, `embargo_bars=0`. Code path kept (purge_bars=0 bit-identical).
+- No promote. Live conf 0.60 untouched.
+
+## Strike log (NEW track)
+- Strike 1/3: purge/embargo=8 `edd93e9d` - mild PF/return/DD regression vs pin.
+
+## Next under autonomy
+1. Size-by-conf overlay (hypothesis `_HYPOTHESIS_20261001_EURUSD_SIZE_BY_CONF.txt`) — ONE Replay; keep floor 0.60.
+2. USDCAD hole+pin if CPU/time before 07:40.
+3. Do not re-run purge with different N tonight without new written rationale.

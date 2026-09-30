@@ -1,0 +1,21 @@
+﻿# QA USDCAD pin a9b26129 - 2026-10-01 Asia/Dhaka
+Light cost/pip QA (same shape as AUD/NZD TRUST). Read-only; no promote; no re-run.
+
+## Verdict: TRUST
+Blunt reason: USDCAD after-cost PF~2.74 is high because WR is high (70.5% vs EURUSD 64.8%), not because pip/P&L/costs are wrong for CAD. pip=0.0001. SMA PF 0.798 not rich. RT cost ~1.86 pips (similar NZD) works against false-rich story.
+
+## Key numbers
+| metric | USDCAD | NZDUSD | EURUSD |
+|---|---:|---:|---:|
+| Champ PF / WR / n | 2.735 / 70.5% / 6164 | 2.851 / 70.9% / 5695 | 1.989 / 64.8% / 3791 |
+| DD / total_return | -2.46% / 238 | -2.94% / 3047 | -10% / 11.17 |
+| SMA PF | 0.798 | 0.749 | 0.883 |
+| spread_o mean/med (pips) | 1.46 / 1.10 | 1.46 / 1.10 | 0.48 / 0.30 |
+| entry adv mean (pips) | 0.69 | 0.76 | ~0.37 |
+| crossed AskOpen % | 4.88 | 5.16 | 4.73 |
+
+## Another Replay required?
+No.
+
+## Actions
+- Note only. No promote. No code patch.

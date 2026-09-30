@@ -137,8 +137,17 @@ def trainable_mask(
     bar_index: pd.DatetimeIndex,
     as_of: object,
     horizon: int,
+    *,
+    purge_bars: int = 0,
 ) -> pd.Series:
-    """True where the row's label is fully known at ``as_of`` (and the row is not in the future)."""
+    """True where the row's label is fully known at ``as_of`` (and the row is not in the future).
+
+    ``purge_bars`` (Lopez-de-Prado style): require the label to be ready at least
+    ``purge_bars`` bars *before* ``as_of`` on ``bar_index``. That drops train
+    samples whose label path overlaps the test window starting at ``as_of``
+    (ready_time == as_of uses the first test bar's H/L). Default 0 keeps the
+    legacy ``ready_time <= as_of`` contract.
+    """
     bar_index = pd.DatetimeIndex(bar_index)
     idx = pd.DatetimeIndex(index)
     as_stamp = pd.Timestamp(as_of)
@@ -149,8 +158,21 @@ def trainable_mask(
     good = np.flatnonzero(ok)
     if len(good):
         ready_time[good] = bar_index.values[ready_locs[good]]
-    as64 = np.datetime64(as_stamp.to_datetime64())
-    flags = ok & (ready_time <= as64) & (idx.values <= as64)
+    # Cutoff clock: as_of shifted back purge_bars on the bar mesh (embargo gap).
+    purge = max(0, int(purge_bars or 0))
+    as_loc = bar_index.get_indexer([as_stamp])[0]
+    if as_loc < 0:
+        # as_of not on mesh — fall back to timestamp compare (legacy).
+        cut64 = np.datetime64(as_stamp.to_datetime64())
+    elif purge <= 0:
+        cut64 = np.datetime64(pd.Timestamp(bar_index[as_loc]).to_datetime64())
+    else:
+        cut_loc = as_loc - purge
+        if cut_loc < 0:
+            # Nothing can be ready this far before the first bar.
+            return pd.Series(False, index=idx)
+        cut64 = np.datetime64(pd.Timestamp(bar_index[cut_loc]).to_datetime64())
+    flags = ok & (ready_time <= cut64) & (idx.values <= cut64)
     return pd.Series(flags, index=idx)
 
 
@@ -257,6 +279,38 @@ def _dhaka(ts: object, cfg: dict[str, Any]) -> str:
 
 def _pip(pair: str, cfg: dict[str, Any]) -> float:
     return float(pip_size_for_pair(pair, cfg))
+
+
+def size_scale_for_confidence(confidence: object, cfg: dict[str, Any]) -> float:
+    """Post-signal size scaler. Default 1.0 when disabled or conf missing.
+
+    Does not change Buy/Sell. Keeps min_confidence floor; only scales qty.
+    Bands are ``replay.size_by_conf.bands``: list of {max, scale} ascending max.
+    """
+    block = dict((cfg.get("replay") or {}).get("size_by_conf") or {})
+    if not bool(block.get("enabled")):
+        return 1.0
+    try:
+        conf = float(confidence) if confidence is not None else float("nan")
+    except (TypeError, ValueError):
+        conf = float("nan")
+    if not np.isfinite(conf):
+        return float(block.get("default_scale") or 1.0)
+    bands = list(block.get("bands") or [])
+    if not bands:
+        # Hypothesis default: 0.5 / 1.0 / 1.25
+        bands = [
+            {"max": 0.70, "scale": 0.5},
+            {"max": 0.85, "scale": 1.0},
+            {"max": 1.01, "scale": 1.25},
+        ]
+    for band in bands:
+        try:
+            if conf < float(band.get("max")):
+                return max(0.05, float(band.get("scale") or 1.0))
+        except (TypeError, ValueError):
+            continue
+    return float(block.get("default_scale") or 1.0)
 
 
 def _make_port(name: str, job_dir: Path, cfg: dict[str, Any], *, bid_ask: bool, slippage_pips: float) -> PaperBroker:
@@ -739,9 +793,12 @@ def _fill_pending(
     else:
         tp = px - tp_atr * order.atr
         sl = px + sl_atr * order.atr
+    scale = size_scale_for_confidence(order.confidence, port.cfg)
+    base_size = float(port.default_size)
     fill = port.submit(
         order.side,
         pair,
+        size=base_size * scale,
         price=px,
         sl=sl,
         tp=tp,
@@ -752,7 +809,7 @@ def _fill_pending(
         confidence=order.confidence,
         horizon=horizon,
         entry_ref="replay next-bar bid/ask" if bid_ask else "replay next-bar open; spread via spread_pips",
-        note=f"replay book {name}",
+        note=f"replay book {name}; size_scale={scale:.3f}",
     )
     pending[name] = None
     opens[name] = _Open(broker_id=str(fill["position_id"]), side=order.side, sl=sl, tp=tp, bars_seen=0)
@@ -879,7 +936,14 @@ def _refit(
     challenger_type: str,
     predictions: dict[str, pd.DataFrame],
 ) -> None:
-    mask = trainable_mask(feats.index, frame.index, ts, horizon)
+    wf = dict(cfg.get("walk_forward") or {})
+    rc = dict(cfg.get("replay") or {})
+    # purge_bars: drop labels whose path overlaps the test start (LdP purge).
+    # embargo_bars: alias/extra gap; effective purge = max(purge, embargo).
+    purge_bars = int(rc.get("purge_bars") if rc.get("purge_bars") is not None else wf.get("purge_bars") or 0)
+    embargo_bars = int(rc.get("embargo_bars") if rc.get("embargo_bars") is not None else wf.get("embargo_bars") or 0)
+    purge_bars = max(0, purge_bars, embargo_bars)
+    mask = trainable_mask(feats.index, frame.index, ts, horizon, purge_bars=purge_bars)
     y = labels.reindex(feats.index)
     mask = mask & y.notna()
     x_all = feats.loc[mask]
@@ -888,8 +952,15 @@ def _refit(
         return
     if len(x_all):
         last_ready = label_ready_at(x_all.index[-1], frame.index, horizon)
+        # With purge, last_ready must sit at least purge_bars before ts.
         if last_ready is None or last_ready > ts:
             raise LookaheadError("training label is not settled at the clock")
+        if purge_bars:
+            as_loc = frame.index.get_indexer([ts])[0]
+            if as_loc >= 0:
+                cut_loc = as_loc - purge_bars
+                if cut_loc < 0 or last_ready > pd.Timestamp(frame.index[cut_loc]):
+                    raise LookaheadError("training label overlaps purged test window")
     if len(x_all) > train_bars:
         x_all = x_all.iloc[-train_bars:]
         y_all = y_all.iloc[-train_bars:]
