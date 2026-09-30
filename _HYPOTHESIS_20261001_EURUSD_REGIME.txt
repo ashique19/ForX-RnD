@@ -1,0 +1,19 @@
+﻿# Hypothesis — EURUSD trend vs chop regime (measured-intel strike 2/3)
+Date: 2026-10-01 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8` (champ PF 1.989 / DD -10.0% / n 3791 / return 11.17)
+
+## Idea
+Chop bars (weak trend) inflate after-cost friction: model still fires at min_confidence 0.60 but mean-reversion noise eats edge. A **policy-only** trend filter that forces HOLD when ADX < 20 should cut low-quality opens, lifting PF and tightening DD without changing the XGB feature matrix / live champion weights.
+
+## Minimal change
+- New `forex_lab/trend_regime.py` (mirrors `vol_regime`)
+- Metric: Wilder ADX period 14, normalized 0..1 (`trend_adx`); alt Kaufman ER
+- Mode: `skip_chop` — block when `trend_adx < 0.20`
+- Wired in Replay resolve + predict path; columns attached from OHLCV in `_attach_policy_columns` (not model X)
+- `config/default.yaml` `replay.trend_regime.enabled: true` for this challenger only (revert if not clean beat)
+
+## Protocol
+- ONE Replay: EURUSD 1h, start 2015-01-01, pull=false, min_confidence=0.60, costs ON
+- Compare champ book to pin `2cee7e71…`
+- Clean beat = PF↑ and DD better with sensible n; else REVERT yaml flag, strike 2/3
+- NEVER promote; live gate stays 0.60

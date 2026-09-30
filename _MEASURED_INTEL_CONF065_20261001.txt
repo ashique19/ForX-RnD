@@ -37,3 +37,7 @@ Within-job: challenger book PF 2.168 vs champ 2.166 but return/DD fail improve g
 1. **Regime label (trend vs chop)** as filter on EURUSD pin settings — prefer ADX/`ta_adx` or efficiency-ratio skip-chop; one Replay max; revert if loses (strike 2 if fails).
 2. Optional later: tip densify GBPUSD; Jetta Sep remesh when `/2026/9` = 200.
 3. Do **not** enable `model.calibrate` isotonic/sigmoid at the 0.60 floor (starves pin band).
+
+## Follow-on (strike 2) — 2026-10-01 02:05 Asia/Dhaka
+- Regime ADX skip_chop Replay `c9ff1aca20d2407b9175938354f75034`: champ PF 1.871 / DD -5.92% / n 2378 / return 3.31 vs pin PF 1.989 / DD -10% / n 3791 / return 11.17.
+- **Strike 2 of 3** — REVERT `replay.trend_regime.enabled=false`. Details: `_REPLAY_20261001_EURUSD_REGIME.txt`.

@@ -1,0 +1,47 @@
+﻿# EURUSD trend vs chop regime Replay - measured-intel strike 2/3 - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+
+## Hypothesis
+Chop (weak-trend) bars inflate after-cost friction at the 0.60 floor. A **policy-only** ADX skip-chop gate (force HOLD when `trend_adx < 0.20`) should lift after-cost PF and tighten DD vs EURUSD pin `2cee7e71…` without changing the XGB feature matrix. See `_HYPOTHESIS_20261001_EURUSD_REGIME.txt`.
+
+## Change (minimal)
+- New `forex_lab/trend_regime.py` (+ `tests/test_trend_regime.py`, 8 passed)
+- Wire: `apply_replay_trend_regime` / `apply_trend_regime_to_pred` / report line in `replay.py`
+- Policy columns `trend_adx`/`trend_er` attached from OHLCV in `backtest._attach_policy_columns` (not model X)
+- Config: `replay.trend_regime` (metric=adx, period=14, min_adx=0.20, mode=skip_chop)
+- Challenger run: enabled=true; **REVERTED to enabled=false** after fail
+
+## Job
+- job_id: **c9ff1aca20d2407b9175938354f75034**
+- started: ~2026-10-01 01:58 Asia/Dhaka
+- finished: **2026-10-01 02:05 Asia/Dhaka**
+- pair EURUSD 1h; start=2015-01-01; pull=false; min_confidence=**0.60**; costs ON (bid_ask)
+- rows=**71941**; source=jetta; bid_ask=true
+- Gate active (report): `trend_regime: skip_chop | metric=adx | period=14 | min=0.2`
+- Within-job promote: **null** (challenger logistic worse PF/return)
+
+## Before / after (across jobs)
+
+| | pin (no trend_regime) `2cee7e71…` | +ADX skip_chop `c9ff1aca…` | delta |
+|---|---:|---:|---|
+| Champ PF | **1.989** | 1.871 | **-0.118** |
+| WR | 64.8% | 63.4% | -1.4pp |
+| n | 3791 | 2378 | **-1413** |
+| max DD | -10.00% | **-5.92%** | better |
+| total_return | **11.17** | 3.31 | **-7.86** |
+| SMA PF | 0.883 | 0.883 | flat |
+
+## Verdict: FAIL adoption (measured-intel **strike 2 of 3**)
+- DD improved, but **PF and total_return clearly worse**; n cut hard (~37%). Not a clean dominate.
+- **REVERTED** `config/default.yaml` `replay.trend_regime.enabled` -> **false**. Module kept for future knobs.
+- No promote. Live `signals.min_confidence` stays **0.60**. Live champion untouched.
+
+## Strike log
+- Strike 1/3: conf-floor 0.65 `a67b7702` — PF/DD up, return down → keep 0.60 (`_MEASURED_INTEL_CONF065_20261001.txt`).
+- Strike 2/3: ADX skip_chop `c9ff1aca` — DD up, PF/return/n down → revert trend_regime OFF.
+- Freeze after 3 failed measured-intel challengers without a keep.
+
+## Next under autonomy (recommended)
+1. **Strike 3/3** — one more measured-intel idea (e.g. looser ADX min 0.15, ER metric, or session×regime interaction) OR stop measured-intel and switch to tip densify / Jetta Sep remesh.
+2. Do **not** promote; do **not** raise live conf floor; do **not** re-enable trend_regime without a clean PF+return+DD beat.
+3. Optional hygiene: vol_regime report note accumulates "atr_pctile missing" spam (pre-existing fail-soft note append) — not blocking.

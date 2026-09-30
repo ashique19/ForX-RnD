@@ -50,6 +50,12 @@ def _attach_policy_columns(
         close = ohlcv["Close"].reindex(out.index).astype(float)
         atr_pct = aligned["atr_pct"].astype(float)
         out["tp_pips"] = (tp_atr * atr_pct * close) / max(pip, 1e-12)
+    try:
+        from forex_lab.trend_regime import attach_trend_regime_columns
+
+        out = attach_trend_regime_columns(out, ohlcv, cfg)
+    except Exception:
+        pass
     return out
 
 

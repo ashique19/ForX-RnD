@@ -407,6 +407,15 @@ replay:
     enabled: true             # KEEP ON — PF 1.275->1.450 vs 45bbad3a (see tighten_L_weekday_gate_full_compare.md)
     block: [mon, thu]         # block new opens these UTC weekdays
     tz: UTC                   # matches Replay bar timestamps / paper entry_time
+  # Trend vs chop entry skip (measured-intel). Policy-only ADX/ER gate; does not add model features.
+  # skip_chop: block new opens when trend strength < min (ADX 0..1 or Kaufman ER).
+  trend_regime:
+    enabled: false            # REVERT strike 2/3 — ADX skip_chop lost vs pin 2cee7e71 (PF/return)
+    mode: skip_chop           # off | skip_chop
+    metric: adx               # adx | er
+    period: 14
+    min_adx: 0.20             # skip when trend_adx < 0.20 (ADX<20 = chop)
+    min_er: 0.25              # used when metric=er
   # Exit hold (SERIAL N). Defer SL until bars_seen >= min_bars_before_sl (entry bar = 1).
   # Evidence: champion d20 same-bar SL pure losses; same-bar TP kept. TP/timeout unchanged.
   exit_hold:
