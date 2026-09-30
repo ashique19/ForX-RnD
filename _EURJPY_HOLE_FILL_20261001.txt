@@ -1,0 +1,31 @@
+﻿# EURJPY H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+Multi-pair proof (data, not features). Keep Active=EURUSD. No promote.
+After meta-label FREEZE 3/3.
+
+## Before
+- data/history/EURJPY_1h.csv: absent
+- Live data/EURJPY_1h.csv: yfinance 2y -> **12328** rows, 2024-09-30 23:00 -> 2026-09-30 23:00 (mid-only)
+
+## Watchlist
+- Added **EURJPY** to `config/watchlist.yaml` pairs.
+- **active: EURUSD** unchanged.
+
+## Fill
+- `python -m forex_lab history --pair EURJPY --interval 1h --start 2015-01-01 --source jetta`
+- Jetta months 2015-01 .. 2026-08 OK -> **72704** bars ending 2026-08-31 23:00
+- Jetta 2026-09: HTTP 400 (bars stayed 72704)
+- Tip remesh: live mid OHLC from 2026-09-01 00:00 -> 2026-09-30 23:00 + synth bid/ask from Aug Jetta half-spread mean **0.0067021696**; Volume left as live
+- Backup pre-tip: EURJPY_1h.csv.bak_pre_tip_20261001
+- Script: scripts/_eurjpy_tip_remesh_20261001.py
+
+## After
+- H1 rows: **73225** (72704 Jetta + 521 synth tip)
+- Range: **2015-01-01 22:00 -> 2026-09-30 23:00**
+- high<low: 0 (mid/bid/ask); neg_spread AskClose<BidClose: 0
+- Volume (Jetta body thru Aug): mean ~4049, median 3504, zero_vol 0, non-int 0
+- gaps>72h: 4 - New Year long weekends only (max 73h)
+- Daily remesh: **3674** rows, 2015-01-01 -> 2026-09-30
+- meta.source: jetta; tip_note recorded
+
+## Gaps remaining
+- Jetta published history ends 2026-08-31; Sep tip is live-mid + synth BA. Sufficient for after-cost pin Replay.

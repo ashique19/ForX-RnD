@@ -1,4 +1,4 @@
-# Paper journal auto-stats - 2026-10-01 04:40 Asia/Dhaka
+# Paper journal auto-stats - 2026-10-01 05:47 Asia/Dhaka
 Store: `data\paper_broker.json`
 
 Open positions: **1**
@@ -9,6 +9,21 @@ Closed trades: **9**
 | pair | n | WR | exp | sum | PF |
 |---|---:|---:|---:|---:|---:|
 | EURUSD | 9 | 0.444 | -0.000898 | -0.0081 | 0.714 |
+
+## Closed by confidence bin
+| conf_bin | n | WR | exp | sum | PF |
+|---|---:|---:|---:|---:|---:|
+| <0.60 | 3 | 0.000 | -0.005285 | -0.0159 | 0.000 |
+| 0.60-0.70 | 1 | 1.000 | 0.010473 | 0.0105 | inf |
+| 0.70-0.80 | 5 | 0.600 | -0.000539 | -0.0027 | 0.783 |
+
+## Closed by exit reason
+| exit | n | WR | sum |
+|---|---:|---:|---:|
+| duration | 1 | 1.000 | 0.0000 |
+| opposite | 1 | 1.000 | 0.0004 |
+| sl | 5 | 0.000 | -0.0283 |
+| tp | 2 | 1.000 | 0.0198 |
 
 ## Last 8 closed
 - EURUSD SELL realized=-0.0070863655506169035 conf=0.4986 exit=sl @ 2026-09-24 08:48:11 UTC
