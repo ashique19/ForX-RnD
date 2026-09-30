@@ -1,0 +1,36 @@
+﻿# Morning autonomy blunt scoreboard - 2026-10-01 ~05:53 Asia/Dhaka
+Keep working until **07:40 Asia/Dhaka** then stop for weekly retrain. **No promote.** Live min_confidence=0.60.
+
+## Landed this stretch (05:33 -> 05:53)
+
+| item | result | blunt |
+|---|---|---|
+| Meta-label S3 hyp (written first) | done | `_HYPOTHESIS_20261001_EURUSD_META_LABEL_S3.txt` - asia_loud_weak (opposite of asia_quiet); conf_atr rejected offline |
+| Meta-label Replay asia_loud_weak `c2f9814b` | **FAIL FREEZE 3/3** | vs pin `2cee7e71`: PF 1.972 / ret 10.62 / DD -10.75% / n 3745 (-46). All miss. `_META_LABEL_FREEZE_20261001.txt` |
+| Cross-pair veto paperdesk wire | done OFF | `api/paperdesk.py` + `tests/test_paperdesk_cross_pair.py`; yaml enabled=false |
+| EURJPY hole fill + tip | done | 73225 H1 Jetta+synth tip; `_EURJPY_HOLE_FILL_20261001.txt` |
+| EURJPY pin `a42587855` | **TRUST** | Champ PF **3.037** / WR 72.3% / DD -2.35% / ret 1198; QA TRUST; promote null |
+| Paper journal stats | refreshed | conf/exit bins in `scripts/_paper_journal_stats.py` |
+| EURGBP Jetta hole fill | in flight | live tip ready; body pulling |
+
+## Meta-label family vs EURUSD pin `2cee7e71` — **CLOSED 3/3 FREEZE**
+
+| # | challenger | job | PF | return | DD | verdict |
+|---|---|---|---:|---:|---:|---|
+| 1 | quiet_weak | `d5908db6` | 1.989 | 11.21 | -10.77% | FAIL |
+| 2 | asia_quiet | `df06b935` | 2.007 | 8.19 | -10.08% | FAIL |
+| 3 | asia_loud_weak | `c2f9814b` | 1.972 | 10.62 | -10.75% | FAIL **FREEZE** |
+
+## Standing FREEZEs
+
+- measured-intel 3/3 CLOSED
+- NEW track purge/size 3/3 CLOSED
+- **meta-label 3/3 CLOSED** — do not reopen without a NEW family mechanism
+
+## Pin rank (research PF only; not deploy)
+
+1. USDJPY 3.04 TRUST ≈ EURJPY 3.04 TRUST → 3. AUDUSD 2.98 → 4. NZDUSD 2.85 → 5. USDCAD 2.74 → 6. GBPUSD 2.60 → 7. EURUSD 1.99 Active
+
+## Explicit non-actions
+- No promote. No live-gate change. conf 0.60.
+- meta_label / purge / size_by_conf / trend_regime / portfolio_brain / cross_pair_veto all enabled=false.
