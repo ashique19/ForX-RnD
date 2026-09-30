@@ -1,0 +1,55 @@
+﻿# Edge hypothesis backlog - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Measured-intel FREEZE still ON.
+Written AFTER NZDUSD multi-pair pin (`35eaecb`). Candidates only — do NOT run tonight.
+Leave CPU/IO free for weekly retrain ~08:04 Asia/Dhaka.
+
+## Context (frozen)
+- Live Active = EURUSD; min_confidence = 0.60; trend_regime.enabled = false; portfolio_brain.enabled = false.
+- After-cost pins (research only; promote null): USDJPY 3.04 TRUST > AUDUSD 2.98 QA FLAG > NZDUSD 2.85 QA FLAG > GBPUSD 2.60 TRUST > EURUSD 1.99.
+- Rich PF on AUD/NZD/JPY needs morning cost/pip spot-check before any deploy talk.
+- 3/3 measured-intel strikes already failed vs EURUSD pin `2cee7e71`.
+
+## Unfreeze candidates (priority sketch; each needs a written hypothesis + improve-gate Replay)
+
+1. **Walk-forward CV / embargoed folds**
+   - Hypothesis: full-history PF is optimistic; rolling train/test with purge+embargo will shrink champ PF toward EURUSD-like realism.
+   - Scope: EURUSD first (Active), then one high-WR pair (USDJPY or NZDUSD) as contrast.
+   - Gate: report fold PF/WR/DD distributions; no promote from CV alone.
+
+2. **Size / portfolio_brain paper week**
+   - Hypothesis: post-signal overlay (max concurrent, pair correlation cap) reduces cluster DD without killing expectancy.
+   - Pre-req: design note `_PORTFOLIO_BRAIN_DESIGN_20261001.txt` + stub already disabled.
+   - Scope: paper-only week on desk; enable=false until written A/B vs pin on EURUSD+one secondary.
+   - FREEZE note: do not flip portfolio_brain.enabled without this A/B.
+
+3. **Jetta Sep remesh when /2026/9 returns 200**
+   - Ops, not intel: replace live-mid+synth BA tip with tick-true Jetta for EUR/JPY/GBP/AUD/NZD.
+   - Optional tip-only Replay SKIP if delta rows small (same as EURUSD tip refresh).
+
+4. **Rich-PF morning QA panel**
+   - Spot-check: pip_size, mean/med spread_pips, sample trade entry/exit BA fills, SMA baseline still <1.
+   - Pairs: AUDUSD + NZDUSD first (QA FLAG); confirm not unit bug before any size talk.
+
+5. **Cross-pair stability / correlation paper book**
+   - Hypothesis: simultaneous USD-cross signals overweight USD beta; staggered or max-1-USD-risk rule improves portfolio DD.
+   - Depends on (2); research Replay multi-pair aggregate, not live gate.
+
+6. **Conf / regime re-open only with new written hypothesis**
+   - Not a reopen of ADX 0.15/0.20 or min_conf 0.65 as-is (already struck out).
+   - Allowed later examples: session-local conf, volatility-scaled conf, non-ADX chop metric with pre-registered thresholds.
+   - Still requires improve-gate vs EURUSD pin; default remains FREEZE.
+
+7. **Idle densify / tip health**
+   - Keep desk tip fresh (yfinance mid) without full-history Replay; no feature flips.
+
+## Explicitly NOT on this backlog tonight
+- No promote.
+- No portfolio_brain enable.
+- No trend_regime enable.
+- No min_confidence change.
+- No new feature packs (levels/dxy/fib/pattern) challengers without separate hypothesis file.
+
+## Desk posture until weekly retrain
+- Heavy overnight work STOPPED after this note.
+- API/desk stay up; Active EURUSD; watchlist includes NZDUSD for research board only.
+- Next human/agent touch: weekly retrain window ~08:04 Asia/Dhaka, then optional morning QA on rich-PF pins.
