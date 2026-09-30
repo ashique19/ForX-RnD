@@ -10,6 +10,7 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 | USDJPY | `ef6fe062c6f84cccaf8c9d55facddeeb` | 2026-10-01 00:46 | jetta / true | 73217 | **3.037** | 72.8% | 5694 | -3.30% | 613.61 | 0.851 | null | Morning QA **TRUST** (`_QA_USDJPY_PIN_20261001.txt` / commit `5e56454`). High WR, not pip-unit bug. Research only. |
 | GBPUSD | `d6a6f7a60036404aabb1e57dd1da8725` | 2026-10-01 01:34 | jetta / true | 73055 | **2.601** | 70.1% | 6149 | -2.61% | 604.22 | 0.822 | null | Hole-fill Jetta+synth tip. Night QA **TRUST** (`_QA_GBPUSD_PIN_20261001.txt`). Same disclaimer as USDJPY. |
 | AUDUSD | `6a5653c8d5fc4f43aa896ca8c26a6150` | 2026-10-01 02:38 | jetta / true | 73225 | **2.980** | 72.4% | 5977 | -3.18% | 4316.04 | 0.786 | null | Hole-fill Jetta+synth tip (`_AUDUSD_HOLE_FILL_20261001.txt`). **QA FLAG** rich PF (like USDJPY); pip=0.0001 OK. Research only. |
+| NZDUSD | `83c2715df9104a099056b96812141c42` | 2026-10-01 02:49 | jetta / true | 73216 | **2.851** | 70.9% | 5695 | -2.94% | 3047.89 | 0.749 | null | Hole-fill Jetta+synth tip (`_NZDUSD_HOLE_FILL_20261001.txt`). **QA FLAG** rich PF (like AUD/JPY); pip=0.0001 OK. Research only. |
 
 ## Challenger (same jobs; all fail improve gate)
 
@@ -19,6 +20,7 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 | USDJPY | 2.920 | 72.2% | 5357 | -2.26% | 366.50 | PF/return worse |
 | GBPUSD | 2.549 | 69.7% | 5930 | -1.97% | 442.22 | PF/return worse |
 | AUDUSD | 2.892 | 72.2% | 5643 | -4.09% | 2256.91 | PF/return/DD worse |
+| NZDUSD | 2.764 | 70.4% | 5443 | -3.66% | 1744.20 | PF/return/DD worse |
 
 ## Tip refresh state (EURUSD)
 
@@ -30,19 +32,20 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 ## Shared cost contract (all pins)
 
 - Bid/ask fills; `spread_pips` ignored when BA present; `slippage_pips=0.2`; `exit_slippage=true`
-- `pip_size_for_pair`: EUR/GBP/AUD=0.0001, JPY=0.01
-- SMA baseline PF ~0.79-0.88 on all (dumb book not rich => costs not wildly understated)
+- `pip_size_for_pair`: EUR/GBP/AUD/NZD=0.0001, JPY=0.01
+- SMA baseline PF ~0.75-0.88 on all (dumb book not rich => costs not wildly understated)
 - Promote: **null** everywhere; live champion untouched; research disclaimer stands
 
 ## Rank by champ PF (research only; not deploy rank)
 
 1. USDJPY 3.04 (TRUST QA)
-2. AUDUSD 2.98 (QA FLAG — morning spot-check optional)
-3. GBPUSD 2.60 (TRUST QA)
-4. EURUSD 1.99 (tip refreshed; pin stands)
+2. AUDUSD 2.98 (QA FLAG - morning spot-check optional)
+3. NZDUSD 2.85 (QA FLAG - morning spot-check optional)
+4. GBPUSD 2.60 (TRUST QA)
+5. EURUSD 1.99 (tip refreshed; pin stands)
 
 ## Autonomy follow-ons
 
 - Measured-intel FREEZE remains (3/3 strikes). No regime/conf challengers without new written hypothesis.
-- Next multi-pair proof candidate: **NZDUSD** same pattern OR stop if PC strained / weekly gate morning conflict.
+- Multi-pair proof set complete for major USD crosses on watchlist (EUR/JPY/GBP/AUD/NZD). Next: unfreeze candidates in `_EDGE_HYPOTHESIS_BACKLOG_20261001.txt` only after weekly retrain room; OR stop heavy overnight work.
 - No promote tonight even if a challenger wins a research Replay.

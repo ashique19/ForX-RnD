@@ -1,0 +1,40 @@
+﻿# NZDUSD full-history after-cost pin Replay - 2026-10-01 Asia/Dhaka
+STRICT SERIAL multi-pair proof (data, not features). Do NOT promote.
+Measured-intel FREEZE honored (no feature/regime/conf challengers).
+
+## Pair
+- **NZDUSD** added to watchlist (Active remains EURUSD).
+- Hole fill: `_NZDUSD_HOLE_FILL_20261001.txt` (72695 Jetta + 521 synth Sep tip = **73216** H1; daily 3671)
+
+## Request
+- job_id: **83c2715df9104a099056b96812141c42**
+- started: ~2026-10-01 02:43 Asia/Dhaka
+- finished: **2026-10-01 02:49 Asia/Dhaka**
+- start=2015-01-01; pull=false; min_confidence=0.60; costs on (bid_ask fills); **no promote**
+
+## Result
+- source=jetta; bid_ask=true; rows=**73216**
+- champion PF **2.8512** DD **-2.94%** n=**5695** WR **70.9%**
+- challenger PF **2.7644** DD **-3.66%** n=**5443** WR **70.4%**
+- sma baseline PF **0.749** (sanity: dumb baseline not rich)
+- total_return champ **3047.89** / chall **1744.20** (compounding; same story as high-WR USDJPY/AUDUSD)
+- promote: **null** (challenger did not beat champion on PF/total_return/DD improve gate)
+
+## Cost / pip sanity vs EUR / GBP / JPY / AUD
+- pip_size_for_pair: EURUSD=0.0001, GBPUSD=0.0001, AUDUSD=0.0001, **NZDUSD=0.0001**, USDJPY=0.01 (NZD pip matches EUR)
+- NZDUSD H1 AskClose-BidClose: mean ~1.47 pip, med ~1.10 pip (BA present; spread_pips ignored)
+- After-cost pins (costs on, min_conf 0.60):
+  | pair | job | champ PF | WR | n | DD | SMA PF |
+  |---|---|---|---|---|---|---|
+  | EURUSD | 2cee7e71... | ~1.99 | 64.8% | 3791 | -10.0% | ~0.88 |
+  | USDJPY | ef6fe062... | 3.04 | 72.8% | 5694 | -3.3% | 0.85 |
+  | GBPUSD | d6a6f7a6... | 2.60 | 70.1% | 6149 | -2.6% | 0.82 |
+  | AUDUSD | 6a5653c8... | 2.98 | 72.4% | 5977 | -3.2% | 0.79 |
+  | NZDUSD | 83c2715d... | 2.85 | 70.9% | 5695 | -2.9% | 0.75 |
+- NZDUSD PF~2.85 sits with AUDUSD/USDJPY (high WR ~71%), not a pip-unit bug (NZD pip matches EUR).
+- **QA FLAG**: PF looks rich vs EURUSD~1.99 (same research disclaimer as USDJPY/GBPUSD/AUDUSD QA). Do not treat as deployable edge. Optional morning cost/pip/trade spot-check before trusting; not blocking this pin note. SMA PF 0.75 argues costs are not wildly understated.
+
+## Constraints honored
+- No levels/dxy/fib/pattern/regime/conf flips; measured-intel FREEZE
+- No portfolio_brain enable; no promote (advisory null; live champion untouched)
+- Desk left up (API :8000 healthy during/after)
