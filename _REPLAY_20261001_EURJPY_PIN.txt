@@ -1,0 +1,26 @@
+﻿# EURJPY after-cost full-history pin Replay - 2026-10-01 05:52 Asia/Dhaka
+Standing ForX autonomy. Multi-pair proof. **Do NOT promote.** Live Active stays EURUSD. min_confidence=0.60.
+After meta-label FREEZE 3/3.
+
+## Job
+- job_id: **a425878558e4453f832e5c6fa112c510**
+- started: ~2026-10-01 05:48 Asia/Dhaka
+- finished: **2026-10-01 05:52 Asia/Dhaka**
+- EURJPY 1h; start=2015-01-01; pull=false; costs ON (bid/ask + 0.2 pip slip); meta_label OFF; purge/size OFF
+
+## Scoreboard
+
+| Book | n | WR | PF | max DD | total_return |
+|---|---:|---:|---:|---:|---:|
+| champion | 5934 | 72.35% | **3.037** | -2.35% | 1198.89 |
+| challenger | 5568 | 71.41% | 2.822 | -2.65% | 537.93 |
+| sma | 15572 | 46.98% | 0.862 | -93.7% | -0.935 |
+
+Promotion within-job: **null** (challenger did not improve vs champion). No live promote.
+
+## Data
+- H1: 73225 rows (72704 Jetta + 521 Sep tip). See `_EURJPY_HOLE_FILL_20261001.txt`.
+- source=jetta, bid_ask=true.
+
+## Note
+PF~3 / WR~72% matches USDJPY/AUDUSD multi-pair pin class (high-WR compound), not EURUSD~1.99. See `_QA_EURJPY_PIN_20261001.txt` TRUST. Research only — not deployable.

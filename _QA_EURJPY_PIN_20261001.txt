@@ -1,0 +1,33 @@
+﻿# QA EURJPY pin a42587855 - 2026-10-01 05:53 Asia/Dhaka
+Light cost/pip QA (same shape as USDJPY TRUST QA). Read-only; no promote; no full re-run.
+
+## Verdict: TRUST
+Blunt reason: EURJPY after-cost PF~3.04 is high because win rate is high (champion 72.3% vs EURUSD 64.8%), not because pip size / P&L scaling / costs are wrong for JPY crosses. `pip_size_for_pair("EURJPY")` = 0.01. Bid/ask fills ignore spread_pips; slippage is 0.2 * pip (0.002 JPY). SMA baseline PF is 0.862 - if costs were wildly understated, the dumb baseline would also look rich. It does not.
+
+Do not treat PF~3 as a deployable edge. Same research disclaimer as EURUSD / USDJPY. Challenger lost the improve gate (null). No promote.
+
+## Jobs compared
+| | EURJPY a42587855... | USDJPY ef6fe062... | EURUSD 2cee7e71... |
+|---|---|---|---|
+| Finished | 2026-10-01 05:52 Asia/Dhaka | 2026-10-01 00:46 Asia/Dhaka | 2026-09-30 01:20 Asia/Dhaka |
+| Source | jetta, bid_ask=true | jetta, bid_ask=true | dukascopy, bid_ask=true |
+| Rows | 73225 | 73217 | 71888 |
+| Champ PF / WR / n | 3.037 / 72.35% / 5934 | 3.037 / 72.76% / 5694 | 1.989 / 64.79% / 3791 |
+| Chall PF / WR / n | 2.822 / 71.41% / 5568 | 2.920 / 72.15% / 5357 | 1.939 / 64.50% / 3611 |
+| Champ expectancy (frac) | 0.001198 | 0.001131 | 0.000662 |
+| Champ net_pnl (sum frac) | 7.111 | 6.440 | 2.508 |
+| Champ total_return | 1198.89 | 613.61 | 11.17 |
+| Champ max DD | -2.35% | -3.30% | -10.00% |
+| SMA PF | 0.862 | 0.851 | 0.883 |
+| Promote | null | null | null |
+
+## Cost / pip findings (numbers)
+- pip_size_for_pair("EURJPY") = 0.01 (same family as USDJPY).
+- EURJPY H1 AskOpen-BidOpen: mean **1.22 pip**, med 0.70 pip. RT cost ~1.62 pips (mean spread + 2*0.2 slip).
+- Champion entry vs mid (adverse, n=2000): mean **0.56 pip**; better-than-mid 4.95%.
+- Avg win / avg loss (pips): **+34.06 / -29.54** (ratio ~1.15). Exit mix tp/sl/timeout: 3864 / 1299 / 771.
+- high<low 0; AskClose<BidClose 0; Volume zero = 521 (= synth tip). Crossed AskOpen<BidOpen: **10.1%** (same class as USDJPY 10.6%).
+- net_pnl fractional; total_return = compound prod(1+r)-1 from sum r=7.11 => 1198.89. Not a unit bug.
+
+## Actions this QA
+- Wrote this note + `_qa_eurjpy_raw.json`. No feature flags. No promote. No Replay re-run.
