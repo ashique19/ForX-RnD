@@ -1,0 +1,5 @@
+﻿# QA EURGBP pin 1bece8f2 - 2026-10-01 05:59 Asia/Dhaka
+Light cost/pip QA. Read-only; no promote.
+
+## Verdict: TRUST
+PF~2.38 with WR 68.7% sits between GBPUSD~2.60 and EURUSD~1.99. `pip_size_for_pair("EURGBP")`=0.0001. SMA PF 0.755 (not rich). Spread mean 1.25 pip; entry adverse 0.67 pip; avg win/loss +17.0/-15.6 pips. Crossed AskOpen 6.7%. hl/neg_spread 0. Compound ret 142.84 from sum frac 4.98 — not a unit bug. No promote.

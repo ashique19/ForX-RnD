@@ -1,0 +1,16 @@
+﻿# EURGBP after-cost full-history pin Replay - 2026-10-01 05:59 Asia/Dhaka
+Standing ForX autonomy. Multi-pair proof. **Do NOT promote.** Active=EURUSD. conf 0.60.
+
+## Job
+- job_id: **1bece8f2ecd14e7180eb920d413dc470**
+- finished: **2026-10-01 05:59 Asia/Dhaka**
+- EURGBP 1h; start=2015-01-01; costs ON; meta_label OFF
+
+## Scoreboard
+| Book | n | WR | PF | max DD | total_return |
+|---|---:|---:|---:|---:|---:|
+| champion | 6255 | 68.67% | **2.382** | -4.10% | 142.84 |
+| challenger | 6073 | 69.14% | 2.393 | -5.37% | 136.11 |
+| sma | 15728 | 44.07% | 0.755 | -98.3% | -0.983 |
+
+Promote: **null**. Research only. QA TRUST (`_QA_EURGBP_PIN_20261001.txt`).
