@@ -1,0 +1,39 @@
+﻿# Measured-intel challenger Replay - conf floor 0.65 - 2026-10-01 Asia/Dhaka
+Follow-on from `_CALIBRATION_AUDIT_20261001.txt`. Do NOT promote. Live yaml untouched (per-job override only).
+
+## Hypothesis
+Reliability audit: label hit rises with conf; 0.65-0.70 hit~0.85 vs 0.60-0.65 hit~0.77. Raising min_confidence 0.60→0.65 should lift after-cost PF and tighten DD vs EURUSD pin `2cee7e71` (accepting fewer trades / possibly lower compound return).
+
+## Job
+- job_id: **a67b7702ad3c4c689517a88fe38a1f8c**
+- started: ~2026-10-01 01:47 Asia/Dhaka
+- finished: **2026-10-01 01:54 Asia/Dhaka**
+- pair EURUSD 1h; start=2015-01-01; pull=false; **min_confidence=0.65**; costs ON (bid_ask)
+- rows=**71941** (tip-refreshed mesh); source from status (mesh); promote within-job: **null**
+
+## Before / after (across jobs)
+
+| | pin 0.60 `2cee7e71…` | challenger 0.65 `a67b7702…` | delta |
+|---|---:|---:|---|
+| Champ PF | 1.989 | **2.166** | +0.177 |
+| WR | 64.8% | 66.8% | +2.0pp |
+| n | 3791 | 2945 | -846 |
+| max DD | -10.00% | **-7.41%** | better |
+| total_return | **11.17** | 7.97 | **-3.20** |
+| SMA PF | 0.883 | 0.883 | ~flat |
+
+Within-job: challenger book PF 2.168 vs champ 2.166 but return/DD fail improve gate → advisory **null**.
+
+## Verdict: FAIL adoption (measured-intel **strike 1 of 3**)
+- PF and DD improve vs pin, but **total_return clearly worse** (fewer trades; compound gap). Not a clean dominate on the research bar (PF + return + controlled DD together).
+- **Do not** raise live `signals.min_confidence` (stays **0.60**). No yaml rewrite was made; nothing to revert.
+- No promote. Isotonic remains rejected (see audit).
+
+## Strike log
+- Strike 1/3: conf-floor 0.65 challenger `a67b7702` — PF/DD up, return down → keep 0.60.
+- Freeze after 3 failed measured-intel challengers without a keep.
+
+## Next under autonomy (recommended)
+1. **Regime label (trend vs chop)** as filter on EURUSD pin settings — prefer ADX/`ta_adx` or efficiency-ratio skip-chop; one Replay max; revert if loses (strike 2 if fails).
+2. Optional later: tip densify GBPUSD; Jetta Sep remesh when `/2026/9` = 200.
+3. Do **not** enable `model.calibrate` isotonic/sigmoid at the 0.60 floor (starves pin band).

@@ -1,0 +1,193 @@
+{
+  "pair": "EURUSD",
+  "hypothesis": "Raw XGB max-proba is miscalibrated vs directional label hit; isotonic/sigmoid on train-tail should lower ECE and lift pin>=0.60 hit.",
+  "cut": "2024-01-01",
+  "train_n": 54590,
+  "test_n": 17243,
+  "label_map": {
+    "0": "SELL",
+    "1": "HOLD",
+    "2": "BUY"
+  },
+  "results": [
+    {
+      "name": "calibrate=null",
+      "n": 8945,
+      "hit": 0.5474566797093349,
+      "ece": 0.06230714060262037,
+      "pin60_n": 289,
+      "pin60_hit": 0.7958477508650519,
+      "buckets": [
+        {
+          "bucket": "0.40-0.50",
+          "n": 5982,
+          "mean_conf": 0.45604345767902954,
+          "hit_rate": 0.4976596456034771,
+          "gap": -0.041616187924447545
+        },
+        {
+          "bucket": "0.50-0.55",
+          "n": 2001,
+          "mean_conf": 0.5219741665024211,
+          "hit_rate": 0.6096951524237881,
+          "gap": -0.08772098592136701
+        },
+        {
+          "bucket": "0.55-0.60",
+          "n": 673,
+          "mean_conf": 0.569991024075433,
+          "hit_rate": 0.6983655274888558,
+          "gap": -0.12837450341342282
+        },
+        {
+          "bucket": "0.60-0.65",
+          "n": 216,
+          "mean_conf": 0.6216550701194339,
+          "hit_rate": 0.7731481481481481,
+          "gap": -0.15149307802871426
+        },
+        {
+          "bucket": "0.65-0.70",
+          "n": 65,
+          "mean_conf": 0.669861060839433,
+          "hit_rate": 0.8461538461538461,
+          "gap": -0.17629278531441317
+        },
+        {
+          "bucket": "0.70-0.80",
+          "n": 8,
+          "mean_conf": 0.714741624891758,
+          "hit_rate": 1.0,
+          "gap": -0.28525837510824203
+        },
+        {
+          "bucket": "0.80+",
+          "n": 0,
+          "mean_conf": null,
+          "hit_rate": null,
+          "gap": null
+        }
+      ]
+    },
+    {
+      "name": "calibrate=isotonic",
+      "n": 7856,
+      "hit": 0.46283095723014256,
+      "ece": 0.012397471489100212,
+      "pin60_n": 9,
+      "pin60_hit": 0.4444444444444444,
+      "buckets": [
+        {
+          "bucket": "0.40-0.50",
+          "n": 6513,
+          "mean_conf": 0.45265436638303935,
+          "hit_rate": 0.45877475817595575,
+          "gap": -0.006120391792916402
+        },
+        {
+          "bucket": "0.50-0.55",
+          "n": 1171,
+          "mean_conf": 0.518694281578064,
+          "hit_rate": 0.4824935952177626,
+          "gap": 0.03620068636030138
+        },
+        {
+          "bucket": "0.55-0.60",
+          "n": 163,
+          "mean_conf": 0.5633993072012451,
+          "hit_rate": 0.48466257668711654,
+          "gap": 0.07873673051412855
+        },
+        {
+          "bucket": "0.60-0.65",
+          "n": 8,
+          "mean_conf": 0.6207403540611267,
+          "hit_rate": 0.375,
+          "gap": 0.2457403540611267
+        },
+        {
+          "bucket": "0.65-0.70",
+          "n": 1,
+          "mean_conf": 0.6585893630981445,
+          "hit_rate": 1.0,
+          "gap": -0.34141063690185547
+        },
+        {
+          "bucket": "0.70-0.80",
+          "n": 0,
+          "mean_conf": null,
+          "hit_rate": null,
+          "gap": null
+        },
+        {
+          "bucket": "0.80+",
+          "n": 0,
+          "mean_conf": null,
+          "hit_rate": null,
+          "gap": null
+        }
+      ]
+    },
+    {
+      "name": "calibrate=sigmoid",
+      "n": 7856,
+      "hit": 0.46283095723014256,
+      "ece": 0.012397471489100212,
+      "pin60_n": 9,
+      "pin60_hit": 0.4444444444444444,
+      "buckets": [
+        {
+          "bucket": "0.40-0.50",
+          "n": 6513,
+          "mean_conf": 0.45265436638303935,
+          "hit_rate": 0.45877475817595575,
+          "gap": -0.006120391792916402
+        },
+        {
+          "bucket": "0.50-0.55",
+          "n": 1171,
+          "mean_conf": 0.518694281578064,
+          "hit_rate": 0.4824935952177626,
+          "gap": 0.03620068636030138
+        },
+        {
+          "bucket": "0.55-0.60",
+          "n": 163,
+          "mean_conf": 0.5633993072012451,
+          "hit_rate": 0.48466257668711654,
+          "gap": 0.07873673051412855
+        },
+        {
+          "bucket": "0.60-0.65",
+          "n": 8,
+          "mean_conf": 0.6207403540611267,
+          "hit_rate": 0.375,
+          "gap": 0.2457403540611267
+        },
+        {
+          "bucket": "0.65-0.70",
+          "n": 1,
+          "mean_conf": 0.6585893630981445,
+          "hit_rate": 1.0,
+          "gap": -0.34141063690185547
+        },
+        {
+          "bucket": "0.70-0.80",
+          "n": 0,
+          "mean_conf": null,
+          "hit_rate": null,
+          "gap": null
+        },
+        {
+          "bucket": "0.80+",
+          "n": 0,
+          "mean_conf": null,
+          "hit_rate": null,
+          "gap": null
+        }
+      ]
+    }
+  ],
+  "best": "calibrate=isotonic",
+  "fix_candidate": "Set model.calibrate=isotonic for one EURUSD full-history Replay (pin settings); revert if challenger loses improve gate."
+}

@@ -1,0 +1,61 @@
+﻿# QA GBPUSD pin d6a6f7a6 - 2026-10-01 Asia/Dhaka
+Light cost/pip QA (same shape as USDJPY TRUST QA `5e56454` / `_QA_USDJPY_PIN_20261001.txt`). Read-only; no promote; no full re-run.
+
+## Verdict: TRUST
+Blunt reason: GBPUSD after-cost PF~2.60 is high because win rate is high (champion 70.1% vs EURUSD 64.8%), not because pip size / P&L scaling / costs are wrong for GBP. `pip_size_for_pair("GBPUSD")` = 0.0001 (same as EURUSD). Bid/ask fills ignore spread_pips; slippage is 0.2 * pip. SMA baseline PF is 0.822 - if costs were wildly understated, the dumb baseline would also look rich. It does not.
+
+Do not treat PF~2.6 as a deployable edge. Same research disclaimer as EURUSD / USDJPY. Challenger lost the improve gate (null). No promote.
+
+## Jobs compared
+| | GBPUSD d6a6f7a6... | USDJPY ef6fe062... | EURUSD 2cee7e71... |
+|---|---|---|---|
+| Finished | 2026-10-01 01:34 Asia/Dhaka | 2026-10-01 00:46 Asia/Dhaka | 2026-09-30 01:20 Asia/Dhaka |
+| Source (status) | jetta, bid_ask=true | jetta, bid_ask=true | dukascopy, bid_ask=true |
+| Rows | 73055 | 73217 | 71888 |
+| Costs | BA fills; slip 0.2 pip/side; exit_slippage=true; spread_pips ignored | same | same |
+| Champ PF / WR / n | 2.601 / 70.13% / 6149 | 3.037 / 72.76% / 5694 | 1.989 / 64.79% / 3791 |
+| Chall PF / WR / n | 2.549 / 69.75% / 5930 | 2.920 / 72.15% / 5357 | 1.939 / 64.50% / 3611 |
+| Champ expectancy (frac) | 0.001045 | 0.001131 | 0.000662 |
+| Champ net_pnl (sum frac) | 6.428 | 6.440 | 2.508 |
+| Champ total_return | 604.22 | 613.61 | 11.17 |
+| Champ max DD | -2.61% | -3.30% | -10.00% |
+| SMA PF | 0.822 | 0.851 | 0.883 |
+| Promote | null | null | null |
+
+## Cost / pip findings (numbers)
+- pip_size_for_pair("GBPUSD") = 0.0001; EURUSD = 0.0001; USDJPY = 0.01. Used in replay slip (slip_px = slippage_pips * pip) and PaperBroker mid-path spread_frac.
+- Config: spread_pips=1.0 RT mid-only; commission_pips=0; replay.slippage_pips=0.2; exit_slippage=true. With bid/ask, spread/commission zeroed - BBO is the spread.
+- GBPUSD H1 AskOpen-BidOpen: mean 0.000130 (1.30 pip), med 0.000090 (0.90 pip). EURUSD: mean ~0.48 pip, med ~0.30 pip. USDJPY: mean ~0.71 pip.
+- Approx RT cost (mean spread + 2*0.2pip slip): GBPUSD ~1.70 pips / ~0.0129% of price; EURUSD ~0.88 pips / ~0.0078%; USDJPY ~1.11 pips / ~0.0088%. GBP fractional drag is **higher**, not free - works against a false-rich story.
+- Champion entry vs mid (adverse, n=2000 sample): GBPUSD mean **0.69 pip**; better-than-mid 2.2%. Expected slip 0.2 pip + half-spread.
+- ATR14: GBPUSD mean **18.0 pips** => 2*ATR TP ~36.0 pips. Matches avg win size below.
+- net_pnl is fractional return (exit-entry)/entry (signed), not dollar pip-value. Same formula all pairs.
+- total_return = compound prod(1+r)-1. GBPUSD: sum r=6.428 => compound 604.22 exactly. Same compounding story as USDJPY (high expectancy + n) vs EURUSD (lower expectancy => 11.17). Not a unit bug.
+
+## Trade spot-check (champion)
+| | GBPUSD | USDJPY | EURUSD |
+|---|---|---|---|
+| Exit mix tp/sl/timeout | 3901 / 1554 / 694 | 3637 / 1211 / 846 | 2123 / 1049 / 619 |
+| Avg win / avg loss (pips) | 31.76 / -28.69 | 29.04 / 25.66 | 22.56 / 21.11 |
+| Avg win/loss ratio (frac) | 1.11 | 1.14 | 1.08 |
+| Gross P / Gross L => PF | 10.44 / 4.01 => 2.601 | 9.60 / 3.16 => 3.037 | 5.05 / 2.54 => 1.989 |
+
+Sample GBPUSD: SELL 1.53394->1.53030 tp +36.4 pips / +0.00237 frac; BUY 1.52295->1.52694 tp +39.9 pips; BUY 1.52223->1.52394 timeout +17.1 pips. Price moves and frac PnL consistent.
+
+## H1 mesh (data/history/GBPUSD_1h.csv)
+- Rows: 73055 (2015-01-01 22:00 -> 2026-09-28 08:00). Hole-fill: 72702 Jetta + 353 Sep synth tip (`_GBPUSD_HOLE_FILL_20261001.txt`).
+- high<low: 0 (mid and BA). AskClose<BidClose: 0.
+- Volume: Jetta body mean 2433, med 1807, zero_vol 1. Tip Sep: **all 353 Volume=0** (live cache zeros) - same class of tip-vol issue as live yfinance; body is fine.
+- Crossed AskOpen<BidOpen: GBPUSD **7.3%** of bars (mean -1.99 pip when neg); EURUSD 4.8%; USDJPY 10.6%. AskClose never crossed. Mild same-bar free-edge when open-crossed; not enough to explain PF 2.6 vs EURUSD 2.0 (negligible vs 6.43 sum frac).
+- Tip stale vs EURUSD (ends Sep 28 08:00, not Sep 30); Jetta `/2026/9` still 400. OK for after-cost pin; re-pull when published.
+
+## Code
+- No clear bug that inflates this pin's PF via wrong GBP pip value. No code patch.
+- Latent (inactive, same as USDJPY QA): features._barrier_cfg cost_aware path uses cfg["pip_size"] (0.0001) without pip_size_for_pair - fine for GBP (same 0.0001); only matters if barrier.cost_aware=true on JPY. Default false; unused here.
+- Tip Volume=0 on 353 Sep bars: cosmetic for after-cost BA fills (fills use Bid/Ask, not Volume). Optional later live densify / Jetta Sep remesh.
+
+## Another Replay required?
+No. Metrics are internally consistent; a re-run would not fix a unit bug that was not found. Optional later: sanitize crossed Ask/Bid opens on ingest; Jetta Sep remesh when HTTP 200; densify live GBPUSD tip past Sep 28. Not done now.
+
+## Actions this QA
+- Wrote this note + pin scoreboard row. No feature flags. No promote. No Replay re-run.

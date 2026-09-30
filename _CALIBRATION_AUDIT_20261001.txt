@@ -1,0 +1,45 @@
+﻿# Confidence calibration audit - 2026-10-01 Asia/Dhaka
+Measured-intel step (option 2). PC-local. Do NOT promote. Live `signals.min_confidence` stays 0.60 unless a Replay clearly wins (it will not be applied tonight without beat+controlled DD).
+
+## Hypothesis
+Raw XGB `confidence = max(p_sell,p_hold,p_buy)` is miscalibrated vs directional label hit on EURUSD. Enabling `model.calibrate` (isotonic/sigmoid) on the train-tail should lower ECE. Alternate fix if calibrate hurts throughput at the 0.60 floor: raise `min_confidence` using the reliability curve.
+
+## Method (offline, one train/test cut — not a full WF Replay)
+- Pair: EURUSD H1 history tip-refreshed mesh (71941 bars)
+- Dataset: `make_dataset` → 71833 labeled rows; LABEL_MAP SELL=0 HOLD=1 BUY=2
+- Cut: train < 2024-01-01 (54590) / test ≥ 2024-01-01 (17243)
+- Fit: `fit_predict_bundle` xgboost; audit filter `min_confidence=0.40` to populate buckets
+- Metric: among predicted BUY/SELL, bucket mean_conf vs label hit_rate; ECE = sum (n/N)*|conf-hit|
+- Artifact: `_CALIBRATION_AUDIT_20261001.json` + `scripts/_calibration_audit_20261001.py`
+
+## Results
+| method | traded | hit | ECE | pin≥0.60 n | pin≥0.60 hit |
+|---|---:|---:|---:|---:|---:|
+| calibrate=null (live) | 8945 | 0.547 | **0.062** | **289** | **0.796** |
+| calibrate=isotonic | 7856 | 0.463 | 0.012 | 9 | 0.444 |
+| calibrate=sigmoid | 7856 | 0.463 | 0.012 | 9 | 0.444 |
+
+### calibrate=null reliability (directional only)
+| bucket | n | mean_conf | hit_rate | gap (conf-hit) |
+|---|---:|---:|---:|---:|
+| 0.40-0.50 | 5982 | 0.456 | 0.498 | -0.042 |
+| 0.50-0.55 | 2001 | 0.522 | 0.610 | -0.088 |
+| 0.55-0.60 | 673 | 0.570 | 0.698 | -0.128 |
+| 0.60-0.65 | 216 | 0.622 | 0.773 | -0.151 |
+| 0.65-0.70 | 65 | 0.670 | 0.846 | -0.176 |
+| 0.70-0.80 | 8 | 0.715 | 1.000 | -0.285 |
+
+Read: gaps are **negative** → raw max-proba is **underconfident** (hit > stated conf). Hit rises monotonically with conf. Pin floor 0.60 already sits on a strong band (~80% label hit in this cut).
+
+### Why NOT enable isotonic/sigmoid
+- ECE falls (0.062→0.012) but calibration **collapses** mass above 0.60 (289→9 trades) and pin-band hit falls to ~0.44.
+- With live `min_confidence=0.60`, isotonic would starve the book. Reject as a live/Replay knob for now.
+
+## Concrete fix candidate (challenger Replay)
+**Raise per-job `min_confidence` 0.60 → 0.65** on EURUSD full-history after-cost pin settings (pull=false). Hypothesis: skip the 0.60-0.65 band (hit~0.77) and keep 0.65+ (hit~0.85) → better PF and/or tighter DD vs pin `2cee7e71` (PF 1.989 / DD -10.0% / n=3791).
+- Override via Replay CLI/API only — **do not rewrite** `config/default.yaml`.
+- Compare across jobs to pin; within-job promote stays advisory null path.
+- If after does not clearly beat pin on PF with controlled DD → leave live at 0.60, document **measured-intel strike 1 of 3**.
+
+## Constraints
+- No promote. No isotonic flag left on. No feature fibs. One Replay max.

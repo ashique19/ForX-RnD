@@ -1,0 +1,43 @@
+﻿# Pin scoreboard - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Compiled from existing notes/jobs. Do NOT promote. No live-gate changes from this pin table alone.
+
+## After-cost full-history pins (costs ON, min_confidence=0.60, pull=false)
+
+| pair | job | finished (Asia/Dhaka) | source / BA | rows | champ PF | WR | n | DD | total_return | SMA PF | promote | notes |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| EURUSD | `2cee7e7163134266ad8c2b39234442d8` | 2026-09-30 01:20 | dukascopy / true | 71888 | **1.989** | 64.8% | 3791 | -10.0% | 11.17 | 0.883 | null | Tip refresh 2026-10-01: +44 synth Sep bars (71941 H1); **Replay SKIP** (tip-only). Pin stands. See `_EURUSD_TIP_REFRESH_20261001.txt`. |
+| USDJPY | `ef6fe062c6f84cccaf8c9d55facddeeb` | 2026-10-01 00:46 | jetta / true | 73217 | **3.037** | 72.8% | 5694 | -3.30% | 613.61 | 0.851 | null | Morning QA **TRUST** (`_QA_USDJPY_PIN_20261001.txt` / commit `5e56454`). High WR, not pip-unit bug. Research only. |
+| GBPUSD | `d6a6f7a60036404aabb1e57dd1da8725` | 2026-10-01 01:34 | jetta / true | 73055 | **2.601** | 70.1% | 6149 | -2.61% | 604.22 | 0.822 | null | Hole-fill Jetta+synth tip. Night QA **TRUST** (`_QA_GBPUSD_PIN_20261001.txt`). Same disclaimer as USDJPY. |
+
+## Challenger (same jobs; all fail improve gate)
+
+| pair | chall PF | WR | n | DD | total_return | vs champ |
+|---|---:|---:|---:|---:|---:|---|
+| EURUSD | 1.939 | 64.5% | 3611 | -8.00% | 10.03 | PF/return worse |
+| USDJPY | 2.920 | 72.2% | 5357 | -2.26% | 366.50 | PF/return worse |
+| GBPUSD | 2.549 | 69.7% | 5930 | -1.97% | 442.22 | PF/return worse |
+
+## Tip refresh state (EURUSD)
+
+- Pre-tip mesh: 71897 rows -> 2026-09-28 23:00
+- After tip: **71941** rows -> **2026-09-30 19:00** (+44 live-mid + synth BA; Jetta `/2026/9` still HTTP 400)
+- Full-history pin **not** re-run (tip too small to move metrics)
+- Re-pull Sep via Jetta when published; then optional tip remesh
+
+## Shared cost contract (all three pins)
+
+- Bid/ask fills; `spread_pips` ignored when BA present; `slippage_pips=0.2`; `exit_slippage=true`
+- `pip_size_for_pair`: EUR/GBP=0.0001, JPY=0.01
+- SMA baseline PF ~0.82-0.88 on all three (dumb book not rich => costs not wildly understated)
+- Promote: **null** everywhere; live champion untouched; research disclaimer stands
+
+## Rank by champ PF (research only; not deploy rank)
+
+1. USDJPY 3.04 (TRUST QA)
+2. GBPUSD 2.60 (TRUST QA)
+3. EURUSD 1.99 (tip refreshed; pin stands)
+
+## Autonomy follow-ons (not done in this compile)
+
+- Measured-intel step (regime OR confidence calibration) after this pin+QA
+- No promote tonight even if a challenger wins a research Replay
