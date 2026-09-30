@@ -1,0 +1,41 @@
+﻿# Morning autonomy blunt scoreboard - 2026-10-01 ~05:35 Asia/Dhaka
+Window closed for heavy Replay before weekly retrain (~08:04). **No promote.** Live min_confidence=0.60.
+
+## Landed this window
+
+| item | result | blunt |
+|---|---|---|
+| Meta-label S2 hyp (written first) | done | `_HYPOTHESIS_20261001_EURUSD_META_LABEL_S2.txt` — asia_quiet; atr_pctile attach fix (vp=0 root cause of S1 under-fire) |
+| Meta-label Replay asia_quiet `df06b935` | **FAIL revert** | vs pin `2cee7e71`: PF 2.007 (+0.018) / ret **8.19 (-2.98)** / DD -10.08% (micro-worse) / n 3216 (-575). Filter fired. Classic PF↑ return↓. |
+| Desk API restart | done | `/pins/scoreboard` was 404 on stale uvicorn; restarted → 200 with 6 rows |
+| Cross-pair disagree veto | code-only OFF | `forex_lab/cross_pair_veto.py` + 5 tests; yaml enabled=false; **not wired** desk/Replay |
+| BTCUSD pin | **SKIP** | pip 0.0001 invalid for BTC; mid-only; short hist — `_BTCUSD_PIN_SKIP_20261001.txt` |
+| USDCAD tip densify | SKIP | tip fresh through 2026-09-30 22:00 |
+
+## Meta-label family vs EURUSD pin `2cee7e71` (PF 1.989 / ret 11.17 / DD -10%)
+
+| # | challenger | job | PF | return | DD | verdict |
+|---|---|---|---:|---:|---:|---|
+| 1 | quiet_weak atr≤0.15 & conf<0.65 | `d5908db6` | 1.989 | 11.21 | -10.77% | FAIL revert (barely fired) |
+| 2 | asia_quiet Asia-only atr≤0.20 | `df06b935` | 2.007 | 8.19 | -10.08% | FAIL revert |
+
+Code kept (`forex_lab/meta_label.py` + atr attach + asia_quiet/conf_atr). `replay.meta_label.enabled=false`.
+Strike 3 slot open later only with new written hyp (e.g. conf_atr) — do not burn casually.
+
+## Standing FREEZEs (unchanged / do not reopen)
+
+- measured-intel 3/3 CLOSED
+- NEW track purge/size 3/3 CLOSED — **do not re-enable purge / size_by_conf / trend_regime / conf 0.65 without clean dominate**
+- meta-label **2/3 FAIL**
+
+## Pin rank (research PF only; not deploy)
+
+1. USDJPY 3.04 TRUST → 2. AUDUSD 2.98 → 3. NZDUSD 2.85 → 4. USDCAD 2.74 → 5. GBPUSD 2.60 → 6. EURUSD 1.99 Active
+
+## Explicit non-actions
+- No promote. No live-gate change.
+- size_by_conf.enabled=false; purge_bars=0; trend_regime.enabled=false; meta_label.enabled=false; portfolio_brain.enabled=false; cross_pair_veto.enabled=false.
+- Flag parent: nothing to promote; no clean dominate.
+
+## CPU
+Replay done ~05:31. Desk API up on :8000 with PinRankPanel data. Machine free for weekly retrain well before 07:40.

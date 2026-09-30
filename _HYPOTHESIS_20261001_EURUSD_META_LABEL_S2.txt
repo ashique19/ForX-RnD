@@ -1,0 +1,38 @@
+﻿# Hypothesis - EURUSD meta-label strike 2/3 (asia_quiet)
+Date: 2026-10-01 ~05:30 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8` (PF 1.989 / ret 11.17 / DD -10.0% / n 3791)
+Prior: meta-label strike 1/3 FAIL (`d5908db6` quiet_weak) — PF flat, DD worse; filter barely fired (n-24).
+FREEZEs stay closed (measured-intel 3/3; purge/size 3/3). Live min_confidence stays 0.60. No promote.
+
+## Why strike 1 barely fired (root cause)
+`feature_extras.vol_percentile_window=0` on the pin path, so `atr_pctile` is **absent** from Replay X.
+`quiet_weak` fail-softed almost always. Offline post-hoc joined history atr_pctile and overstated removals.
+Strike 2 **attaches policy-only causal atr_pctile** from full OHLCV ATR% rolling min-max (window=100)
+inside `apply_meta_label_to_pred(..., ohlcv=)` — does NOT flip model features / does NOT require vp>0.
+
+## Idea (DIFFERENT filter vs quiet_weak)
+**asia_quiet**: HOLD when Asia-only session AND atr_pctile <= 0.20.
+- Asia-only = sess_asia>0.5 and sess_london/ny <0.5 (overlap excluded).
+- No confidence gate (unlike quiet_weak atr AND conf).
+- Rationale: thin Asia liquidity + dead ATR is where primary edge is weakest; London/NY quiet kept.
+- Offline pin-book join (post-hoc, written BEFORE Replay): asia_quiet_0.20 veto ~645,
+  KEEP PF ~2.11 / sum PnL down modestly / DD proxy slightly better. Classic PF-up/return-risk —
+  clean WIN still requires PF + total_return + DD all dominate pin.
+
+## Explicit non-rules this job
+- Not conf_atr product (kept coded for later strike if asia_quiet fails).
+- Not re-tuning quiet_weak thresholds.
+- Not purge / size_by_conf / trend_regime / conf 0.65.
+
+## Pre-registered challenger (frozen before job)
+- `replay.meta_label.enabled=true`
+- `rule: asia_quiet`
+- `atr_max: 0.20`
+- `atr_window: 100`
+- Fail-soft if atr_pctile still missing after attach.
+
+## Protocol
+- ONE costs-on EURUSD Replay vs pin `2cee7e71` (start 2015-01-01, pull=false, min_confidence=0.60).
+- Clean WIN = champ PF + total_return + DD all dominate pin → flag parent, **DO NOT promote**.
+- FAIL = revert enabled=false; document strike 2/3.
+- Stop heavy work by 07:40 Asia/Dhaka for weekly retrain CPU.

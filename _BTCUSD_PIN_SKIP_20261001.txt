@@ -1,0 +1,18 @@
+﻿# BTCUSD pin SKIP - 2026-10-01 ~05:34 Asia/Dhaka
+Standing ForX autonomy. No promote. No Replay started.
+
+## Why SKIP (not a pin this window)
+1. **pip/tick contract missing**: `pip_size_for_pair` returns FX default 0.0001 for BTCUSD.
+   On BTC ~$60k-$100k that understates costs / mis-scales ATR barriers → fake-rich PF risk.
+2. **Mid-only yfinance**: no bid/ask (`bid_ask=false`). After-cost FX pins used Dukascopy/Jetta BA.
+3. **Short book**: 15275 H1 rows from 2025-01-01 only (vs ~72k multi-year FX pins).
+4. **No joblib models** yet for BTCUSD.
+
+## Pre-req before any BTC research pin
+- Write pair tick/pip override (e.g. 1.0 or 0.1) + realistic spread_pips for crypto mid.
+- Optional: densify tip; still mid-only unless a BA source appears.
+- Then ONE costs-on Replay with explicit **QA FLAG / research-only** disclaimer.
+- Never promote BTC to live Active from this track without that contract.
+
+## USDCAD tip
+- Mesh last bar 2026-09-30 22:00 (jetta); tip fresh enough — **densify SKIP** this window.

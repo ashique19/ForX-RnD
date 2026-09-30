@@ -435,11 +435,13 @@ replay:
   # Meta-label secondary filter (NEW family). enabled=false = bit-identical.
   # HOLD when atr_pctile<=atr_max AND confidence<conf_max. Does NOT raise min_confidence.
   meta_label:
-    enabled: false           # REVERT meta-label strike 1/3 - DD worse vs pin 2cee7e71
+    enabled: false           # REVERT meta-label strike 2/3 asia_quiet - return lost vs pin 2cee7e71
     mode: rule
-    rule: quiet_weak
-    atr_max: 0.15
-    conf_max: 0.65
+    rule: asia_quiet         # last challenger; quiet_weak|asia_quiet|conf_atr
+    atr_max: 0.20
+    conf_max: 0.65           # quiet_weak only
+    product_max: 0.10        # conf_atr only
+    atr_window: 100          # policy-only atr_pctile when feature vp=0
   # step_bars / train_bars / min_train_bars default to walk_forward when omitted
 
 # Portfolio brain (post-signal risk overlay). Default OFF.
@@ -472,3 +474,13 @@ paths:
 
 
 
+
+# Cross-pair USD disagreement veto (research). Default OFF. See _SKETCH_CROSS_PAIR_DISAGREE_VETO_20261001.txt.
+# Not wired into desk/Replay until paper A/B. Does NOT enable portfolio_brain.
+cross_pair_veto:
+  enabled: false
+  fail_soft: true
+  min_peer_conf: 0.70
+  min_disagree_peers: 2
+  peers: [USDJPY, AUDUSD, GBPUSD, NZDUSD, USDCAD]
+  skip_pairs: [BTCUSD]

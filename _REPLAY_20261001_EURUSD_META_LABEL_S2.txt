@@ -1,0 +1,45 @@
+﻿# EURUSD meta-label asia_quiet Replay - meta-label family strike 2/3 - 2026-10-01 05:31 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+Prior FREEZEs stay closed (measured-intel 3/3; NEW track purge/size 3/3).
+
+## Hypothesis
+Session-only low-ATR skip: HOLD when Asia-only AND atr_pctile<=0.20.
+Policy-only atr_pctile attach (vp=0 on pin path) so the filter actually fires
+(unlike strike 1 quiet_weak fail-soft). See `_HYPOTHESIS_20261001_EURUSD_META_LABEL_S2.txt`.
+
+## Change
+- Code: `forex_lab/meta_label.py` rules asia_quiet|conf_atr + OHLCV atr_pctile attach;
+  `replay.apply_meta_label_to_pred(..., ohlcv=)`.
+- Challenger yaml: meta_label.enabled=true rule=asia_quiet atr_max=0.20 for this job only.
+- **REVERTED** enabled=false after fail. Module/params kept (incl. conf_atr for strike 3 later).
+
+## Job
+- job_id: **df06b93588064393a3a9f52eb84570e6**
+- started: ~2026-10-01 05:25 Asia/Dhaka
+- finished: **2026-10-01 05:31 Asia/Dhaka**
+- EURUSD 1h; start=2015-01-01; pull=false; min_confidence=0.60; costs ON; meta_label asia_quiet ON
+
+## Before / after vs pin
+
+| | pin 2cee7e71 | asia_quiet df06b935 | delta |
+|---|---:|---:|---:|
+| Champ PF | **1.989** | **2.007** | +0.018 |
+| WR | 64.8% | 64.9% | +0.1pp |
+| n | 3791 | 3216 | **-575** (filter fired) |
+| max DD | **-10.00%** | -10.08% | worse |
+| total_return | **11.17** | 8.19 | **-2.98** |
+| SMA PF | 0.883 | 0.883 | flat |
+
+Within-job logistic "challenger" PF 2.044 / ret 8.89 / DD -6.9% got improve-gate promote vs *within-job* champ — **ignored**; pin dominate is the only adoption gate. Promote=null for live.
+
+## Verdict: FAIL adoption (meta-label family **strike 2 of 3**)
+- Not a clean dominate: PF micro-up, **return collapsed**, DD micro-worse.
+- Filter worked (n-575) after atr_pctile attach fix — proves strike-1 under-fire was feature-path, not rule idea alone.
+- Classic PF-up / return-down mode (same family as conf-0.65 / size_by_conf).
+- **REVERTED** `replay.meta_label.enabled=false`.
+- No promote. Live conf 0.60 untouched.
+- Do NOT re-enable purge/size_by_conf/trend_regime/conf 0.65.
+
+## Strike log (meta-label family)
+1. quiet_weak atr<=0.15 & conf<0.65 `d5908db6` — DD regression; PF flat; barely fired (atr_pctile missing)
+2. asia_quiet Asia-only atr<=0.20 `df06b935` — return -2.98; DD micro-worse; PF +0.018 — FAIL

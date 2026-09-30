@@ -1019,7 +1019,7 @@ def _predict_window(
         pred = apply_vol_regime_to_pred(pred, cfg)
         pred = apply_weekday_gate_to_pred(pred, cfg)
         pred = apply_trend_regime_to_pred(pred, cfg)
-        pred = apply_meta_label_to_pred(pred, cfg)
+        pred = apply_meta_label_to_pred(pred, cfg, ohlcv=ohlcv)
     except ReplayError:
         raise
     except Exception as exc:

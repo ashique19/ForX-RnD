@@ -1,22 +1,28 @@
 ﻿# Sketch - Cross-pair disagreement veto (research design only) - 2026-10-01 Asia/Dhaka
-Standing ForX autonomy. **No code enable. No Replay tonight.** Not a promote path.
+Standing ForX autonomy. **Default OFF. No Replay. No promote path.**
 
 ## Observation
 Multi-pair pins (EUR/JPY/GBP/AUD/NZD/CAD) all fire USD-beta heavy books. Simultaneous USD-cross BUY/SELL can stack the same USD risk. Portfolio-brain corr veto (disabled) is the intended home; this note sketches a lighter **signal disagreement** rule.
 
-## Idea (v0 sketch)
+## Idea (v0)
 When Active=EURUSD is about to open:
 - Peek latest flash/side for USDJPY, AUDUSD, GBPUSD, NZDUSD, USDCAD (research watchlist).
 - Map each to USD-risk direction (same map as `portfolio_brain._USD_RISK_LONG`).
-- If >=2 other pairs disagree with EURUSD's implied USD risk (opposite sign) at conf>=0.70, **veto** the EURUSD open (HOLD) — treat as USD regime conflict.
-- Fail-soft if peer flash missing.
+- If >=2 other pairs disagree with EURUSD's implied USD risk (opposite sign) at conf>=0.70, **veto** the EURUSD open (HOLD) - treat as USD regime conflict.
+- Fail-soft if peer flash missing / low conf / unknown pair.
 
-## Why not now
+## Code landed 2026-10-01 ~05:33 Asia/Dhaka (still OFF)
+- `forex_lab/cross_pair_veto.py` + `tests/test_cross_pair_veto.py` (5 passed)
+- `config/default.yaml` `cross_pair_veto.enabled=false`
+- **Not wired** into desk paper/flash/Replay. Evaluate via `evaluate_cross_pair_veto(...)` only.
+- Reuses USD-risk map from portfolio_brain; does NOT enable portfolio_brain.
+
+## Why not enable / Replay now
 - Needs peer flash cache that is point-in-time in Replay (hard) OR paper-only desk week first.
-- Overlaps portfolio_brain corr cluster — prefer one overlay, not two.
-- NEW track already at strike 2/3; do not burn strike 3 on an untested sketch.
+- Overlaps portfolio_brain corr cluster - prefer one overlay, not two.
+- Meta-label family at 2/3 FAIL; leave strike 3 for a different pre-registered rule (e.g. conf_atr) only with new hyp.
 
 ## Gate if ever tested
-- Paper week on desk with portfolio_brain-style logging first.
-- Then ONE multi-pair aggregate Replay or paper A/B — not a single-pair pin challenger.
-- No live-gate change without after-cost beat.
+- Paper week on desk with logging first.
+- Then ONE multi-pair aggregate Replay or paper A/B - not a single-pair pin challenger.
+- No live-gate change without after-cost beat vs pin.
