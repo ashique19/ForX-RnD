@@ -422,6 +422,24 @@ replay:
     min_bars_before_sl: 2     # skip same-bar SL only; 0 = legacy immediate SL
   # step_bars / train_bars / min_train_bars default to walk_forward when omitted
 
+# Portfolio brain (post-signal risk overlay). Default OFF.
+# Does NOT change Buy/Sell model P(class). Paper/desk overlay only when enabled.
+# See _PORTFOLIO_BRAIN_DESIGN_20261001.txt / _PORTFOLIO_BRAIN_STUB_20261001.txt.
+portfolio_brain:
+  enabled: false          # desk overlay off until accepted
+  fail_soft: true
+  max_concurrent_opens: 2
+  corr_bars: 120
+  corr_threshold: 0.70
+  corr_skip_pairs: [BTCUSD]
+  dd_budget_pct: -0.05
+  dd_scale: false
+  max_book_units: 2.0
+  min_size: 0.25
+  apply_to_paper: true    # block/size paper opens when enabled
+  apply_to_flash: true    # force HOLD on Decision flash when blocked
+  apply_to_replay: false  # keep Replay single-pair pure unless explicitly on
+
 # Paths (relative to project root)
 paths:
   data_dir: data

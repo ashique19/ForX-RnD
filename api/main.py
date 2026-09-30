@@ -311,6 +311,22 @@ def create_app() -> FastAPI:
     def get_portfolio(sync: bool = Query(default=True)) -> dict:
         return portfolio_payload(sync=sync)
 
+    @app.get("/portfolio/brain")
+    def get_portfolio_brain() -> dict:
+        """Risk overlay status. Default enabled=false; does not change Buy/Sell model."""
+        from forex_lab.portfolio_brain import status_payload
+        from api.paperdesk import _paper
+
+        cfg = deskdata.app_config()
+        try:
+            broker = _paper(cfg)
+            broker.reload()
+            opens = list(broker.list_positions())
+            closed = list(broker.list_closed())[-40:]
+        except Exception:
+            opens, closed = [], []
+        return status_payload(cfg=cfg, opens=opens, closed=closed)
+
     @app.post("/portfolio/auto")
     def post_portfolio_auto(body: PaperAutoBody) -> dict:
         if (

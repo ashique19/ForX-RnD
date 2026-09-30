@@ -48,6 +48,50 @@ class PaperBlocked(RuntimeError):
     """STALE / MISSING / ERROR — open is refused. Close is separate."""
 
 
+def _portfolio_open_check(
+    broker: Any,
+    cfg: dict[str, Any],
+    *,
+    pair: str,
+    side: str,
+    size: float | None = None,
+) -> Any:
+    """Post-signal portfolio overlay. No-op when portfolio_brain.enabled is false."""
+    from forex_lab.portfolio_brain import (
+        apply_to_paper,
+        check_open_intent,
+        peer_close_map_from_cfg,
+        portfolio_brain_enabled,
+    )
+
+    if not portfolio_brain_enabled(cfg) or not apply_to_paper(cfg):
+        return None
+    try:
+        opens = list(broker.list_positions()) if hasattr(broker, "list_positions") else []
+    except Exception:
+        opens = []
+    peers = {str(p.get("pair") or "").upper() for p in opens}
+    peers.add(str(pair).upper())
+    try:
+        from forex_lab.ui.watchlist import load_watchlist
+
+        wl = load_watchlist(cfg=cfg)
+        for item in getattr(wl, "pairs", []) or []:
+            peers.add(str(getattr(item, "pair", item) or "").upper())
+    except Exception:
+        pass
+    peer_closes = peer_close_map_from_cfg(sorted(peers), cfg)
+    return check_open_intent(
+        pair=pair,
+        side=side,
+        size=size,
+        opens=opens,
+        cfg=cfg,
+        peer_closes=peer_closes,
+    )
+
+
+
 def paper_store_path() -> Path | None:
     raw = os.environ.get("FORX_PAPER_STORE")
     return Path(raw) if raw else None
@@ -111,11 +155,20 @@ def paper_snapshot(pair: str, cfg: dict[str, Any], row: Any) -> dict[str, Any]:
         allowed = False
         reason = reason or f"{symbol} already has an open paper position — close it first"
     size = float((cfg.get("broker") or {}).get("default_size") or 1.0)
+    portfolio = {"enabled": False}
+    try:
+        from forex_lab.portfolio_brain import status_payload
+
+        opens = list(broker.list_positions()) if isinstance(broker, PaperBroker) else []
+        portfolio = status_payload(cfg=cfg, opens=opens)
+    except Exception:
+        portfolio = {"enabled": False}
     return {
         "allowed": allowed,
         "block_reason": reason,
         "default_size": size,
         "position": _position_json(pos, cfg),
+        "portfolio": portfolio,
     }
 
 
@@ -193,6 +246,12 @@ def _paper_order_impl(
         raise PaperBlocked(
             paper_submit_block_reason(row.validity, row, cfg) or "Paper BUY/SELL disabled"
         )
+    brain = _portfolio_open_check(broker, cfg, pair=symbol, side=action, size=size)
+    if brain is not None and not brain.allowed:
+        tag = brain.blocked_by[0] if brain.blocked_by else "portfolio"
+        raise PaperBlocked(f"Paper BUY/SELL disabled — {tag}")
+    if brain is not None and brain.scale < 1.0 and size is None:
+        size = float((cfg.get("broker") or {}).get("default_size") or 1.0) * float(brain.scale)
     price, entry_bar = _price_from_cache(symbol, cfg, iv, row)
     if price is None:
         raise BrokerError("no cached price — cannot paper-fill")
@@ -717,22 +776,31 @@ def _auto_one(
                     events.append(_book_event(symbol, "skip levels", sid))
                     notices.append(_skip_notice(symbol, sid, "Missing stop/target"))
                 else:
-                    _open_auto(
-                        broker,
-                        row,
-                        cfg,
-                        suggestion,
-                        side=eligible,
-                        price=price,
-                        entry_bar=entry_bar,
-                        when=when,
-                        strategy_id=sid,
-                        confidence=_f(view["confidence"]),
-                        sl=sl,
-                        tp=tp,
-                        horizon=horizon,
+                    brain = _portfolio_open_check(
+                        broker, cfg, pair=symbol, side=eligible, size=None
                     )
-                    events.append(_book_event(symbol, f"open {eligible}", sid))
+                    if brain is not None and not brain.allowed:
+                        hold_seen = True
+                        tag = brain.blocked_by[0] if brain.blocked_by else "portfolio"
+                        events.append(_book_event(symbol, f"skip {tag}", sid))
+                        notices.append(_skip_notice(symbol, sid, tag))
+                    else:
+                        _open_auto(
+                            broker,
+                            row,
+                            cfg,
+                            suggestion,
+                            side=eligible,
+                            price=price,
+                            entry_bar=entry_bar,
+                            when=when,
+                            strategy_id=sid,
+                            confidence=_f(view["confidence"]),
+                            sl=sl,
+                            tp=tp,
+                            horizon=horizon,
+                        )
+                        events.append(_book_event(symbol, f"open {eligible}", sid))
         if allowed and not hold_seen:
             pair_seen[sid] = eligible
     blocked = _champion_blocked(

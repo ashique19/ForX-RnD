@@ -1,0 +1,28 @@
+# Portfolio-brain STUB — 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Measured-intel FREEZE unchanged. No promote, no Replay, no live-gate change.
+
+## Shipped
+- `forex_lab/portfolio_brain.py` — post-signal overlay (max concurrent, corr veto, DD budget, book units)
+- `config/default.yaml` → `portfolio_brain.enabled: false` (default off)
+- Light paper hooks in `api/paperdesk.py` + `GET /portfolio/brain` (status only)
+- `tests/test_portfolio_brain.py` against design AC
+
+## Behavior
+- **Disabled (default):** check is a pure no-op — allow, scale=1.0, empty notes. Buy/Sell model path unchanged.
+- **Enabled later (paper-only):** set `portfolio_brain.enabled: true` in `config/default.yaml` (or workspace overlay). Keep `apply_to_replay: false`. Optional desk toggle later.
+- Overlay may block paper opens / force flash HOLD; never rewrites P(class). CLOSE always bypasses.
+
+## How to enable (still paper-only)
+1. Edit `config/default.yaml`:
+   ```yaml
+   portfolio_brain:
+     enabled: true          # was false
+     apply_to_paper: true
+     apply_to_flash: true
+     apply_to_replay: false # keep Replay pure
+   ```
+2. Restart API / desk. Confirm `GET /portfolio/brain` shows `"enabled": true`.
+3. Dry paper week before considering flash default or Replay.
+
+## Out of scope (FREEZE)
+- Measured-intel challengers, promote, live champion rewrite, Replay gate flips.
