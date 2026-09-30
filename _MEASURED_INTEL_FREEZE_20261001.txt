@@ -1,0 +1,17 @@
+﻿# Measured-intel FREEZE - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. After 3/3 failed measured-intel challengers vs EURUSD pin `2cee7e7163134266ad8c2b39234442d8`.
+
+## Strikes
+1. min_conf 0.65 job `a67b7702` - PF/DD better, return worse - gate stays 0.60
+2. ADX skip_chop min 0.20 job `c9ff1aca` - FAIL; trend_regime.enabled=false; module kept
+3. ADX skip_chop min 0.15 job `716144f2` - FAIL (PF 1.914 / return 6.29 / DD -8.0% / n 3138 vs pin PF 1.989 / return 11.17 / DD -10% / n 3791); REVERT enabled=false
+
+## Frozen
+- No more measured-intel model/feature/regime/conf challengers without a written new hypothesis.
+- Live gate min_confidence=0.60 untouched. Promote=null. trend_regime.enabled=false.
+
+## Allowed next
+- Desk/ops
+- Tip densify
+- Jetta Sep when available
+- Portfolio-brain design note only

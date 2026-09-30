@@ -1,0 +1,53 @@
+﻿# EURUSD looser ADX skip-chop Replay - measured-intel strike 3/3 - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays min_confidence=0.60.
+
+## Hypothesis
+Strike 2 ADX min=0.20 cut n ~37% and collapsed return. Looser **min_adx=0.15** (same policy-only skip_chop module) should filter only clearer dead zones, recovering n/return toward pin while keeping PF >= pin and DD better than -10%. See `_HYPOTHESIS_20261001_EURUSD_ADX015.txt`.
+Not a re-run of 0.20. Session overlap already ON in pin. No walk-forward stability gate (larger plumbing).
+
+## Change (minimal)
+- Config only: `replay.trend_regime.enabled=true`, `metric=adx`, `period=14`, `min_adx=0.15`
+- Module already present from strike 2 (`forex_lab/trend_regime.py`)
+- **REVERTED** `enabled=false` after fail; `min_adx` left at 0.15 as last-tested knob
+
+## Job
+- job_id: **716144f2207b4d1eba38c21e7e4f20c3**
+- started: ~2026-10-01 02:08 Asia/Dhaka
+- finished: **2026-10-01 02:15 Asia/Dhaka**
+- pair EURUSD 1h; start=2015-01-01; pull=false; min_confidence=**0.60**; costs ON (bid_ask)
+- rows=**71941**; source=jetta; bid_ask=true
+- Gate active (report): `trend_regime: skip_chop | metric=adx | period=14 | min=0.15`
+- Within-job promote: **null** (challenger logistic worse PF/return)
+
+## Before / after (across jobs)
+
+| | pin (no trend_regime) `2cee7e71.` | +ADX 0.20 `c9ff1aca.` | +ADX 0.15 `716144f2.` |
+|---|---:|---:|---:|
+| Champ PF | **1.989** | 1.871 | 1.914 |
+| WR | 64.8% | 63.4% | 63.8% |
+| n | 3791 | 2378 | 3138 |
+| max DD | -10.00% | **-5.92%** | **-8.00%** |
+| total_return | **11.17** | 3.31 | 6.29 |
+| SMA PF | 0.883 | 0.883 | 0.883 |
+
+Delta vs pin (0.15): PF **-0.075**, return **-4.88**, DD better (~2pp), n **-653** (~17% cut; milder than 0.20's 37%).
+
+## Verdict: FAIL adoption (measured-intel **strike 3 of 3**)
+- DD improved vs pin; n/return better than strike-2 0.20 as expected, but **PF and total_return still clearly worse than pin**. Not a clean dominate (need PF+return+DD).
+- **REVERTED** `config/default.yaml` `replay.trend_regime.enabled` -> **false**. Module kept; min_adx left at 0.15 (documented last test).
+- No promote. Live `signals.min_confidence` stays **0.60**. Live champion untouched.
+
+## Strike log (COMPLETE - FREEZE)
+- Strike 1/3: conf-floor 0.65 `a67b7702` - PF/DD up, return down -> keep 0.60
+- Strike 2/3: ADX skip_chop 0.20 `c9ff1aca` - DD up, PF/return/n down -> revert trend_regime OFF
+- Strike 3/3: ADX skip_chop 0.15 `716144f2` - milder than 0.20 but PF/return still below pin -> revert OFF
+
+## FREEZE measured-intel model / feature challengers
+No more ADX/ER/conf/regime feature challengers until a **written new hypothesis** with expected edge vs pin `2cee7e71`.
+Next autonomy work only:
+1. Desk/ops hygiene
+2. Tip densify (GBPUSD / live tip volume)
+3. Jetta Sep remesh when `/2026/9` publishes (EURUSD tip was synth-extended)
+4. Portfolio-brain **design note only** (no code challengers that change Replay gates)
+
+Hard rule unchanged: no promote / no live-gate change without clear after-cost full-history beat of champ.

@@ -1,0 +1,20 @@
+﻿# Hypothesis - EURUSD looser ADX skip-chop (measured-intel strike 3/3)
+Date: 2026-10-01 Asia/Dhaka
+Pin: `2cee7e7163134266ad8c2b39234442d8` (champ PF 1.989 / DD -10.0% / n 3791 / return 11.17)
+
+## Why this idea (not ADX 0.20, not conf, not session)
+- Strike 1 conf 0.65: PF/DD up, return down - keep 0.60.
+- Strike 2 ADX skip_chop min=0.20 job `c9ff1aca`: DD better, but PF 1.871 and return 3.31 vs pin; n cut ~37% (3791->2378). Threshold too aggressive.
+- Session overlap already ON in pin (`replay.session_gate: overlap`) - not a new challenger.
+- Walk-forward stability gate = larger plumbing; skip for strike 3 (want smallest knob).
+
+## Idea (smallest measured-intel knob)
+Same policy-only ADX skip_chop module, **looser floor min_adx=0.15** (ADX<15 = clear dead zone only).
+Expected edge vs pin `2cee7e71`:
+- Cut only the weakest chop that 0.20 over-filtered, so n/return recover toward pin while PF stays >= pin and DD stays better than -10%.
+- Pure config: `enabled=true`, `metric=adx`, `period=14`, `min_adx=0.15`. No model/feature change. Do NOT re-run 0.20.
+
+## Protocol
+- ONE Replay: EURUSD 1h, start 2015-01-01, pull=false, min_confidence=0.60, costs ON
+- Clean WIN = champ PF + total_return + DD all dominate pin (after-cost). Then leave paper-ready; **DO NOT promote**.
+- FAIL = REVERT enabled=false; document strike 3/3 FREEZE measured-intel model work.
