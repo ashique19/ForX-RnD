@@ -222,7 +222,18 @@ def weekday_gate_blocks_now(
     if wd not in days:
         return False, ""
     names = ",".join(day_names(days))
-    return True, f"weekday_gate blocks {names} (UTC); today={_DAY_NAMES[wd]}"
+    today = _DAY_NAMES[wd]
+    # Next UTC open day after blocked today (for desk mute clarity).
+    nxt = None
+    for step in range(1, 8):
+        cand = (wd + step) % 7
+        if cand not in days:
+            nxt = _DAY_NAMES[cand]
+            break
+    others = [n for n in day_names(days) if n != today]
+    also = f"; also {','.join(others)}" if others else ""
+    lifts = f" - lifts {nxt} UTC" if nxt else ""
+    return True, f"muted {today} (UTC weekday gate{also}){lifts}"
 
 
 def weekday_gate_report_line(cfg: dict[str, Any] | None) -> str:

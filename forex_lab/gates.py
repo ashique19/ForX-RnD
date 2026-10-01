@@ -58,13 +58,13 @@ class GateDecision:
         if self.allowed:
             return ""
         parts = [h.reason for h in self.hits if h.blocked and h.reason]
-        return " · ".join(parts) if parts else "gated"
+        return " | ".join(parts) if parts else "gated"
 
     def caption(self) -> str:
         reason = self.block_reason()
         if not reason:
             return ""
-        return f"Paper BUY/SELL disabled — {reason}"
+        return f"Paper BUY/SELL disabled - {reason}"
 
 
 def _gates_cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:

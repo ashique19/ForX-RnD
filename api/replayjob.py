@@ -58,6 +58,54 @@ class ReplayBusy(ReplayJobError):
     """A historic pull or replay is already running for the Active pair."""
 
 
+
+def ensure_desk_vite_after_replay() -> None:
+    """Best-effort: if Replay finished and Vite :5173 is down, restart desk lightly.
+
+    START_DESK race can leave API up while Vite died during long Replay.
+    Never promotes / never touches live gates. Fire-and-forget.
+    """
+    import socket
+    import subprocess
+    import sys
+
+    def _listening(port: int) -> bool:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+                return True
+        except OSError:
+            return False
+
+    try:
+        if _listening(5173):
+            return
+        root = Path(__file__).resolve().parents[1]
+        ps1 = root / "START_DESK.ps1"
+        if not ps1.exists():
+            return
+        # Light recycle: -Force ensures Vite if API already healthy path still
+        # restarts listeners; NoBrowser for headless agent runs.
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0
+        subprocess.Popen(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ps1),
+                "-Force",
+                "-NoBrowser",
+            ],
+            cwd=str(root),
+            creationflags=flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return
+
+
 def reset_jobs() -> None:
     """Drop in-memory job slots. Tests only."""
     global _ACTIVE_ID
@@ -572,6 +620,7 @@ def _worker(
                 )
         if kind == "pull":
             _update(job_id, folder, status="done", phase="done", fraction=1.0)
+            ensure_desk_vite_after_replay()
             return
         meta = load_meta(pair, interval, cfg)
         frame = load_history(pair, cfg, interval, start=start, end=end)
@@ -602,6 +651,7 @@ def _worker(
             report=_links(job_id),
             as_of_dhaka=result.get("end_dhaka"),
         )
+        ensure_desk_vite_after_replay()
     except Exception as exc:  # noqa: BLE001 — surface the reason; do not invent a scoreboard
         reason, text = explain_failure(exc)
         _update(

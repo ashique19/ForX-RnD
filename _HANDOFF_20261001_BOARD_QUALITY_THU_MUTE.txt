@@ -1,0 +1,35 @@
+﻿# HANDOFF 2026-10-01 ~13:48 Asia/Dhaka - Board quality Thu mute + BTCUSD skip + Vite ensure
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK; Vite :5173 OK (START_DESK -Force recycle ~13:46 Asia/Dhaka)
+- Active **EURUSD** unchanged; min_conf 0.60; frozen overlays OFF; no promote
+- weekday_gate ON (Mon,Thu UTC) — today Thu so flashes muted (expected)
+
+## Shipped this slice (no promote)
+1) **Board quality / Thu mute clarity**
+   - Fixed gates.py block_reason mojibake separator -> ASCII pipe
+   - weekday_gate_blocks_now reason -> muted Thu (UTC weekday gate; also Mon) - lifts Fri UTC
+   - suggestion_chat humanize_gate + prefer_mute_why: clear muted copy, conf as trailing note
+   - window_gone fingerprints strip conf ticks (rate-limit spam on poll)
+2) **open_window honesty** when gates allow: @price - target @, stop @, conf (+ research levels disclaimer)
+3) **BTCUSD skip honesty on board**
+   - PIN_SKIP_PAIRS: no more Train idle; pin-skip + pip/tick + mid-only note
+4) **Data: light watchlist OHLCV refresh** for idle/stale pairs via POST /refresh (tips refreshed ~13:41)
+5) **Desk stuckness**: ensure_desk_vite_after_replay() after Replay/pull done — if :5173 down, fire START_DESK -Force -NoBrowser
+
+## Explicitly skipped
+- Promote / live-gate / min_conf / frozen overlays / portfolio_brain enable
+- New Replay hypothesis (vol_scaled already FAIL; freeze still on)
+- BTCUSD train (pin-skip policy unchanged)
+
+## Tests / smoke
+- pytest tests/test_suggestion_chat.py: 19 passed
+- vitest suggestionChat.test.ts: 9 passed
+- Live /suggestions/board: EURUSD muted Thu lifts Fri; BTCUSD pin-skip text; gate_reason uses ASCII pipe
+
+## Next practical
+1) Fri UTC: re-check idle flashes for clean BUY/SELL open_window with @price/target/stop
+2) Optional: tip_vol_heal timeout/cap so START_DESK -Force never sits ~4m on Duka
+3) Kill orphan uvicorn if two pythons share :8000 race again
+4) Only new written hyp outside freeze/vol_scaled if research slot opens

@@ -109,4 +109,40 @@ describe("suggestionChat", () => {
     expect(line?.kind).toBe("open_pos");
     expect(line?.text).toContain("+0.12R");
   });
+
+  it("weekday mute clarity + stable fingerprint", () => {
+    const a = formatBoardChatLine(
+      base({ signal: "HOLD", raw_signal: "BUY", gate_reason: "conf=0.44 < min 0.60 · weekday_gate blocks Mon,Thu (UTC); today=Thu" }),
+      { active: "EURUSD" },
+    );
+    const b = formatBoardChatLine(
+      base({ signal: "HOLD", raw_signal: "BUY", gate_reason: "conf=0.49 < min 0.60 · weekday_gate blocks Mon,Thu (UTC); today=Thu" }),
+      { active: "EURUSD" },
+    );
+    expect(a?.text.toLowerCase()).toContain("muted");
+    expect(a?.text).toContain("lifts Fri UTC");
+    expect(a?.id).toBe(b?.id);
+  });
+
+  it("BTCUSD pin-skip honesty not Train", () => {
+    const line = formatBoardChatLine(base({ pair: "BTCUSD", signal: "\u2014", status: "need_train", last: 84320.22 }), {
+      active: "EURUSD",
+    });
+    expect(line?.kind).toBe("status");
+    expect(line?.text.toLowerCase()).toContain("pin-skip");
+    expect(line?.text.includes("Train idle") || line?.text.includes("Train (Lab")).toBe(false);
+    expect(line?.id.endsWith("|pin_skip")).toBe(true);
+  });
+
+  it("open window lists stop target at price", () => {
+    const line = formatBoardChatLine(
+      base({ signal: "BUY", target: 1.13454, last: 1.13276 }),
+      { active: "EURUSD", briefHourly: { signal: "BUY", now: 1.13276, target: 1.13454, stop: 1.13098, confidence: 0.72 } as any },
+    );
+    expect(line?.kind).toBe("open_window");
+    expect(line?.text).toContain("@ 1.13276");
+    expect(line?.text).toContain("target @");
+    expect(line?.text).toContain("stop @");
+  });
+
 });

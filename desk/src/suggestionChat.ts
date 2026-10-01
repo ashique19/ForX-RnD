@@ -70,6 +70,67 @@ function cleanGate(gate: string): string {
   return g.replace(/^[|\s]+|[|\s]+$/g, "");
 }
 
+
+const PIN_SKIP_PAIRS = new Set(["BTCUSD"]);
+const PIN_SKIP_REASON: Record<string, string> = {
+  BTCUSD:
+    "research pin-skip - pip/tick contract + mid-only feed; not a Train candidate until contract written (see _BTCUSD_PIN_SKIP note)",
+};
+
+function humanizeGate(gate: string): string {
+  let g = cleanGate(gate);
+  if (!g) return "";
+  if (g.startsWith("muted ")) return g;
+  const m = g.match(/weekday_gate blocks ([A-Za-z,]+) \(UTC\); today=([A-Za-z]+)/i);
+  if (!m) return g;
+  const order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const short: Record<string, number> = Object.fromEntries(order.map((d, i) => [d, i]));
+  const dayList = m[1].split(",").map((x) => x.trim()).filter(Boolean);
+  const todayN = m[2].slice(0, 3).replace(/^./, (c) => c.toUpperCase());
+  const others = dayList.map((d) => d.slice(0, 3).replace(/^./, (c) => c.toUpperCase())).filter((d) => d !== todayN);
+  const also = others.length ? `; also ${others.join(",")}` : "";
+  let lifts = "";
+  const wi = short[todayN];
+  if (wi != null) {
+    const blockSet = new Set(dayList.map((d) => short[d.slice(0, 3).replace(/^./, (c) => c.toUpperCase())] ?? -1));
+    for (let step = 1; step < 8; step++) {
+      const cand = (wi + step) % 7;
+      if (!blockSet.has(cand)) {
+        lifts = ` - lifts ${order[cand]} UTC`;
+        break;
+      }
+    }
+  }
+  const muted = `muted ${todayN} (UTC weekday gate${also})${lifts}`;
+  return g.replace(/weekday_gate blocks [A-Za-z,]+ \(UTC\); today=[A-Za-z]+/i, muted);
+}
+
+function preferMuteWhy(gate: string): string {
+  const g = humanizeGate(gate);
+  if (!g) return "gated to HOLD";
+  if (!g.toLowerCase().includes("muted ")) return g;
+  const parts = g.split("|").map((x) => x.trim()).filter(Boolean);
+  const muted = parts.filter((x) => x.toLowerCase().startsWith("muted "));
+  const confs = parts.filter((x) => x.toLowerCase().startsWith("conf="));
+  const other = parts.filter((x) => !muted.includes(x) && !confs.includes(x));
+  const bits = [...muted, ...other];
+  if (confs.length) bits.push(`also ${confs[0]}`);
+  return bits.join(" | ") || g;
+}
+
+function fingerprintStableBody(kind: string, body: string, gate = ""): string {
+  if (kind !== "window_gone") return body.trim();
+  let stable = body.replace(/conf=\d+(?:\.\d+)?\s*<\s*min\s*\d+(?:\.\d+)?\s*\|?\s*/g, "");
+  stable = stable.replace(/\(conf\s*\d+%\)/g, "");
+  const gateL = gate.toLowerCase();
+  const bodyL = body.toLowerCase();
+  if (gateL.includes("weekday") || gateL.includes("muted ") || bodyL.includes("weekday") || bodyL.includes("muted ")) {
+    stable = stable.replace(/conf=[^|\-]+\|\s*/g, "");
+  }
+  stable = stable.replace(/\|\s*also\s*\.?\s*/g, " ").replace(/\balso\s*\.?\s*$/g, "");
+  return stable.replace(/\s{2,}/g, " ").trim().replace(/^[|\s]+|[|\s]+$/g, "");
+}
+
 export function fingerprintLine(pair: string, kind: string, body: string): string {
   return `${pair.toUpperCase()}|${kind}|${body.trim()}`;
 }
@@ -90,7 +151,7 @@ export function formatBoardChatLine(
   const hourly = opts?.briefHourly;
   const signal = normSide(hourly?.signal || row.signal);
   const raw = normSide(opts?.rawSignal || hourly?.raw_signal || row.raw_signal);
-  const gate = cleanGate(String(opts?.gateReason || hourly?.gate_reason || row.gate_reason || "").trim());
+  const gate = humanizeGate(String(opts?.gateReason || hourly?.gate_reason || row.gate_reason || "").trim());
   const status = String(row.status || "")
     .trim()
     .toLowerCase();
@@ -125,20 +186,26 @@ export function formatBoardChatLine(
     }
   } else if (signal === "BUY" || signal === "SELL") {
     kind = "open_window";
-    const bits = [`${pair}: open ${signal} window now @ ${px(pair, last)}`];
+    const pxTxt = last != null && Number.isFinite(last) ? px(pair, last) : "-";
+    const bits = [`${pair}: open ${signal} window now @ ${pxTxt}`];
     const hasTarget = target != null && Number.isFinite(target);
     const hasStop = stop != null && Number.isFinite(stop);
     if (hasTarget) bits.push(`target @ ${px(pair, target)}`);
-    if (hasStop) bits.push(`stop/limit @ ${px(pair, stop)}`);
+    if (hasStop) bits.push(`stop @ ${px(pair, stop)}`);
     if (conf) bits.push(`conf ${conf}`);
-    body = `${bits[0]}${bits[1] ? ` - ${bits[1]}` : ""}`;
-    if (bits.length > 2) body += `, ${bits.slice(2).join(", ")}`;
+    body = bits[0];
+    if (bits.length > 1) body += ` - ${bits.slice(1).join(", ")}`;
     body += hasTarget || hasStop
       ? " (research levels from gates, not broker orders)."
       : " (research window; target/stop not set by gates yet).";
   } else if ((raw === "BUY" || raw === "SELL") && (signal === "HOLD" || !signal || gate)) {
     kind = "window_gone";
-    body = `${pair}: open window gone. Don't ${raw.toLowerCase()} now - ${gate || "gated to HOLD"}. No actionable target/stop while gated.`;
+    const why = gate ? preferMuteWhy(gate) : "gated to HOLD";
+    if (why.toLowerCase().includes("muted ") || why.toLowerCase().includes("weekday gate")) {
+      body = `${pair}: muted (weekday gate) - don't ${raw.toLowerCase()} now. ${why}. No actionable target/stop while muted.`;
+    } else {
+      body = `${pair}: open window gone. Don't ${raw.toLowerCase()} now - ${why}. No actionable target/stop while gated.`;
+    }
   } else if (signal === "HOLD") {
     kind = "hold";
     const holdPx = last != null && Number.isFinite(last) ? px(pair, last) : null;
@@ -147,6 +214,11 @@ export function formatBoardChatLine(
       : `${pair}: HOLD - no directional flash right now.`;
     if (conf) body += ` (conf ${conf})`;
     if (gate) body += ` [${gate}]`;
+  } else if (PIN_SKIP_PAIRS.has(pair)) {
+    kind = "status";
+    const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
+    const why = PIN_SKIP_REASON[pair] || "research pin-skip (not a Train candidate).";
+    body = lastTxt ? `${pair}: watching @ ${lastTxt} - ${why}` : `${pair}: ${why}`;
   } else if (status === "need_train" || status === "untrained") {
     kind = "status";
     const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
@@ -175,14 +247,19 @@ export function formatBoardChatLine(
         ? "active"
         : "light";
 
-  const idleStatus =
+  let fpBody = body;
+  if (kind === "status" && PIN_SKIP_PAIRS.has(pair)) {
+    fpBody = "pin_skip";
+  } else if (
     kind === "status" &&
-    (status === "need_train" ||
-      status === "untrained" ||
-      status === "need_fetch" ||
-      status === "missing");
+    (status === "need_train" || status === "untrained" || status === "need_fetch" || status === "missing")
+  ) {
+    fpBody = status || "status";
+  } else if (kind === "window_gone") {
+    fpBody = fingerprintStableBody(kind, body, gate);
+  }
   return {
-    id: fingerprintLine(pair, kind, idleStatus ? status || "status" : body),
+    id: fingerprintLine(pair, kind, fpBody),
     pair,
     kind,
     weight,

@@ -275,3 +275,63 @@ def test_need_train_without_price_asks_fetch_then_train():
     assert "need Fetch for bars" in line["text"]
     assert "Train" in line["text"]
 
+
+def test_weekday_mute_clarity_and_stable_fp():
+    a = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "HOLD",
+            "raw_signal": "BUY",
+            "gate_reason": "conf=0.44 < min 0.60 · weekday_gate blocks Mon,Thu (UTC); today=Thu",
+            "last": 1.13,
+            "confidence": 0.44,
+        },
+        active="EURUSD",
+    )
+    b = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "HOLD",
+            "raw_signal": "BUY",
+            "gate_reason": "conf=0.49 < min 0.60 · weekday_gate blocks Mon,Thu (UTC); today=Thu",
+            "last": 1.13,
+            "confidence": 0.49,
+        },
+        active="EURUSD",
+    )
+    assert a is not None and b is not None
+    assert "muted" in a["text"].lower()
+    assert "lifts Fri UTC" in a["text"]
+    assert "No actionable target/stop while muted" in a["text"]
+    assert a["id"] == b["id"]  # conf ticks must not spam
+
+
+def test_btcusd_pin_skip_honesty():
+    line = format_board_line(
+        {"pair": "BTCUSD", "signal": "\u2014", "status": "need_train", "last": 84320.22},
+        active="EURUSD",
+    )
+    assert line is not None
+    assert line["kind"] == "status"
+    assert "pin-skip" in line["text"].lower() or "pin_skip" in line["id"]
+    assert "Train idle" not in line["text"]
+    assert line["id"].endswith("|pin_skip")
+
+
+def test_open_window_lists_stop_target_at_price():
+    line = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "BUY",
+            "last": 1.13276,
+            "target": 1.13454,
+            "stop": 1.13098,
+            "confidence": 0.72,
+        },
+        active="EURUSD",
+    )
+    assert line is not None
+    assert line["kind"] == "open_window"
+    assert "@ 1.13276" in line["text"]
+    assert "target @ 1.13454" in line["text"]
+    assert "stop @ 1.13098" in line["text"]

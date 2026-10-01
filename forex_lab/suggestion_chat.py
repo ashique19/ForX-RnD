@@ -95,6 +95,101 @@ def _clean_gate(gate: str) -> str:
         g = g.replace(" |  | ", " | ")
     return g.strip(" |")
 
+
+# Research pin-skip pairs: show honesty, never "Train idle" (pip/BA contract missing).
+PIN_SKIP_PAIRS = frozenset({"BTCUSD"})
+PIN_SKIP_REASON = {
+    "BTCUSD": (
+        "research pin-skip - pip/tick contract + mid-only feed; "
+        "not a Train candidate until contract written (see _BTCUSD_PIN_SKIP note)"
+    ),
+}
+
+
+def humanize_gate(gate: str) -> str:
+    """Make weekday/conf mute reasons desk-readable."""
+    import re
+
+    g = _clean_gate(gate)
+    if not g:
+        return ""
+    if g.startswith("muted "):
+        return g
+    m = re.search(
+        r"weekday_gate blocks ([A-Za-z,]+) \(UTC\); today=([A-Za-z]+)",
+        g,
+        flags=re.I,
+    )
+    if not m:
+        return g
+    names = m.group(1)
+    today_raw = m.group(2)
+    order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    short = {d: i for i, d in enumerate(order)}
+    day_list = [x.strip() for x in names.split(",") if x.strip()]
+    today_n = today_raw[:3].title()
+    if today_n not in short:
+        today_n = today_raw.title()[:3]
+    others = [d[:3].title() for d in day_list if d[:3].title() != today_n]
+    also = f"; also {','.join(others)}" if others else ""
+    lifts = ""
+    wi = short.get(today_n)
+    if wi is not None:
+        block_set = {short.get(d[:3].title(), -1) for d in day_list}
+        for step in range(1, 8):
+            cand = (wi + step) % 7
+            if cand not in block_set:
+                lifts = f" - lifts {order[cand]} UTC"
+                break
+    muted = f"muted {today_n} (UTC weekday gate{also}){lifts}"
+    return re.sub(
+        r"weekday_gate blocks [A-Za-z,]+ \(UTC\); today=[A-Za-z]+",
+        muted,
+        g,
+        count=1,
+        flags=re.I,
+    )
+
+
+
+def prefer_mute_why(gate: str) -> str:
+    """Prefer weekday mute clause; keep conf as a short trailing note."""
+    import re
+
+    g = humanize_gate(gate)
+    if not g:
+        return "gated to HOLD"
+    if "muted " not in g.lower():
+        return g
+    # Split on | and put muted first
+    parts = [x.strip() for x in g.split("|") if x.strip()]
+    muted = [x for x in parts if x.lower().startswith("muted ")]
+    confs = [x for x in parts if x.lower().startswith("conf=")]
+    other = [x for x in parts if x not in muted and x not in confs]
+    bits = muted + other
+    if confs:
+        bits.append("also " + confs[0])
+    return " | ".join(bits) if bits else g
+
+
+def fingerprint_stable_body(kind: str, body: str, gate: str = "") -> str:
+    """Drop ticking conf floats from window_gone fingerprints to rate-limit spam."""
+    import re
+
+    if kind != "window_gone":
+        return body.strip()
+    stable = body
+    stable = re.sub(r"conf=\d+(?:\.\d+)?\s*<\s*min\s*\d+(?:\.\d+)?\s*\|?\s*", "", stable)
+    stable = re.sub(r"\(conf\s*\d+%\)", "", stable)
+    gate_l = (gate or "").lower()
+    body_l = body.lower()
+    if "weekday" in gate_l or "muted " in gate_l or "weekday" in body_l or "muted " in body_l:
+        stable = re.sub(r"conf=[^|\-]+\|\s*", "", stable)
+    stable = re.sub(r"|\s*also\s*\.?\s*", " ", stable)
+    stable = re.sub(r"\balso\s*\.?\s*$", "", stable)
+    return re.sub(r"\s{2,}", " ", stable).strip(" |")
+
+
 def _last_num(row: dict[str, Any]) -> float | None:
     for key in ("last", "now", "price", "close"):
         val = row.get(key)
@@ -122,7 +217,7 @@ def format_board_line(
         return None
     signal = _norm_side(row.get("signal"))
     raw = _norm_side(row.get("raw_signal"))
-    gate = _clean_gate(str(row.get("gate_reason") or "").strip())
+    gate = humanize_gate(str(row.get("gate_reason") or "").strip())
     status = str(row.get("status") or "").strip().lower()
     last = _last_num(row)
     last_txt = _px(pair, last) if last is not None else None
@@ -161,31 +256,36 @@ def format_board_line(
             body = f"{pair}: paper {side} open @ {entry_txt}{pnl_bit} - {mon}."
     elif signal in {"BUY", "SELL"}:
         kind = "open_window"
-        bits = [
-            f"{pair}: open {signal} window now @ {_px(pair, last)}"
-        ]
+        px_txt = _px(pair, last) if last is not None else "-"
+        bits = [f"{pair}: open {signal} window now @ {px_txt}"]
         has_target = isinstance(target, (int, float))
         has_stop = isinstance(stop, (int, float))
         if has_target:
             bits.append(f"target @ {_px(pair, float(target))}")
         if has_stop:
-            bits.append(f"stop/limit @ {_px(pair, float(stop))}")
+            bits.append(f"stop @ {_px(pair, float(stop))}")
         if conf:
             bits.append(f"conf {conf}")
-        body = " - ".join(bits[:2])
-        if len(bits) > 2:
-            body += ", " + ", ".join(bits[2:])
+        body = bits[0]
+        if len(bits) > 1:
+            body += " - " + ", ".join(bits[1:])
         if has_target or has_stop:
             body += " (research levels from gates, not broker orders)."
         else:
             body += " (research window; target/stop not set by gates yet)."
     elif raw in {"BUY", "SELL"} and (signal in {"HOLD", ""} or gate):
         kind = "window_gone"
-        why = gate or "gated to HOLD"
-        body = (
-            f"{pair}: open window gone. Don't {raw.lower()} now - {why}. "
-            f"No actionable target/stop while gated."
-        )
+        why = prefer_mute_why(gate) if gate else "gated to HOLD"
+        if "muted " in why.lower() or "weekday gate" in why.lower():
+            body = (
+                f"{pair}: muted (weekday gate) - don't {raw.lower()} now. {why}. "
+                f"No actionable target/stop while muted."
+            )
+        else:
+            body = (
+                f"{pair}: open window gone. Don't {raw.lower()} now - {why}. "
+                f"No actionable target/stop while gated."
+            )
     elif signal == "HOLD":
         kind = "hold"
         if last_txt:
@@ -196,6 +296,13 @@ def format_board_line(
             body += f" (conf {conf})"
         if gate:
             body += f" [{gate}]"
+    elif pair in PIN_SKIP_PAIRS:
+        kind = "status"
+        why = PIN_SKIP_REASON.get(pair) or "research pin-skip (not a Train candidate)."
+        if last_txt:
+            body = f"{pair}: watching @ {last_txt} - {why}"
+        else:
+            body = f"{pair}: {why}"
     elif status in {"need_train", "untrained"}:
         kind = "status"
         if last_txt:
@@ -230,8 +337,12 @@ def format_board_line(
         weight = "active" if is_active else "light"
     # Idle need_train/need_fetch: keep fingerprint stable so light price refreshes
     # do not spam the chat; Watchlist/board rows still show the live last.
-    if kind == "status" and status in {"need_train", "untrained", "need_fetch", "missing"}:
+    if kind == "status" and pair in PIN_SKIP_PAIRS:
+        fp = fingerprint_line(pair, kind, "pin_skip")
+    elif kind == "status" and status in {"need_train", "untrained", "need_fetch", "missing"}:
         fp = fingerprint_line(pair, kind, status or "status")
+    elif kind == "window_gone":
+        fp = fingerprint_line(pair, kind, fingerprint_stable_body(kind, body, gate))
     else:
         fp = fingerprint_line(pair, kind, body)
     return {
