@@ -1,0 +1,9 @@
+﻿# Replay start - session_gate overlap ENFORCED - 2026-10-01 ~12:16 Asia/Dhaka
+Job: 76c3d05094c0476eab3c1c42d350f481
+Pair: EURUSD  start=2015-01-01  pull=false  min_confidence=0.60
+Hyp: _HYP_SESSION_GATE_OVERLAP_ENFORCED_20261001.txt
+Config: replay.session_gate=overlap -> signals.sessions=[ldn_ny]
+Fallback: model.apply_signal_filters uses sess_london & sess_ny when sess_ldn_ny missing
+(feature_extras.session_overlap=false). tip_vol_heal intact. Frozen overlays stay OFF.
+Compare after-cost champion PF/DD/n vs pin 2cee7e71 (PF 1.9887 / DD -10.0% / n 3791).
+Promote=null always; no live-gate change.

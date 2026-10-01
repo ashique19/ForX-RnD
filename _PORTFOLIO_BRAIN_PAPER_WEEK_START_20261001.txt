@@ -1,0 +1,20 @@
+﻿# Portfolio-brain paper-week START - 2026-10-01 ~12:00 Asia/Dhaka (resume after outage)
+Standing ForX autonomy. portfolio_brain.enabled remains FALSE. No promote. No live-gate change.
+
+## Purpose
+Grow paper journal samples under current desk rules while the risk overlay stays behind the flag.
+Monitor via GET /portfolio/brain (status only) and paper closed-trade count.
+
+## Baseline at start
+- auto_enabled=true; Active=EURUSD; signals.min_confidence=0.60
+- Paper closed trades: 10 (EURUSD PF~0.73 on tiny sample)
+- Open positions: 0
+- /portfolio/brain: enabled=false (fixed NameError deskdata.app_config -> app_config)
+
+## Rules this week
+- Do NOT set portfolio_brain.enabled=true without written A/B vs pin on EURUSD+one secondary.
+- Do NOT enable cross_pair_veto / meta_label / size_by_conf / purge / trend_regime.
+- Journal growth only via existing paper auto; weekday_gate may block Mon/Thu UTC opens (expected).
+
+## Exit / review
+After >=30 closed paper trades OR 7 calendar days: write paper-week review; only then consider enable A/B hyp.

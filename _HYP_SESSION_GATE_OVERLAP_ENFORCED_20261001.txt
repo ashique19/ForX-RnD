@@ -1,0 +1,24 @@
+﻿# HYP: session_gate overlap ENFORCED - 2026-10-01 Asia/Dhaka
+Standing ForX autonomy. NOT a frozen family (not meta_label / purge / size_by_conf / trend_regime / portfolio_brain / cross_pair_veto).
+No promote. Live Active=EURUSD min_confidence=0.60 unchanged. Overlays stay OFF.
+
+## Bug finding (resume after outage)
+- `config/default.yaml` has `replay.session_gate: overlap` which sets `signals.sessions=['ldn_ny']`.
+- Pin `2cee7e71` report claims session_gate=overlap, but champion entries span all UTC hours (3136/3791 outside 13-15 UTC).
+- Root cause: `feature_extras.session_overlap: false` omits column `sess_ldn_ny`; model filter set `have_col=False` and silently skipped the session allow-list.
+
+## Fix (schema-safe)
+- `forex_lab/model.py`: when sessions ask for ldn_ny/overlap and `sess_ldn_ny` is missing, fall back to `sess_london & sess_ny` (London∩NY = 13-16 UTC). No new model feature column; champion joblib schema unchanged.
+
+## Hypothesis
+Enforcing London∩NY entry filter on after-cost full-history Replay will cut Asia/weak-hour noise vs pin `2cee7e71` (PF 1.989 / DD -10.0% / n 3791) and improve PF and/or DD enough to pass improve-gate vs that pin book.
+
+## Gate
+- ONE serial Replay, pair=EURUSD, start=2015-01-01, min_confidence=0.60
+- session_gate=overlap (enforced via fix); all frozen overlays remain false / purge=0
+- Improve-gate vs pin champion metrics; promote=null always for this research job
+- Kill/revert on FAIL; never flip live gates; never promote
+
+## Acceptance / kill
+- PASS research only if after-cost champion PF beats pin AND DD not worse than pin (same improve spirit). Still NOT promote-ready without user ask.
+- FAIL -> document; leave session_gate yaml as-is for live (live uses signals.sessions=[] so unaffected); consider setting replay.session_gate: off later if overlap hurts.
