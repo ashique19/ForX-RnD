@@ -2479,6 +2479,34 @@
       vertical-align: 1px;
     }
 
+    .sug-conf-chip {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      color: var(--text, #1a2332);
+      background: var(--surface-2, #f4f6f9);
+      border: 1px solid var(--border, #d0d5dd);
+      vertical-align: 1px;
+    }
+
+    .sug-mute-chip {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 0 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      color: #b54708;
+      background: #fffaeb;
+      border: 1px solid #fedf89;
+      vertical-align: 1px;
+    }
+
     .suggestion-line {
       display: flex;
       flex-wrap: wrap;

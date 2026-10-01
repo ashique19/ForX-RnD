@@ -25,6 +25,8 @@ type DeskCall = {
   paper_action?: PaperAction | null;
   honesty?: string;
   confidence?: number | null;
+  conf_pct?: number | null;
+  muted_advisory?: boolean;
 };
 
 function toneClass(kind: string): string {
@@ -42,6 +44,18 @@ function formatClock(ms?: number): string {
   } catch {
     return "";
   }
+}
+
+function confChip(call: DeskCall): string | null {
+  if (typeof call.conf_pct === "number" && Number.isFinite(call.conf_pct)) {
+    return ${Math.round(call.conf_pct)}%;
+  }
+  const raw = call.confidence;
+  if (raw == null || !Number.isFinite(raw)) return null;
+  let v = Number(raw);
+  if (v > 1) v = v / 100;
+  if (v < 0) return null;
+  return ${Math.round(v * 100)}%;
 }
 
 export function SuggestionBoard({
@@ -359,6 +373,14 @@ export function SuggestionBoard({
             <strong>
               {deskCall.pair ? (
                 <span className="sug-pair-chip">{String(deskCall.pair).toUpperCase()}</span>
+              ) : null}
+              {confChip(deskCall) ? (
+                <span className="sug-conf-chip" title="Model confidence (research)">{confChip(deskCall)}</span>
+              ) : null}
+              {deskCall.muted_advisory ? (
+                <span className="sug-mute-chip" title="Weekday mute still on - lifts Fri UTC; paper journal only">
+                  muted
+                </span>
               ) : null}
               {deskCall.headline}
             </strong>

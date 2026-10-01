@@ -15,6 +15,8 @@ export interface SuggestionChatLine {
   atMs?: number;
   honesty?: string;
   transition?: string;
+  confidence?: number | null;
+  muted_advisory?: boolean;
 }
 
 const PLACEHOLDER = new Set([
@@ -438,9 +440,19 @@ export function buildClientSuggestionFeed(args: {
   filtered.sort((a, b) => {
     const d = rank(a.kind) - rank(b.kind);
     if (d !== 0) return d;
+    const aMute =
+      a.kind === "open_window" &&
+      (a.muted_advisory === true || /muted|not opening|below min_conf/i.test(a.text || ""));
+    const bMute =
+      b.kind === "open_window" &&
+      (b.muted_advisory === true || /muted|not opening|below min_conf/i.test(b.text || ""));
+    if (aMute !== bMute) return aMute ? 1 : -1;
     const aw = a.weight === "active" ? 0 : 1;
     const bw = b.weight === "active" ? 0 : 1;
-    return aw - bw;
+    if (aw !== bw) return aw - bw;
+    const ac = typeof a.confidence === "number" ? a.confidence : -1;
+    const bc = typeof b.confidence === "number" ? b.confidence : -1;
+    return bc - ac;
   });
   return { lines: filtered, kinds };
 }

@@ -713,11 +713,17 @@ def pick_desk_call(
         kind = str(ln.get("kind") or "")
         weight_bonus = 1 if str(ln.get("weight") or "") == "active" else 0
         pair_bonus = 1 if str(ln.get("pair") or "").upper() == active_u else 0
+        # Unmuted open_window (live path ready) outranks muted advisory even at lower conf.
+        unmuted_bonus = 0
+        if kind == "open_window" and not ln.get("muted_advisory"):
+            unmuted_bonus = 1
+        # Among same kind/mute tier: higher conf wins; active pair is only a tie-break.
         return (
             _DESK_CALL_RANK.get(kind, 0),
+            unmuted_bonus,
+            _conf_rank(ln.get("confidence")),
             weight_bonus,
             pair_bonus,
-            _conf_rank(ln.get("confidence")),
         )
 
     if actionable:
@@ -744,6 +750,9 @@ def pick_desk_call(
             )
         else:
             headline = f"Desk call: {pair} paper still open - monitor (no auto)."
+        conf_v = _conf_rank(best.get("confidence"))
+        conf_pct = int(round(conf_v * 100)) if conf_v >= 0 else None
+        muted_adv = bool(best.get("muted_advisory")) if kind == "open_window" else False
         return {
             "id": f"desk_call|{best.get('id')}",
             "kind": "desk_call",
@@ -755,6 +764,8 @@ def pick_desk_call(
             "signal": best.get("signal"),
             "raw_signal": best.get("raw_signal"),
             "confidence": best.get("confidence"),
+            "conf_pct": conf_pct,
+            "muted_advisory": muted_adv,
             "honesty": HONESTY,
             "actionable": True,
             "paper_action": best.get("paper_action"),
@@ -917,8 +928,11 @@ def build_suggestion_feed(
     lines.sort(
         key=lambda ln: (
             _board_rank.get(str(ln.get("kind") or ""), 6),
-            0 if str(ln.get("weight") or "") == "active" else 1,
+            # Unmuted open_window before muted advisory (same kind bucket).
+            1 if (str(ln.get("kind") or "") == "open_window" and ln.get("muted_advisory")) else 0,
+            # Higher conf before active-weight tie-break (active still highlighted in UI).
             -_conf_rank(ln.get("confidence")),
+            0 if str(ln.get("weight") or "") == "active" else 1,
             str(ln.get("pair") or ""),
         )
     )

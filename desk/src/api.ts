@@ -248,6 +248,8 @@ export const api = {
         } | null;
         honesty?: string;
         confidence?: number | null;
+        conf_pct?: number | null;
+        muted_advisory?: boolean;
       } | null;
       kinds?: Record<string, string>;
       honesty?: string;

@@ -491,6 +491,78 @@ def test_desk_call_open_window_when_mute_lifts():
     assert "open window" in call["headline"].lower() or "window" in call["headline"].lower()
 
 
+
+def test_desk_call_prefers_unmuted_over_higher_conf_muted():
+    """Unmuted open_window outranks muted advisory even when muted conf is higher.
+
+    Fri-path readiness: when mute lifts on one pair, that window wins desk_call
+    over a still-muted advisory on another pair.
+    """
+    from forex_lab.suggestion_chat import build_suggestion_feed
+
+    feed = build_suggestion_feed(
+        [
+            {
+                "pair": "GBPJPY",
+                "signal": "HOLD",
+                "raw_signal": "SELL",
+                "gate_reason": "weekday_gate blocks Mon,Thu (UTC); today=Thu",
+                "confidence": 0.88,
+                "last": 208.0,
+            },
+            {
+                "pair": "EURUSD",
+                "signal": "BUY",
+                "last": 1.13276,
+                "target": 1.13454,
+                "stop": 1.13098,
+                "confidence": 0.62,
+            },
+        ],
+        active="GBPJPY",
+    )
+    call = feed.get("desk_call")
+    assert call is not None
+    assert call["pair"] == "EURUSD"
+    assert call.get("muted_advisory") is False
+    assert call.get("conf_pct") == 62
+    assert call["source_kind"] == "open_window"
+    ow = [ln for ln in (feed.get("lines") or []) if ln.get("kind") == "open_window"]
+    assert ow and ow[0]["pair"] == "EURUSD"
+    assert ow[0].get("muted_advisory") in (None, False)
+
+
+def test_board_conf_sort_among_unmuted():
+    from forex_lab.suggestion_chat import build_suggestion_feed
+
+    feed = build_suggestion_feed(
+        [
+            {
+                "pair": "AUDUSD",
+                "signal": "SELL",
+                "last": 0.69,
+                "target": 0.685,
+                "stop": 0.695,
+                "confidence": 0.61,
+            },
+            {
+                "pair": "EURUSD",
+                "signal": "BUY",
+                "last": 1.13,
+                "target": 1.14,
+                "stop": 1.12,
+                "confidence": 0.79,
+            },
+        ],
+        active="AUDUSD",
+    )
+    call = feed.get("desk_call")
+    assert call["pair"] == "EURUSD"
+    assert call.get("conf_pct") == 79
+    ow = [ln for ln in (feed.get("lines") or []) if ln.get("kind") == "open_window"]
+    assert [ln["pair"] for ln in ow[:2]] == ["EURUSD", "AUDUSD"]
+
+
 def test_mtf_conflict_is_window_gone_not_buy_advisory():
     line = format_board_line(
         {
