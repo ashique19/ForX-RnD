@@ -2771,3 +2771,56 @@
     .chart-main > .chart .chart-canvas {
       min-height: 220px;
     }
+
+
+/* scoreboard-overflow-fix 2026-10-01 */
+html, body, #root, .shell, .app {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+.desk-bar.desk-bar-slim {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.desk-bar.desk-bar-slim > .replay-strip,
+.desk-bar.desk-bar-slim > .replay-running,
+.desk-bar.desk-bar-slim > .replay-launch-error {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  overflow: hidden;
+}
+.desk-bar.desk-bar-slim .replay-strip-hd {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+.desk-bar.desk-bar-slim .replay-strip-hd .tag {
+  flex-shrink: 0;
+}
+.desk-bar.desk-bar-slim .replay-strip-hd strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-bar.desk-bar-slim .replay-when,
+.desk-bar.desk-bar-slim .score-verdict {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-bar.desk-bar-slim .score-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.desk-bar.desk-bar-slim .replay-strip-hd .spacer {
+  flex: 1 1 0;
+  min-width: 4px;
+}

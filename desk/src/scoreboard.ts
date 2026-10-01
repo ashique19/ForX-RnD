@@ -55,17 +55,17 @@ export function formatTrades(value: number | null | undefined): string {
 export function verdictLabel(promotion: ReplayPromotion | null | undefined): string {
   switch ((promotion?.verdict || "").toLowerCase()) {
     case "promote":
-      return "Promote — advisory only";
+      return "Promote (advisory)";
     case "null":
-      return "Null — keep the live champion";
+      return "Null - keep champion";
     case "seed":
-      return "Seed — not a promotion";
+      return "Seed (not promote)";
     case "keep":
-      return "Keep the live champion";
+      return "Keep champion";
     case "error":
-      return "Gate error — live champion unchanged";
+      return "Gate error";
     default:
-      return "No promotion verdict";
+      return "No verdict";
   }
 }
 
