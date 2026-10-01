@@ -3,7 +3,7 @@ Date: 2026-10-01 23:24 Asia/Dhaka
 PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d)
 
 ## USD-cluster hypothesis disposition
-_HYPOTHESIS_20261001_USD_CLUSTER_CAP_DD.txt is explicitly a paper-only portfolio A/B. It changes neither the single-pair model nor Replay exits, and portfolio_brain.enabled=false with pply_to_replay=false; there is no valid single-pair Replay to launch for this hypothesis. No config/code/live gate was changed.
+_HYPOTHESIS_20261001_USD_CLUSTER_CAP_DD.txt is explicitly a paper-only portfolio A/B. It changes neither the single-pair model nor Replay exits, and portfolio_brain.enabled=false with apply_to_replay=false; there is no valid single-pair Replay to launch for this hypothesis. No config/code/live gate was changed.
 
 ## October tip-volume donor check
 - Jetta October probe (/v1/candles/trade/hour/<pair>/BID/2026/9, month 9 = October) returned HTTP 400 for EURUSD, USDJPY, GBPUSD, AUDUSD, and USDCAD.
@@ -17,3 +17,4 @@ _HYPOTHESIS_20261001_USD_CLUSTER_CAP_DD.txt is explicitly a paper-only portfolio
 - Local API model-status probe for GBPUSD returned status=OK; no model or paper-floor changes.
 
 No promote, no Replay, no live-gate/session/confidence/weekday/stop/news changes. Data CSVs remain untouched and uncommitted.
+
