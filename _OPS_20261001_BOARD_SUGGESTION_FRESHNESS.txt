@@ -1,0 +1,12 @@
+﻿# Ops QA - board and suggestion freshness
+Date: 2026-10-01 23:30 Asia/Dhaka
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d)
+
+## Endpoint check
+- `GET /board`: HTTP 200; refreshed `2026-10-01 23:29:51 Asia/Dhaka`; 11 rows; all 11 validity=OK; all latest bars `23:00 Asia/Dhaka`.
+- `GET /suggestions/board`: HTTP 200; generated `2026-10-01 23:29:52 Asia/Dhaka`; 6 suggestion lines plus 3 paper-closed lines; honesty remains decision-aid only / not auto-trade / not promote.
+- Current board Active is EURJPY (observed state; not changed here). Desk call is a muted EURJPY advisory due Thursday UTC weekday gate; no open was submitted.
+- Suggestion kinds: EURJPY and GBPJPY open_window advisories; EURUSD/AUDUSD/EURGBP/GBPUSD/NZDUSD/USDCAD/USDCHF/USDJPY hold; BTCUSD status.
+- Model status: USDJPY and GBPUSD `OK`; EURUSD reports `retrain suggested` while data/joblib exist. No retrain or Replay was started.
+
+No promote, no live-gate/session/confidence/weekday/stop/news/portfolio changes. This is read-only endpoint QA.
