@@ -1,0 +1,7 @@
+﻿# Asia-session weakness note - 2026-10-01 ~07:01 Asia/Dhaka
+From `_MULTI_PAIR_SESSION_EXPECTANCY_20261001.txt` + meta-label FREEZE:
+
+- EURUSD Asia PF ~1.63 vs ldn_ny ~2.67 / ny high — Asia is weakest bucket on Active pin.
+- Meta-label tried quiet Asia (strike2) and loud+weak Asia (strike3); both failed pin-dominate (return/DD).
+- Do **not** reopen meta-label Asia filters. If revisited later: NEW family (e.g. size-scale Asia, not HOLD veto) with written hyp.
+- Cross-pair veto remains separate (paper week first); co-occur fire rate ~4.5%.
