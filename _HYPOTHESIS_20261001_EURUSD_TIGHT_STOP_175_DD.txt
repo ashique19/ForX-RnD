@@ -1,0 +1,29 @@
+﻿# Hypothesis - EURUSD tighter ATR stop for direct drawdown control
+Date: 2026-10-01 23:05 Asia/Dhaka
+Status: NEW written challenger; Replay deferred overnight
+Pin: `2cee7e7163134266ad8c2b39234442d8` (after-cost PF 1.989 / total return 11.17 / max DD -10.0% / n 3791)
+
+## One-line hypothesis
+On the existing EURUSD 1h model and causal replay path, tightening only the stop barrier from `2.0 ATR` to `1.75 ATR` while keeping the `2.0 ATR` take-profit and the current 8-bar horizon will cut the deepest losing excursions and improve max drawdown versus the pin without changing the news calendar or live desk behavior.
+
+## Why this is distinct and grounded
+- This is a trade-level loss-control test, not another event blackout. The expanded 120/30/60 news-blackout challenger was a FAIL because max DD worsened; leave the live/replay default blackout at 60/15/30 and do not retune its minutes.
+- The current pin uses `barrier.sl_atr=2.0`, `barrier.tp_atr=2.0`, `horizon=8`, and `replay.exit_hold.min_bars_before_sl=2`. A 1.75 ATR stop tests the DD mechanism directly while retaining the same target, holding horizon, model, confidence floor, costs, sessions, weekday gate, and all other overlays.
+- This is not a rerun of the prior asymmetric 1.5:1 screen: that screen changed the reward/risk geometry more broadly. This challenger keeps TP at 2.0 and changes only SL to the pre-registered intermediate value 1.75.
+- Expected trade-off is explicit: tighter stops can increase whipsaw exits and reduce PF/return. It is a clean DD challenger only if the full improve gate is met; do not promote on DD alone.
+
+## Pre-registered challenger
+Research Replay-only override:
+- `barrier.sl_atr: 1.75`
+- `barrier.tp_atr: 2.0` (unchanged)
+- `horizon: 8` (unchanged)
+- `replay.exit_hold.min_bars_before_sl: 2` (unchanged)
+- `replay.news_blackout`: unchanged at `before=60`, `during=15`, `after=30`, High-impact PIT events
+
+Do not edit the calendar, change blackout minutes, alter model/features, raise `min_confidence`, change sessions/weekday gates, enable portfolio sizing, or modify the live desk gate.
+
+## Next-window protocol
+- Run at most one EURUSD 1h Replay when the desk is idle and a fresh window is available: `start=2015-01-01`, `pull=false`, `min_confidence=0.60`, costs ON, against pin `2cee7e71`.
+- Clean WIN requires challenger PF > 1.989, total return > 11.17, max DD better than -10.0%, and `n >= 2843` (75% of pin), with causal PIT coverage active.
+- If any improve criterion fails, keep the existing 2.0 ATR stop and record a DD-control FAIL. No promote and no live-config change.
+- No Replay tonight: this hypothesis is written and committed for the next cheap idle window.
