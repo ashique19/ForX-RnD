@@ -1,0 +1,14 @@
+# Max consecutive losses (champion) - 2026-10-01 Asia/Dhaka
+
+| pair | max_L_streak | max_W_streak | n |
+|---|---:|---:|---:|
+| EURUSD | 10 | 20 | 3791 |
+| USDJPY | 5 | 22 | 5694 |
+| GBPUSD | 8 | 25 | 6149 |
+| AUDUSD | 6 | 29 | 5977 |
+| NZDUSD | 8 | 22 | 5695 |
+| USDCAD | 8 | 19 | 6164 |
+| EURJPY | 6 | 26 | 5934 |
+| EURGBP | 7 | 23 | 6255 |
+| USDCHF | 6 | 23 | 6211 |
+| GBPJPY | 6 | 22 | 5904 |
