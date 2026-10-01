@@ -1,0 +1,11 @@
+﻿# FAIL strike - EURUSD tight-stop / DD-aware stop family
+Date: 2026-10-01 Asia/Dhaka
+
+Replay `521425b5a39942a2b7096192cb40e364` tested the pre-registered EURUSD 1h `barrier.sl_atr=1.75` challenger with TP 2.0 ATR, horizon 8, current costs, gates, and PIT blackout unchanged.
+
+- Champion: PF 2.7602 | total return +92.25% | max DD -2.27% | n 687
+- Challenger: PF 2.8107 | total return +100.34% | max DD -4.80% | n 698
+- Verdict: **FAIL**; PF and return improved, but drawdown worsened, so promotion is **null** and champion remains.
+- Auto-revert confirmed: `config/default.yaml` has `barrier.sl_atr: 2.0`.
+
+This is strike 1 for the tight-stop / DD-aware stop family. Keep the family frozen; no alternate stop ATR without a new distinct written edge hypothesis. No live gate, session, weekday, confidence, or promotion change.

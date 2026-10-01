@@ -1,0 +1,22 @@
+﻿# Hypothesis - correlation-aware USD exposure cap for portfolio drawdown control
+Date: 2026-10-01 23:25 Asia/Dhaka
+Status: NEW written edge hypothesis; paper-only design, no Replay launched
+
+## One-line hypothesis
+The recent stop, blackout, purge/embargo, size-by-confidence, and volatility-scaled challengers each failed to cleanly dominate the EURUSD pin; instead of changing the entry model or exit geometry, a post-signal portfolio overlay that caps simultaneous same-USD risk should reduce clustered drawdown while preserving the per-trade edge and trade count.
+
+## Distinct mechanism and prior lessons
+- This is a portfolio-level exposure control, not a tighter stop, news-window change, confidence threshold, session gate, model feature, or size curve on individual trades.
+- Tight stop 1.75 improved PF/return but worsened DD; a portfolio cap targets clustered equity drawdown without shortening trade exits.
+- Expanded blackout improved PF/return but worsened DD; purge/embargo lost PF/return; size-by-confidence and vol-scaled confidence reduced the clean-return case through sizing or trade-count collapse. Therefore this test must preserve entry eligibility and per-trade exits.
+- Existing research observed low-to-moderate daily PnL correlation across several USD crosses, but this must be measured at simultaneous-open / USD-beta cluster level rather than assumed.
+
+## Pre-registered paper A/B
+- Scope: EURUSD plus one liquid USD cross in the paper book only; no live desk or promotion path.
+- Overlay: cap one net same-direction USD-beta cluster open (or an explicitly measured equivalent); do not alter model probabilities, `min_confidence`, sessions, weekday gate, news blackout, stop/TP, or per-trade quantity.
+- Compare the unchanged multi-pair paper book against the overlay for a fixed observation window, with costs unchanged.
+- Record total return, PF, max DD, trade count, blocked-opens count, and cluster concentration. A blocked-open audit is mandatory.
+
+## Acceptance / stop rules
+- Candidate is useful only if max DD improves materially while PF and total return do not decline beyond the pre-registered tolerance and trade count remains comparable; DD alone is insufficient.
+- No Replay or code/config change in this slice. Write and commit this hypothesis first; any later A/B requires a fresh capacity window and explicit ops review. Keep `portfolio_brain.enabled=false`, all frozen gates unchanged, and no promote.

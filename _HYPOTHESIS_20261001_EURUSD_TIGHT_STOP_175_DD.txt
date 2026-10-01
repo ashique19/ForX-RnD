@@ -27,3 +27,10 @@ Do not edit the calendar, change blackout minutes, alter model/features, raise `
 - Clean WIN requires challenger PF > 1.989, total return > 11.17, max DD better than -10.0%, and `n >= 2843` (75% of pin), with causal PIT coverage active.
 - If any improve criterion fails, keep the existing 2.0 ATR stop and record a DD-control FAIL. No promote and no live-config change.
 - No Replay tonight: this hypothesis is written and committed for the next cheap idle window.
+
+## Outcome - Replay 521425b5a39942a2b7096192cb40e364 (2026-10-01 23:16 Asia/Dhaka)
+- Champion: PF 2.7602, total return +92.25%, max DD -2.27%, n=687.
+- Challenger (SL 1.75 ATR): PF 2.8107, total return +100.34%, max DD -4.80%, n=698.
+- Verdict: **FAIL** for the improve gate because DD worsened; promotion null and champion kept.
+- Auto-revert confirmed: `config/default.yaml` is back at `barrier.sl_atr: 2.0`. No live/session/conf/weekday/promotion changes.
+- This family is frozen at strike 1; do not retest another stop value without a new distinct written edge hypothesis.

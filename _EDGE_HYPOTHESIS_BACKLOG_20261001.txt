@@ -70,3 +70,8 @@ Leave CPU/IO free for weekly retrain ~08:04 Asia/Dhaka.
 - GBPJPY/USDCHF are residual 17 and already below the action threshold; do not force an October repair. BTCUSD has no FX Jetta donor or positive history donor, so zeros remain held.
 - October healing is blocked where Jetta Sep/Duka is empty or unavailable (Sep endpoint remains HTTP 400 for most FX). Do not synthesize empty donors or alter frozen overlays.
 - Tonight's posture: **no promote, no Replay, no gate/min-confidence changes**. Next research candidates remain Jetta endpoint recovery, embargoed CV, and cross-pair paper-risk analysis after the scheduled retrain window.
+
+## Update 2026-10-01 ~23:25 Asia/Dhaka
+- Tight-stop 1.75 ATR Replay `521425b5a39942a2b7096192cb40e364` failed DD-aware improve gate; see `_FAIL_STRIKE_20261001_EURUSD_TIGHT_STOP_175_DD.txt`.
+- Serial challenger gate is already hit by purge/embargo plus size-by-conf strikes 1-3; model/Replay work remains stopped.
+- New distinct paper-only edge hypothesis written: `_HYPOTHESIS_20261001_USD_CLUSTER_CAP_DD.txt` (correlation-aware same-USD exposure cap). No Replay or config change until a later controlled A/B window.

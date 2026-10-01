@@ -1,0 +1,12 @@
+﻿# FAIL strike — EURUSD expanded news-blackout family
+Date: 2026-10-01 Asia/Dhaka
+
+Replay `ab1924de893845e8936ac9ecaa5944ee` tested the pre-registered replay-only 120/30/60-minute High-impact EUR/USD blackout against the in-job champion.
+
+- PF: 2.9501 vs 2.6411 (up)
+- total return: 0.9971 vs 0.8330 (up)
+- max DD: -3.28% vs -1.95% (worse)
+- n: 659 vs 652
+- verdict: **FAIL**; promote **null** because DD worsened. Keep champion.
+
+This is strike 1 for the new expanded-news-blackout hypothesis family. YAML was reverted to the existing 60/15/30 setting. Do not re-run with a different N without new written rationale. Next action: non-model ops, a distinct written hypothesis, or a light desk check. No promote; desk healthy.
