@@ -1,32 +1,30 @@
-# Paper journal auto-stats - 2026-10-01 05:47 Asia/Dhaka
+# Paper journal auto-stats - 2026-10-01 07:01 Asia/Dhaka
 Store: `data\paper_broker.json`
 
-Open positions: **1**
-Closed trades: **9**
+Open positions: **0**
+Closed trades: **10**
 
-- OPEN EURUSD SELL size=1.0 entry=1.1339154243469238 conf=0.7142857142857143
 ## Closed by pair
 | pair | n | WR | exp | sum | PF |
 |---|---:|---:|---:|---:|---:|
-| EURUSD | 9 | 0.444 | -0.000898 | -0.0081 | 0.714 |
+| EURUSD | 10 | 0.500 | -0.000760 | -0.0076 | 0.731 |
 
 ## Closed by confidence bin
 | conf_bin | n | WR | exp | sum | PF |
 |---|---:|---:|---:|---:|---:|
 | <0.60 | 3 | 0.000 | -0.005285 | -0.0159 | 0.000 |
 | 0.60-0.70 | 1 | 1.000 | 0.010473 | 0.0105 | inf |
-| 0.70-0.80 | 5 | 0.600 | -0.000539 | -0.0027 | 0.783 |
+| 0.70-0.80 | 6 | 0.667 | -0.000370 | -0.0022 | 0.822 |
 
 ## Closed by exit reason
 | exit | n | WR | sum |
 |---|---:|---:|---:|
-| duration | 1 | 1.000 | 0.0000 |
+| duration | 2 | 1.000 | 0.0005 |
 | opposite | 1 | 1.000 | 0.0004 |
 | sl | 5 | 0.000 | -0.0283 |
 | tp | 2 | 1.000 | 0.0198 |
 
 ## Last 8 closed
-- EURUSD SELL realized=-0.0070863655506169035 conf=0.4986 exit=sl @ 2026-09-24 08:48:11 UTC
 - EURUSD SELL realized=0.009345657371312722 conf=0.7142857142857143 exit=tp @ 2026-09-24 10:23:42 UTC
 - EURUSD BUY realized=-0.001682555659589459 conf=0.5791 exit=sl @ 2026-09-25 15:50:00 UTC
 - EURUSD SELL realized=2.5797555711907003e-05 conf=0.7142857142857143 exit=duration @ 2026-09-29 04:37:21 UTC
@@ -34,3 +32,4 @@ Closed trades: **9**
 - EURUSD BUY realized=0.01047322968696123 conf=0.6351 exit=tp @ 2026-09-29 05:50:43 UTC
 - EURUSD SELL realized=-0.010190057494588017 conf=0.7184 exit=sl @ 2026-09-29 05:50:43 UTC
 - EURUSD SELL realized=-0.0022438147311132687 conf=0.7615 exit=sl @ 2026-09-29 18:39:39 UTC
+- EURUSD SELL realized=0.0004784643184399618 conf=0.7142857142857143 exit=duration @ 2026-10-01 00:24:05 UTC
