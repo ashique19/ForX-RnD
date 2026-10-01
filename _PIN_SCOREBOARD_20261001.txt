@@ -1,21 +1,21 @@
 ﻿# Pin scoreboard - 2026-10-01 Asia/Dhaka
 Standing ForX autonomy. Compiled from existing notes/jobs. Do NOT promote. No live-gate changes from this pin table alone.
-Measured-intel FREEZE (no feature/regime/conf challengers).
+FREEZEs: measured-intel 3/3; purge/size 3/3; **meta-label 3/3**.
 
 ## After-cost full-history pins (costs ON, min_confidence=0.60, pull=false)
 
 | pair | job | finished (Asia/Dhaka) | source / BA | rows | champ PF | WR | n | DD | total_return | SMA PF | promote | notes |
 |---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
-| EURUSD | `2cee7e7163134266ad8c2b39234442d8` | 2026-09-30 01:20 | dukascopy / true | 71888 | **1.989** | 64.8% | 3791 | -10.0% | 11.17 | 0.883 | null | Tip refresh 2026-10-01: +44 synth Sep bars (71941 H1); **Replay SKIP** (tip-only). Pin stands. See `_EURUSD_TIP_REFRESH_20261001.txt`. |
-| USDJPY | `ef6fe062c6f84cccaf8c9d55facddeeb` | 2026-10-01 00:46 | jetta / true | 73217 | **3.037** | 72.8% | 5694 | -3.30% | 613.61 | 0.851 | null | Morning QA **TRUST** (`_QA_USDJPY_PIN_20261001.txt` / commit `5e56454`). High WR, not pip-unit bug. Research only. |
-| GBPUSD | `d6a6f7a60036404aabb1e57dd1da8725` | 2026-10-01 01:34 | jetta / true | 73055 | **2.601** | 70.1% | 6149 | -2.61% | 604.22 | 0.822 | null | Hole-fill Jetta+synth tip. Night QA **TRUST** (`_QA_GBPUSD_PIN_20261001.txt`). Same disclaimer as USDJPY. |
-| AUDUSD | `6a5653c8d5fc4f43aa896ca8c26a6150` | 2026-10-01 02:38 | jetta / true | 73225 | **2.980** | 72.4% | 5977 | -3.18% | 4316.04 | 0.786 | null | Hole-fill Jetta+synth tip (`_AUDUSD_HOLE_FILL_20261001.txt`). Morning QA **TRUST** (`_QA_AUDUSD_PIN_20261001.txt`). High WR + wider spread than EUR; not pip-unit bug. Research only. |
-| NZDUSD | `83c2715df9104a099056b96812141c42` | 2026-10-01 02:49 | jetta / true | 73216 | **2.851** | 70.9% | 5695 | -2.94% | 3047.89 | 0.749 | null | Hole-fill Jetta+synth tip (`_NZDUSD_HOLE_FILL_20261001.txt`). Morning QA **TRUST** (`_QA_NZDUSD_PIN_20261001.txt`). High WR + widest RT cost among EUR/AUD/NZD; not pip-unit bug. Research only. |
-| USDCAD | `a9b26129d9a44f86b2f89646d4698ff3` | 2026-10-01 04:55 | jetta / true | 73226 | **2.735** | 70.5% | 6164 | -2.46% | 238.13 | 0.798 | null | Hole-fill Jetta+synth tip. Light QA **TRUST** (`_QA_USDCAD_PIN_20261001.txt`). Research only. |
-| EURJPY | 425878558e4453f832e5c6fa112c510 | 2026-10-01 05:52 | jetta / true | 73225 | **3.037** | 72.3% | 5934 | -2.35% | 1198.89 | 0.862 | null | Hole-fill Jetta+synth tip. QA **TRUST** (_QA_EURJPY_PIN_20261001.txt). Research only. |
-| EURGBP | 1bece8f2ecd14e7180eb920d413dc470 | 2026-10-01 05:59 | jetta / true | 73224 | **2.382** | 68.7% | 6255 | -4.10% | 142.84 | 0.755 | null | Hole-fill Jetta+synth tip. QA **TRUST**. Research only. |
-| USDCHF | d9f7260455da471791ff88d6044bd107 | 2026-10-01 06:11 | jetta / true | 73226 | **2.601** | 70.2% | 6211 | -2.42% | 377.53 | 0.785 | null | True Jetta Sep BA. QA **TRUST**. Research only. |
-| GBPJPY | 1b8485ecd70c4f7e82b17bc25548c117 | 2026-10-01 06:14 | jetta / true | 73231 | **2.780** | 71.1% | 5904 | -2.09% | 2216.14 | 0.856 | null | True Jetta Sep BA. QA **TRUST**. Research only. |
+| EURUSD | `2cee7e7163134266ad8c2b39234442d8` | 2026-09-30 01:20 | dukascopy / true | 71888 | **1.989** | 64.8% | 3791 | -10.0% | 11.17 | 0.883 | null | Live Active. Tip refreshed; pin stands. |
+| USDJPY | `ef6fe062c6f84cccaf8c9d55facddeeb` | 2026-10-01 00:46 | jetta / true | 73217 | **3.037** | 72.8% | 5694 | -3.30% | 613.61 | 0.851 | null | QA TRUST |
+| EURJPY | `a425878558e4453f832e5c6fa112c510` | 2026-10-01 05:52 | jetta / true | 73225 | **3.037** | 72.3% | 5934 | -2.35% | 1198.89 | 0.862 | null | QA TRUST |
+| AUDUSD | `6a5653c8d5fc4f43aa896ca8c26a6150` | 2026-10-01 02:38 | jetta / true | 73225 | **2.980** | 72.4% | 5977 | -3.18% | 4316.04 | 0.786 | null | QA TRUST |
+| NZDUSD | `83c2715df9104a099056b96812141c42` | 2026-10-01 02:49 | jetta / true | 73216 | **2.851** | 70.9% | 5695 | -2.94% | 3047.89 | 0.749 | null | QA TRUST |
+| GBPJPY | `1b8485ecd70c4f7e82b17bc25548c117` | 2026-10-01 06:14 | jetta / true | 73231 | **2.780** | 71.1% | 5904 | -2.09% | 2216.14 | 0.856 | null | QA TRUST; true Jetta Sep |
+| USDCAD | `a9b26129d9a44f86b2f89646d4698ff3` | 2026-10-01 04:55 | jetta / true | 73226 | **2.735** | 70.5% | 6164 | -2.46% | 238.13 | 0.798 | null | QA TRUST |
+| GBPUSD | `d6a6f7a60036404aabb1e57dd1da8725` | 2026-10-01 01:34 | jetta / true | 73055 | **2.601** | 70.1% | 6149 | -2.61% | 604.22 | 0.822 | null | QA TRUST |
+| USDCHF | `d9f7260455da471791ff88d6044bd107` | 2026-10-01 06:11 | jetta / true | 73226 | **2.601** | 70.2% | 6211 | -2.42% | 377.53 | 0.785 | null | QA TRUST; true Jetta Sep |
+| EURGBP | `1bece8f2ecd14e7180eb920d413dc470` | 2026-10-01 05:59 | jetta / true | 73224 | **2.382** | 68.7% | 6255 | -4.10% | 142.84 | 0.755 | null | QA TRUST |
 
 ## Challenger (same jobs; all fail improve gate)
 
@@ -23,42 +23,24 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 |---|---:|---:|---:|---:|---:|---|
 | EURUSD | 1.939 | 64.5% | 3611 | -8.00% | 10.03 | PF/return worse |
 | USDJPY | 2.920 | 72.2% | 5357 | -2.26% | 366.50 | PF/return worse |
-| GBPUSD | 2.549 | 69.7% | 5930 | -1.97% | 442.22 | PF/return worse |
+| EURJPY | 2.822 | 71.4% | 5568 | -2.65% | 537.93 | PF/return worse |
 | AUDUSD | 2.892 | 72.2% | 5643 | -4.09% | 2256.91 | PF/return/DD worse |
 | NZDUSD | 2.764 | 70.4% | 5443 | -3.66% | 1744.20 | PF/return/DD worse |
+| GBPJPY | 2.571 | 69.8% | 5609 | -7.18% | 975.12 | PF/return/DD worse |
 | USDCAD | 2.702 | 70.9% | 5956 | -1.96% | 200.44 | PF/return worse |
-| EURJPY | 425878558e4453f832e5c6fa112c510 | 2026-10-01 05:52 | jetta / true | 73225 | **3.037** | 72.3% | 5934 | -2.35% | 1198.89 | 0.862 | null | Hole-fill Jetta+synth tip. QA **TRUST** (_QA_EURJPY_PIN_20261001.txt). Research only. |
-| EURGBP | 1bece8f2ecd14e7180eb920d413dc470 | 2026-10-01 05:59 | jetta / true | 73224 | **2.382** | 68.7% | 6255 | -4.10% | 142.84 | 0.755 | null | Hole-fill Jetta+synth tip. QA **TRUST**. Research only. |
-| USDCHF | d9f7260455da471791ff88d6044bd107 | 2026-10-01 06:11 | jetta / true | 73226 | **2.601** | 70.2% | 6211 | -2.42% | 377.53 | 0.785 | null | True Jetta Sep BA. QA **TRUST**. Research only. |
-| GBPJPY | 1b8485ecd70c4f7e82b17bc25548c117 | 2026-10-01 06:14 | jetta / true | 73231 | **2.780** | 71.1% | 5904 | -2.09% | 2216.14 | 0.856 | null | True Jetta Sep BA. QA **TRUST**. Research only. |
+| GBPUSD | 2.549 | 69.7% | 5930 | -1.97% | 442.22 | PF/return worse |
+| USDCHF | 2.436 | 69.3% | 6014 | -3.10% | 237.93 | PF/return/DD worse |
+| EURGBP | 2.393 | 69.1% | 6073 | -5.37% | 136.11 | PF up micro / return+DD worse |
 
-## Tip refresh state (EURUSD)
+## Rank by champ PF (research only; not deploy)
 
-- Pre-tip mesh: 71897 rows -> 2026-09-28 23:00
-- After tip: **71941** rows -> **2026-09-30 19:00** (+44 live-mid + synth BA; Jetta `/2026/9` still HTTP 400)
-- Full-history pin **not** re-run (tip too small to move metrics)
-- Re-pull Sep via Jetta when published; then optional tip remesh
+1. USDJPY 3.037 ≈ EURJPY 3.037 → 3. AUDUSD 2.980 → 4. NZDUSD 2.851 → 5. GBPJPY 2.780 → 6. USDCAD 2.735 → 7. GBPUSD 2.601 ≈ USDCHF 2.601 → 9. EURGBP 2.382 → 10. EURUSD 1.989 Active
 
-## Shared cost contract (all pins)
+## Shared cost contract
+- Bid/ask fills; spread_pips ignored when BA present; slippage_pips=0.2; exit_slippage=true
+- pip_size_for_pair: EUR/GBP/AUD/NZD/CAD/CHF=0.0001, *JPY=0.01
+- SMA PF ~0.75-0.88 on all. Promote null everywhere.
 
-- Bid/ask fills; `spread_pips` ignored when BA present; `slippage_pips=0.2`; `exit_slippage=true`
-- `pip_size_for_pair`: EUR/GBP/AUD/NZD=0.0001, JPY=0.01
-- SMA baseline PF ~0.75-0.88 on all (dumb book not rich => costs not wildly understated)
-- Promote: **null** everywhere; live champion untouched; research disclaimer stands
-
-## Rank by champ PF (research only; not deploy rank)
-
-1. USDJPY 3.04 (TRUST QA)
-2. AUDUSD 2.98 (TRUST QA)
-3. NZDUSD 2.85 (TRUST QA)
-4. USDCAD 2.74 (TRUST QA)
-5. GBPUSD 2.60 (TRUST QA)
-6. EURUSD 1.99 (tip refreshed; pin stands)
-
-## Autonomy follow-ons
-
-- Measured-intel FREEZE remains (3/3 strikes). No regime/conf challengers without new written hypothesis.
-- Multi-pair proof set complete for major USD crosses on watchlist (EUR/JPY/GBP/AUD/NZD). Next: unfreeze candidates in `_EDGE_HYPOTHESIS_BACKLOG_20261001.txt` only after weekly retrain room; OR stop heavy overnight work.
-- No promote tonight even if a challenger wins a research Replay.
-
-
+## Skips
+- BTCUSD: pip invalid / mid-only (`_BTCUSD_PIN_SKIP_20261001.txt`)
+- XAU/XAG: Jetta 429 + pip audit (`_XAUUSD_PIN_SKIP_20261001.txt`)
