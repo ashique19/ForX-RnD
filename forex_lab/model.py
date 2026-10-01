@@ -139,6 +139,15 @@ def apply_signal_filters(pred_frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.Se
             if col in pred_frame.columns:
                 have_col = True
                 sess_keep = sess_keep | (pred_frame[col].astype(float) > 0.5)
+            elif key in ("ldn_ny", "overlap") or col == "sess_ldn_ny":
+                # Fail-closed fallback: feature_extras.session_overlap=false omits
+                # sess_ldn_ny, but session_gate=overlap still needs London|NY intersect.
+                if "sess_london" in pred_frame.columns and "sess_ny" in pred_frame.columns:
+                    have_col = True
+                    sess_keep = sess_keep | (
+                        (pred_frame["sess_london"].astype(float) > 0.5)
+                        & (pred_frame["sess_ny"].astype(float) > 0.5)
+                    )
         if have_col:
             keep = keep & sess_keep
     min_vol = float(sig_cfg.get("min_vol_regime", 0.0) or 0.0)

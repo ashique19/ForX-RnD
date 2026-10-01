@@ -1,4 +1,4 @@
-# START_DESK.ps1 — reliable ForX Decision desk launcher
+﻿# START_DESK.ps1 â€” reliable ForX Decision desk launcher
 # Usage:
 #   .\START_DESK.ps1           # free ports, start API+Desk, wait health, open browser
 #   .\START_DESK.ps1 -Stop     # stop listeners on 8000/5173
@@ -102,7 +102,7 @@ if (Test-Path $venvPython) {
     Write-DeskLog "Using venv python: $Python"
 } else {
     $Python = 'python'
-    Write-DeskLog 'WARNING: .venv missing — using PATH python'
+    Write-DeskLog 'WARNING: .venv missing â€” using PATH python'
 }
 
 try {
@@ -154,6 +154,16 @@ if (Test-Path $viteCache) {
 '' | Set-Content -Path $DeskErr -Encoding UTF8
 
 # Start API (no shell nesting): redirect stdout/stderr to files; keep a console via cmd title window optional
+# Tip Volume self-heal (fail-soft): refill Volume=0 tip bars before API serves charts.
+# Never blocks desk start; never promote; never change gates/min_conf.
+try {
+    Write-DeskLog 'tip_vol_heal: starting (Active+watchlist tip zeros)'
+    $healOut = & $Python -c "from forex_lab.tip_vol_heal import heal_watchlist_tip_volumes, format_heal_log_line; s=heal_watchlist_tip_volumes(tip_bars=200, duka_lookback_hours=48, use_dukascopy=True, write=True, max_pairs=4); print(format_heal_log_line(s))" 2>&1
+    foreach ($line in @($healOut)) { Write-DeskLog ([string]$line) }
+} catch {
+    Write-DeskLog ('tip_vol_heal_boot_skip: ' + $_.Exception.Message)
+}
+
 Write-DeskLog 'Starting uvicorn on 127.0.0.1:8000'
 $apiArgs = @('-m', 'uvicorn', 'api.main:app', '--host', '127.0.0.1', '--port', '8000')
 $apiProc = Start-Process -FilePath $Python -ArgumentList $apiArgs -WorkingDirectory $Root `
@@ -230,4 +240,5 @@ if (-not $NoBrowser) {
 
 Write-DeskLog '===== START_DESK OK ====='
 exit 0
+
 

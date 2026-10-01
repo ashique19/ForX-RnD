@@ -128,6 +128,25 @@ class PaperAutoBody(BaseModel):
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Idle history/tip gap filler. Skips while a manual pull/Replay holds the lock."""
+    # Boot tip Volume self-heal (fail-soft): refill Volume=0 tips from history/Duka.
+    # Never blocks desk start; never promotes; never touches gates/min_conf.
+    try:
+        from forex_lab.tip_vol_heal import (
+            format_heal_log_line,
+            heal_watchlist_tip_volumes,
+        )
+
+        # Hist-only here: START_DESK.ps1 already ran Dukascopy heal before uvicorn.
+        summary = heal_watchlist_tip_volumes(
+            tip_bars=200,
+            duka_lookback_hours=24,
+            use_dukascopy=False,
+            write=True,
+            max_pairs=6,
+        )
+        print(format_heal_log_line(summary), flush=True)
+    except Exception as exc:
+        print(f"tip_vol_heal_boot_skip: {exc}", flush=True)
     start_gapfill()
     try:
         yield
@@ -324,7 +343,7 @@ def create_app() -> FastAPI:
         from forex_lab.portfolio_brain import status_payload
         from api.paperdesk import _paper
 
-        cfg = deskdata.app_config()
+        cfg = app_config()
         try:
             broker = _paper(cfg)
             broker.reload()
