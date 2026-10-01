@@ -1,0 +1,8 @@
+﻿# Stop checklist for 07:40 weekly retrain - 2026-10-01
+- [x] Meta-label FREEZE 3/3 documented
+- [x] No promote; conf 0.60; Active=EURUSD
+- [x] Overlays OFF (meta/purge/size/regime/portfolio/cross_pair)
+- [x] Multi-pair pins TRUST + desk JSON refreshed
+- [x] Tip densify3 done (Replay SKIP)
+- [x] Retrain handoff written
+- [ ] At 07:40: stop starting new Replays/fetches; leave CPU for weekly retrain
