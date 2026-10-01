@@ -1,0 +1,15 @@
+# Cross-pair USD-risk co-occurrence on pin books - 2026-10-01 Asia/Dhaka
+EURUSD champion entries vs same-hour peer champion sides. Research only. Not a gate.
+
+EURUSD entries: 3791
+With >=2 disagree peers: 172 (4.5%)
+With >=1 disagree peer: 679 (17.9%)
+Mean disagree peers: 0.24; mean agree: 0.99
+
+## Disagree count histogram
+- disagree=0: n=3112
+- disagree=1: n=507
+- disagree=2: n=129
+- disagree=3: n=37
+- disagree=4: n=3
+- disagree=5: n=3
