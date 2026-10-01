@@ -1,0 +1,11 @@
+﻿# FREEZE registry - 2026-10-01 Asia/Dhaka
+Canonical list. Do not reopen without NEW written family + improve-gate.
+
+| family | strikes | status | last job | note |
+|---|---|---|---|---|
+| measured-intel (ADX/regime/conf0.65) | 3/3 | CLOSED | ADX0.15 | `_MEASURED_INTEL_FREEZE_20261001.txt` |
+| NEW track purge_cv / size_by_conf | 3/3 | CLOSED | size mild | do not re-enable |
+| meta-label secondary HOLD filter | 3/3 | CLOSED | asia_loud_weak c2f9814b | `_META_LABEL_FREEZE_20261001.txt` |
+
+Overlays default OFF: portfolio_brain, cross_pair_veto, trend_regime, meta_label, size_by_conf.
+Live: Active=EURUSD min_confidence=0.60. Promote=null.

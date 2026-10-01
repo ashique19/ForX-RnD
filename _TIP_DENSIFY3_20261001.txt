@@ -1,0 +1,4 @@
+﻿# Tip densify3 - 2026-10-01 06:20 Asia/Dhaka
+After live yfinance 60d refresh, appended small missing tip bars (synth BA from Aug half-spread) on:
+USDJPY+4, GBPUSD+4, AUDUSD+4, NZDUSD+4, USDCAD+2, EURJPY+4, EURGBP+4, USDCHF+3, GBPJPY+5.
+EURUSD already densify2-complete. **Replay SKIP** tip-only. Pins stand. No promote.
