@@ -58,6 +58,20 @@ def _conf_text(raw: Any) -> str | None:
         return None
     return f"{v:.0%}" if v <= 1 else f"{v:.2f}"
 
+def _gate_conf_text(gate: str) -> str | None:
+    """Recover a model confidence when the board row omitted its numeric field."""
+    m = re.search(r"\bconf(?:idence)?\s*=\s*(\d+(?:\.\d+)?)%?", gate or "", re.I)
+    return _conf_text(float(m.group(1))) if m else None
+
+def _below_min_conf(gate: str) -> bool:
+    """Identify a confidence gate without changing that gate's enforcement."""
+    g = (gate or "").lower()
+    return bool(
+        re.search(r"\bconf(?:idence)?\s*=\s*\d+(?:\.\d+)?%?\s*<\s*min(?:_?conf(?:idence)?)?\b", g)
+        or "below min_conf" in g
+        or "below min confidence" in g
+    )
+
 def _norm_side(raw: Any) -> str:
     """BUY/SELL/HOLD or empty; strip em-dash placeholders and mojibake."""
     s = str(raw or "").strip().upper()
@@ -105,6 +119,42 @@ PIN_SKIP_REASON = {
         "not a Train candidate until contract written (see _BTCUSD_PIN_SKIP note)"
     ),
 }
+
+def _price_plausible(pair: str, last: float | None, stop: Any = None, target: Any = None) -> bool:
+    """Reject crossed FX/BTC scales (e.g. BTCUSD @ 0.69 with FX stops)."""
+    if last is None:
+        return False
+    try:
+        last_f = float(last)
+    except (TypeError, ValueError):
+        return False
+    u = str(pair or "").upper()
+    if u.startswith("BTC") or u.endswith("BTC"):
+        if last_f < 1000:
+            return False
+    elif "JPY" in u:
+        if not (20 < last_f < 500):
+            return False
+    elif u.startswith("XAU"):
+        if last_f < 100:
+            return False
+    else:
+        # major FX quote
+        if not (0.1 < last_f < 5.0):
+            return False
+    for v in (stop, target):
+        if isinstance(v, (int, float)):
+            vf = float(v)
+            if last_f > 0 and (vf <= 0 or abs(vf - last_f) / last_f > 0.15):
+                # stop/target more than 15% from mid is suspicious for H1 FX; for BTC allow wider
+                if u.startswith("BTC"):
+                    if abs(vf - last_f) / last_f > 0.5:
+                        return False
+                else:
+                    return False
+    return True
+
+
 
 
 def humanize_gate(gate: str) -> str:
@@ -177,11 +227,14 @@ def fingerprint_stable_body(kind: str, body: str, gate: str = "") -> str:
     """Drop ticking conf floats from window_gone fingerprints to rate-limit spam."""
     import re
 
-    if kind != "window_gone":
+    if kind not in {"window_gone", "open_window"}:
         return body.strip()
     stable = body
     stable = re.sub(r"conf=\d+(?:\.\d+)?\s*<\s*min\s*\d+(?:\.\d+)?\s*\|?\s*", "", stable)
     stable = re.sub(r"\(conf\s*\d+%\)", "", stable)
+    stable = re.sub(r"still within \d+(?:\.\d+)?%\s+(?:BUY|SELL)\s+conf", "still within PCT direction conf", stable, flags=re.I)
+    stable = re.sub(r"\bconf\s+\d+(?:\.\d+)?%", "conf PCT", stable, flags=re.I)
+    stable = re.sub(r"(@|\bat)\s+\d+(?:\.\d+)?", r"\1 PX", stable, flags=re.I)
     gate_l = (gate or "").lower()
     body_l = body.lower()
     if "weekday" in gate_l or "muted " in gate_l or "weekday" in body_l or "muted " in body_l:
@@ -228,10 +281,50 @@ def format_board_line(
     last_txt = _px(pair, last) if last is not None else None
     target = row.get("target")
     stop = row.get("stop")
-    conf = _conf_text(row.get("confidence"))
+    conf = _conf_text(row.get("confidence")) or _gate_conf_text(gate)
     is_active = bool(active) and pair == str(active).upper()
     kind = "status"
     body: str
+    # Pin-skip pairs never emit BUY/SELL advisories (wrong contract / scale).
+    if pair in PIN_SKIP_PAIRS:
+        why = PIN_SKIP_REASON.get(pair) or "research pin-skip (not a Train candidate)."
+        kind = "status"
+        if last_txt:
+            body = f"{pair}: watching @ {last_txt} - {why}"
+        else:
+            body = f"{pair}: {why}"
+        fp = fingerprint_line(pair, kind, "pin_skip")
+        return {
+            "id": fp,
+            "pair": pair,
+            "kind": kind,
+            "weight": "active" if is_active else "light",
+            "text": body,
+            "signal": None,
+            "raw_signal": None,
+            "confidence": None,
+            "honesty": HONESTY,
+        }
+    # Drop open/mute advisories when mid/stop/target scale is nonsense.
+    _dir = signal in {"BUY", "SELL"} or raw in {"BUY", "SELL"}
+    if _dir and not _price_plausible(pair, last, stop, target):
+        kind = "status"
+        body = (
+            f"{pair}: levels look wrong vs mid "
+            f"({last_txt or '-'}) - suppressed advisory until Fetch/remesh."
+        )
+        fp = fingerprint_line(pair, kind, "bad_scale")
+        return {
+            "id": fp,
+            "pair": pair,
+            "kind": kind,
+            "weight": "active" if is_active else "light",
+            "text": body,
+            "signal": signal or None,
+            "raw_signal": raw or None,
+            "confidence": row.get("confidence"),
+            "honesty": HONESTY,
+        }
     if open_position and str(open_position.get("pair") or "").upper() == pair:
         side = _norm_side(
             open_position.get("side") or open_position.get("trigger")
@@ -280,31 +373,47 @@ def format_board_line(
     elif signal in {"BUY", "SELL"}:
         kind = "open_window"
         px_txt = _px(pair, last) if last is not None else "-"
-        bits = [f"{pair}: open {signal} window now @ {px_txt}"]
         has_target = isinstance(target, (int, float))
         has_stop = isinstance(stop, (int, float))
-        if has_target:
-            bits.append(f"target @ {_px(pair, float(target))}")
-        if has_stop:
-            bits.append(f"stop @ {_px(pair, float(stop))}")
-        if conf:
-            bits.append(f"conf {conf}")
-        body = bits[0]
-        if len(bits) > 1:
-            body += " - " + ", ".join(bits[1:])
-        if has_target or has_stop:
-            body += " (research levels from gates, not broker orders)."
+        side = signal
+        conf_bit = conf or "n/a"
+        body = f"{pair} still within {conf_bit} {side} conf. {side.capitalize()} and hold @ {px_txt}."
+        if has_stop and has_target:
+            body += f" Stoploss at {_px(pair, float(stop))}, close at {_px(pair, float(target))}."
+        elif has_stop:
+            body += f" Stoploss at {_px(pair, float(stop))}."
+        elif has_target:
+            body += f" Close at {_px(pair, float(target))}."
         else:
-            body += " (research window; target/stop not set by gates yet)."
+            body += " Stoploss/close levels not set by gates yet."
+        body += " Research levels only (not broker orders)."
     elif raw in {"BUY", "SELL"} and (signal in {"HOLD", ""} or gate):
-        kind = "window_gone"
         why = prefer_mute_why(gate) if gate else "gated to HOLD"
-        if "muted " in why.lower() or "weekday gate" in why.lower():
-            body = (
-                f"{pair}: muted (weekday gate) - don't {raw.lower()} now. {why}. "
-                f"No actionable target/stop while muted."
-            )
+        muted = "muted " in why.lower() or "weekday gate" in why.lower()
+        below_min = _below_min_conf(gate)
+        px_txt = _px(pair, last) if last is not None else "-"
+        has_target = isinstance(target, (int, float))
+        has_stop = isinstance(stop, (int, float))
+        if muted or below_min:
+            # Keep raw direction visible as a decision aid while the live gate stays closed.
+            kind = "open_window"
+            conf_bit = conf or "n/a"
+            label = "advisory" if muted else "lean"
+            body = f"{pair} {label}: still within {conf_bit} {raw} conf. {raw.capitalize()} and hold @ {px_txt}."
+            if has_stop and has_target:
+                body += f" Stoploss at {_px(pair, float(stop))}, close at {_px(pair, float(target))}."
+            elif has_stop:
+                body += f" Stoploss at {_px(pair, float(stop))}."
+            elif has_target:
+                body += f" Close at {_px(pair, float(target))}."
+            else:
+                body += " Stoploss/close levels not set by gates yet."
+            if muted:
+                body += f" Weekday mute on ({why}) - not opening live; decision aid / paper journal only."
+            else:
+                body += f" Below min_conf; live gate remains closed ({why}). Decision aid only."
         else:
+            kind = "window_gone"
             body = (
                 f"{pair}: open window gone. Don't {raw.lower()} now - {why}. "
                 f"No actionable target/stop while gated."
@@ -357,7 +466,7 @@ def format_board_line(
         fp = fingerprint_line(pair, kind, "pin_skip")
     elif kind == "status" and status in {"need_train", "untrained", "need_fetch", "missing"}:
         fp = fingerprint_line(pair, kind, status or "status")
-    elif kind == "window_gone":
+    elif kind in {"window_gone", "open_window"}:
         fp = fingerprint_line(pair, kind, fingerprint_stable_body(kind, body, gate))
     else:
         fp = fingerprint_line(pair, kind, body)
@@ -372,13 +481,21 @@ def format_board_line(
         "confidence": row.get("confidence"),
         "honesty": HONESTY,
     }
-    if kind == "open_window" and signal in {"BUY", "SELL"}:
+    side_for_paper = signal if signal in {"BUY", "SELL"} else (raw if raw in {"BUY", "SELL"} else None)
+    if kind == "open_window" and side_for_paper in {"BUY", "SELL"}:
+        muted_open = (
+            "not opening" in body.lower()
+            or "live gate still muted" in body.lower()
+            or "below min_conf" in body.lower()
+        )
         out["paper_action"] = {
             "pair": pair,
-            "side": signal,
+            "side": side_for_paper,
             "can_paper_open": True,
-            "label": f"Paper {signal}",
+            "label": f"Paper {side_for_paper}" + (" (muted)" if muted_open else ""),
         }
+        out["signal"] = side_for_paper
+        out["muted_advisory"] = bool(muted_open)
     if kind == "close_hint" and open_position:
         pos_id = str(open_position.get("id") or "").strip() or None
         close_side = _norm_side(
@@ -557,9 +674,9 @@ _DESK_CALL_RANK = {
     "open_window": 90,
     "open_pos": 70,
     "window_gone": 30,
-    "hold": 20,
+    "hold": 5,
     "paper_closed": 10,
-    "status": 5,
+    "status": 8,
 }
 
 
@@ -593,10 +710,17 @@ def pick_desk_call(
         pair = str(best.get("pair") or "").upper()
         side = _norm_side(best.get("signal") or best.get("raw_signal"))
         if kind == "open_window":
-            headline = (
-                f"Desk call: {pair} {side or 'window'} - "
-                "actionable research window (paper only)."
-            )
+            if best.get("muted_advisory"):
+                note = "below min_conf" if "below min_conf" in str(best.get("text") or "").lower() else "muted weekday"
+                headline = (
+                    f"Desk call: {pair} advisory {side or 'window'} - "
+                    f"{note} (not opening; paper journal ok)."
+                )
+            else:
+                headline = (
+                    f"Desk call: {pair} {side or 'window'} - "
+                    "actionable research window (paper only)."
+                )
         elif kind == "close_hint":
             headline = (
                 f"Desk call: {pair} - consider paper close "
@@ -756,6 +880,32 @@ def build_suggestion_feed(
         merged = dict(prior)
         merged.update(new_kinds)
         save_prev_kinds(merged, path=state_path)
+    # Hold is low priority — actionable / muted-advisory first on the board.
+    _board_rank = {
+        "close_hint": 0,
+        "open_window": 1,
+        "open_pos": 2,
+        "window_gone": 3,
+        "status": 4,
+        "paper_closed": 5,
+        "hold": 9,
+    }
+    has_action = any(str(ln.get("kind") or "") in {"close_hint", "open_window", "open_pos"} for ln in lines)
+    if has_action:
+        lines = [
+            ln
+            for ln in lines
+            if str(ln.get("kind") or "") != "hold"
+            or str(ln.get("pair") or "").upper() == (active_u or "")
+        ]
+    lines.sort(
+        key=lambda ln: (
+            _board_rank.get(str(ln.get("kind") or ""), 6),
+            0 if str(ln.get("weight") or "") == "active" else 1,
+            -_conf_rank(ln.get("confidence")),
+            str(ln.get("pair") or ""),
+        )
+    )
     desk_call = pick_desk_call(lines, active=active_u)
     return {
         "ok": True,

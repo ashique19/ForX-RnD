@@ -28,8 +28,9 @@ describe("suggestionChat", () => {
   it("formats open buy window", () => {
     const line = formatBoardChatLine(base({ signal: "BUY", target: 1.13454 }), { active: "EURUSD" });
     expect(line?.kind).toBe("open_window");
-    expect(line?.text).toContain("open BUY window");
-    expect(line?.text).toContain("research levels from gates");
+    expect(line?.text).toContain("still within n/a BUY conf");
+    expect(line?.text).toContain("Buy and hold");
+    expect(line?.text).toContain("Research levels only");
   });
 
   it("formats window gone", () => {
@@ -107,16 +108,31 @@ describe("suggestionChat", () => {
 
   it("weekday mute clarity + stable fingerprint", () => {
     const a = formatBoardChatLine(
-      base({ signal: "HOLD", raw_signal: "BUY", gate_reason: "conf=0.44 < min 0.60 · weekday_gate blocks Mon,Thu (UTC); today=Thu" }),
+      base({ signal: "HOLD", raw_signal: "BUY", gate_reason: "conf=0.44 < min 0.60 Â· weekday_gate blocks Mon,Thu (UTC); today=Thu" }),
       { active: "EURUSD" },
     );
     const b = formatBoardChatLine(
-      base({ signal: "HOLD", raw_signal: "BUY", gate_reason: "conf=0.49 < min 0.60 · weekday_gate blocks Mon,Thu (UTC); today=Thu" }),
+      base({ signal: "HOLD", raw_signal: "BUY", gate_reason: "conf=0.49 < min 0.60 Â· weekday_gate blocks Mon,Thu (UTC); today=Thu" }),
       { active: "EURUSD" },
     );
     expect(a?.text.toLowerCase()).toContain("muted");
+    expect(a?.kind).toBe("open_window");
+    expect(a?.text.toLowerCase()).toContain("still within");
+    expect(a?.text.toLowerCase()).toContain("not opening");
+    expect(a?.text.toLowerCase()).toMatch(/buy and hold|sell and hold/);
     expect(a?.text).toContain("lifts Fri UTC");
     expect(a?.id).toBe(b?.id);
+  });
+
+  it("below min confidence keeps a directional lean", () => {
+    const line = formatBoardChatLine(
+      base({ signal: "HOLD", raw_signal: "SELL", gate_reason: "conf=0.55 < min 0.60", stop: 0.698, target: 0.692 }),
+      { active: "EURUSD" },
+    );
+    expect(line?.kind).toBe("open_window");
+    expect(line?.text).toContain("lean");
+    expect(line?.text.toLowerCase()).toContain("below min_conf");
+    expect(line?.text).toContain("Sell and hold @ 1.13276");
   });
 
   it("BTCUSD pin-skip honesty not Train", () => {
@@ -136,8 +152,9 @@ describe("suggestionChat", () => {
     );
     expect(line?.kind).toBe("open_window");
     expect(line?.text).toContain("@ 1.13276");
-    expect(line?.text).toContain("target @");
-    expect(line?.text).toContain("stop @");
+    expect(line?.text).toContain("close at 1.13454");
+    expect(line?.text).toContain("Stoploss at 1.13098");
   });
 
 });
+

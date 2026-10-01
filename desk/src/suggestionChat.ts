@@ -62,7 +62,7 @@ function normSide(raw: unknown): string {
 function cleanGate(gate: string): string {
   if (!gate) return "";
   let g = gate;
-  const badBits = [" \u00b7 ", "\u00b7", " Â· ", " Â·", "Â·", " · ", " ·", "·", " � ", " �", "�"];
+  const badBits = [" \u00b7 ", "\u00b7", " Ã‚Â· ", " Ã‚Â·", "Ã‚Â·", " Â· ", " Â·", "Â·", " ï¿½ ", " ï¿½", "ï¿½"];
   for (const bad of badBits) {
     if (g.includes(bad)) g = g.split(bad).join(" | ");
   }
@@ -70,6 +70,30 @@ function cleanGate(gate: string): string {
   return g.replace(/^[|\s]+|[|\s]+$/g, "");
 }
 
+
+
+function pricePlausible(pair: string, last: number | null | undefined, stop?: number | null, target?: number | null): boolean {
+  if (last == null || !Number.isFinite(last)) return false;
+  const u = pair.toUpperCase();
+  if (u.startsWith("BTC") || u.endsWith("BTC")) {
+    if (last < 1000) return false;
+  } else if (u.includes("JPY")) {
+    if (!(last > 20 && last < 500)) return false;
+  } else if (u.startsWith("XAU")) {
+    if (last < 100) return false;
+  } else {
+    if (!(last > 0.1 && last < 5.0)) return false;
+  }
+  for (const v of [stop, target]) {
+    if (v != null && Number.isFinite(v)) {
+      const rel = Math.abs(v - last) / last;
+      if (u.startsWith("BTC")) {
+        if (rel > 0.5) return false;
+      } else if (rel > 0.15 || v <= 0) return false;
+    }
+  }
+  return true;
+}
 
 const PIN_SKIP_PAIRS = new Set(["BTCUSD"]);
 const PIN_SKIP_REASON: Record<string, string> = {
@@ -118,10 +142,27 @@ function preferMuteWhy(gate: string): string {
   return bits.join(" | ") || g;
 }
 
+function gateConfText(gate: string): string | null {
+  const match = gate.match(/\bconf(?:idence)?\s*=\s*(\d+(?:\.\d+)?)%?/i);
+  return match ? confText(Number(match[1])) : null;
+}
+
+function belowMinConf(gate: string): boolean {
+  const lower = gate.toLowerCase();
+  return /\bconf(?:idence)?\s*=\s*\d+(?:\.\d+)?%?\s*<\s*min(?:_?conf(?:idence)?)?\b/i.test(gate)
+    || lower.includes("below min_conf")
+    || lower.includes("below min confidence");
+}
+
 function fingerprintStableBody(kind: string, body: string, gate = ""): string {
-  if (kind !== "window_gone") return body.trim();
+  if (kind !== "window_gone" && kind !== "open_window") return body.trim();
   let stable = body.replace(/conf=\d+(?:\.\d+)?\s*<\s*min\s*\d+(?:\.\d+)?\s*\|?\s*/g, "");
   stable = stable.replace(/\(conf\s*\d+%\)/g, "");
+  stable = stable.replace(/still within \d+(?:\.\d+)?%\s+(?:BUY|SELL)\s+conf/gi, "still within PCT direction conf");
+  stable = stable.replace(/\bconf\s+\d+(?:\.\d+)?%/gi, "conf PCT");
+  stable = stable.replace(/(@|\bat)\s+\d+(?:\.\d+)?/gi, "$1 PX");
+  stable = stable.replace(/still within \d+(?:\.\d+)?%/g, "still within PCT");
+  stable = stable.replace(/@ \d+(?:\.\d+)?/g, "@ PX");
   const gateL = gate.toLowerCase();
   const bodyL = body.toLowerCase();
   if (gateL.includes("weekday") || gateL.includes("muted ") || bodyL.includes("weekday") || bodyL.includes("muted ")) {
@@ -155,19 +196,46 @@ export function formatBoardChatLine(
   const status = String(row.status || "")
     .trim()
     .toLowerCase();
-  // Model / joblib / retrain / challenger copy belongs in ModelBuildStrip — not suggestion chat.
+  // Model / joblib / retrain / challenger copy belongs in ModelBuildStrip â€” not suggestion chat.
   if ((status === "need_train" || status === "untrained") && !PIN_SKIP_PAIRS.has(pair)) return null;
   const last = hourly?.now ?? row.last;
   const target = hourly?.target ?? row.target;
-  const stop = hourly?.stop ?? null;
+  const stop = hourly?.stop ?? (row as BoardRow & { stop?: number | null }).stop ?? null;
   const conf = confText(
     opts?.confidence ?? hourly?.confidence ?? (row as BoardRow & { confidence?: number }).confidence,
-  );
+  ) || gateConfText(gate);
   const active = String(opts?.active || "").toUpperCase();
   const isActive = Boolean(active) && pair === active;
   const open = opts?.openPosition;
   let kind: SuggestionKind = "status";
   let body: string;
+  // Pin-skip: never BUY/SELL advisory (wrong contract / scale).
+  if (PIN_SKIP_PAIRS.has(pair)) {
+    const why = PIN_SKIP_REASON[pair] || "research pin-skip (not a Train candidate).";
+    const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
+    body = lastTxt ? `${pair}: watching @ ${lastTxt} - ${why}` : `${pair}: ${why}`;
+    return {
+      id: fingerprintLine(pair, "status", "pin_skip"),
+      pair,
+      kind: "status",
+      weight: isActive ? "active" : "light",
+      text: body,
+      honesty: SUGGESTION_HONESTY,
+    };
+  }
+  const dir = signal === "BUY" || signal === "SELL" || raw === "BUY" || raw === "SELL";
+  if (dir && !pricePlausible(pair, last, typeof stop === "number" ? stop : null, typeof target === "number" ? target : null)) {
+    const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : "-";
+    body = `${pair}: levels look wrong vs mid (${lastTxt}) - suppressed advisory until Fetch/remesh.`;
+    return {
+      id: fingerprintLine(pair, "status", "bad_scale"),
+      pair,
+      kind: "status",
+      weight: isActive ? "active" : "light",
+      text: body,
+      honesty: SUGGESTION_HONESTY,
+    };
+  }
 
   if (open && String(open.pair || "").toUpperCase() === pair) {
     const side = normSide(open.trigger) || "position";
@@ -189,25 +257,38 @@ export function formatBoardChatLine(
   } else if (signal === "BUY" || signal === "SELL") {
     kind = "open_window";
     const pxTxt = last != null && Number.isFinite(last) ? px(pair, last) : "-";
-    const bits = [`${pair}: open ${signal} window now @ ${pxTxt}`];
     const hasTarget = target != null && Number.isFinite(target);
     const hasStop = stop != null && Number.isFinite(stop);
-    if (hasTarget) bits.push(`target @ ${px(pair, target)}`);
-    if (hasStop) bits.push(`stop @ ${px(pair, stop)}`);
-    if (conf) bits.push(`conf ${conf}`);
-    body = bits[0];
-    if (bits.length > 1) body += ` - ${bits.slice(1).join(", ")}`;
-    body += hasTarget || hasStop
-      ? " (research levels from gates, not broker orders)."
-      : " (research window; target/stop not set by gates yet).";
+    const confBit = conf || "n/a";
+    body = `${pair} still within ${confBit} ${signal} conf. ${signal.charAt(0)}${signal.slice(1).toLowerCase()} and hold @ ${pxTxt}.`;
+    if (hasStop && hasTarget) body += ` Stoploss at ${px(pair, stop)}, close at ${px(pair, target)}.`;
+    else if (hasStop) body += ` Stoploss at ${px(pair, stop)}.`;
+    else if (hasTarget) body += ` Close at ${px(pair, target)}.`;
+    else body += " Stoploss/close levels not set by gates yet.";
+    body += " Research levels only (not broker orders).";
   } else if ((raw === "BUY" || raw === "SELL") && (signal === "HOLD" || !signal || gate)) {
-    kind = "window_gone";
     const why = gate ? preferMuteWhy(gate) : "gated to HOLD";
-    if (why.toLowerCase().includes("muted ") || why.toLowerCase().includes("weekday gate")) {
-      body = `${pair}: muted (weekday gate) - don't ${raw.toLowerCase()} now. ${why}. No actionable target/stop while muted.`;
+    const muted = why.toLowerCase().includes("muted ") || why.toLowerCase().includes("weekday gate");
+    const pxTxt = last != null && Number.isFinite(last) ? px(pair, last) : "-";
+    const hasTarget = target != null && Number.isFinite(target);
+    const hasStop = stop != null && Number.isFinite(stop);
+    if (muted || belowMinConf(gate)) {
+      kind = "open_window";
+      const confBit = conf || "n/a";
+      const label = muted ? "advisory" : "lean";
+      body = `${pair} ${label}: still within ${confBit} ${raw} conf. ${raw.charAt(0)}${raw.slice(1).toLowerCase()} and hold @ ${pxTxt}.`;
+      if (hasStop && hasTarget) body += ` Stoploss at ${px(pair, stop)}, close at ${px(pair, target)}.`;
+      else if (hasStop) body += ` Stoploss at ${px(pair, stop)}.`;
+      else if (hasTarget) body += ` Close at ${px(pair, target)}.`;
+      else body += " Stoploss/close levels not set by gates yet.";
+      body += muted
+        ? ` Weekday mute on (${why}) - not opening live; decision aid / paper journal only.`
+        : ` Below min_conf; live gate remains closed (${why}). Decision aid only.`;
     } else {
+      kind = "window_gone";
       body = `${pair}: open window gone. Don't ${raw.toLowerCase()} now - ${why}. No actionable target/stop while gated.`;
     }
+
   } else if (signal === "HOLD") {
     kind = "hold";
     const holdPx = last != null && Number.isFinite(last) ? px(pair, last) : null;
@@ -251,7 +332,7 @@ export function formatBoardChatLine(
     (status === "need_train" || status === "untrained" || status === "need_fetch" || status === "missing")
   ) {
     fpBody = status || "status";
-  } else if (kind === "window_gone") {
+  } else if (kind === "window_gone" || kind === "open_window") {
     fpBody = fingerprintStableBody(kind, body, gate);
   }
   return {
@@ -327,5 +408,30 @@ export function buildClientSuggestionFeed(args: {
     seen.add(line.id);
     out.push({ ...line, atMs: nowMs });
   }
-  return { lines: out, kinds };
+  // Hold is low priority â€” actionable / muted-advisory first.
+  const rank = (k: string) =>
+    k === "close_hint"
+      ? 0
+      : k === "open_window" || k === "open_pos"
+        ? 1
+        : k === "window_gone"
+          ? 2
+          : k === "status"
+            ? 3
+            : k === "hold"
+              ? 9
+              : 4;
+  const hasAction = out.some((ln) => ln.kind === "close_hint" || ln.kind === "open_window" || ln.kind === "open_pos");
+  const filtered = hasAction
+    ? out.filter((ln) => ln.kind !== "hold" || String(ln.pair || "").toUpperCase() === (active || ""))
+    : out;
+  filtered.sort((a, b) => {
+    const d = rank(a.kind) - rank(b.kind);
+    if (d !== 0) return d;
+    const aw = a.weight === "active" ? 0 : 1;
+    const bw = b.weight === "active" ? 0 : 1;
+    return aw - bw;
+  });
+  return { lines: filtered, kinds };
 }
+

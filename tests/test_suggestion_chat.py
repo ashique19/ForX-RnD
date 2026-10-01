@@ -18,9 +18,10 @@ def test_open_buy_window_line():
     )
     assert line is not None
     assert line["kind"] == "open_window"
-    assert "open BUY window" in line["text"]
+    assert "still within 72% BUY conf" in line["text"]
+    assert "Buy and hold" in line["text"]
     assert "1.13276" in line["text"]
-    assert "research levels from gates" in line["text"]
+    assert "Research levels only" in line["text"]
 
 
 def test_window_gone_gated():
@@ -35,8 +36,9 @@ def test_window_gone_gated():
         active="EURUSD",
     )
     assert line is not None
-    assert line["kind"] == "window_gone"
-    assert "Don't buy now" in line["text"]
+    assert line["kind"] == "open_window"
+    assert "lean" in line["text"]
+    assert "below min_conf" in line["text"].lower()
 
 
 def test_close_hint_when_flash_flips():
@@ -175,7 +177,8 @@ def test_window_gone_no_actionable_levels():
         active="EURUSD",
     )
     assert line is not None
-    assert "No actionable target/stop while gated" in line["text"]
+    assert line["kind"] == "open_window"
+    assert "below min_conf" in line["text"].lower()
 
 
 def test_open_window_levels_honesty():
@@ -191,7 +194,7 @@ def test_open_window_levels_honesty():
         active="EURUSD",
     )
     assert line is not None
-    assert "research levels from gates" in line["text"]
+    assert "research levels only" in line["text"].lower()
 
 
 def test_transition_window_just_closed():
@@ -296,7 +299,12 @@ def test_weekday_mute_clarity_and_stable_fp():
     assert a is not None and b is not None
     assert "muted" in a["text"].lower()
     assert "lifts Fri UTC" in a["text"]
-    assert "No actionable target/stop while muted" in a["text"]
+    assert "still within" in a["text"].lower()
+    assert "Buy and hold" in a["text"] or "buy and hold" in a["text"].lower()
+    assert a["kind"] == "open_window"
+    assert a.get("muted_advisory") is True
+    assert "not opening" in a["text"].lower()
+    assert "Stoploss" in a["text"] or "stoploss" in a["text"].lower() or "levels not set" in a["text"].lower()
     assert a["id"] == b["id"]  # conf ticks must not spam
 
 
@@ -327,20 +335,42 @@ def test_open_window_lists_stop_target_at_price():
     assert line is not None
     assert line["kind"] == "open_window"
     assert "@ 1.13276" in line["text"]
-    assert "target @ 1.13454" in line["text"]
-    assert "stop @ 1.13098" in line["text"]
+    assert "close at 1.13454" in line["text"]
+    assert "Stoploss at 1.13098" in line["text"]
 
 def test_fingerprint_stable_no_char_split():
     from forex_lab.suggestion_chat import fingerprint_stable_body
 
     body = (
-        "EURUSD: muted (weekday gate) - don't buy now. "
+        "EURUSD: advisory BUY @ 1.10000 - conf 50%. "
         "muted Thu (UTC weekday gate; also Mon) - lifts Fri UTC | also conf=0.50 < min 0.60. "
-        "No actionable target/stop while muted."
+        "- not opening (live gate still muted)."
     )
-    stable = fingerprint_stable_body("window_gone", body, "weekday")
+    stable = fingerprint_stable_body("open_window", body, "weekday")
     assert "E U R U S D" not in stable
     assert "EURUSD" in stable
+
+
+def test_below_min_conf_keeps_directional_lean():
+    line = format_board_line(
+        {
+            "pair": "AUDUSD",
+            "signal": "HOLD",
+            "raw_signal": "SELL",
+            "gate_reason": "conf=0.55 < min 0.60",
+            "last": 0.69555,
+            "target": 0.69200,
+            "stop": 0.69800,
+        },
+        active="AUDUSD",
+    )
+    assert line is not None
+    assert line["kind"] == "open_window"
+    assert "AUDUSD lean" in line["text"]
+    assert "Sell and hold @ 0.69555" in line["text"]
+    assert "below min_conf" in line["text"].lower()
+    assert "Stoploss at 0.69800" in line["text"]
+    assert "close at 0.69200" in line["text"]
 
 
 def test_desk_call_prefers_open_window():
@@ -369,7 +399,7 @@ def test_desk_call_prefers_open_window():
     assert "Desk call" in call["headline"]
 
 
-def test_desk_call_muted_day_not_actionable():
+def test_desk_call_muted_day_muted_advisory_actionable():
     from forex_lab.suggestion_chat import build_suggestion_feed
 
     feed = build_suggestion_feed(
@@ -395,7 +425,8 @@ def test_desk_call_muted_day_not_actionable():
     )
     call = feed.get("desk_call")
     assert call is not None
-    assert call["actionable"] is False
+    assert call.get("actionable") is True
+    assert call.get("source_kind") == "open_window"
     assert "no open window" in call["headline"].lower() or "mute" in call["headline"].lower()
 
 
