@@ -151,8 +151,11 @@ export function formatBoardChatLine(
     kind = "status";
     const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
     body = lastTxt
-      ? `${pair}: watching @ ${lastTxt} - no trained flash yet (Fetch/Train for a model).`
-      : `${pair}: quiet - no trained flash yet (Fetch/Train).`;
+      ? `${pair}: watching @ ${lastTxt} - prices live; Train (Lab/Replay) for a flash (no model yet).`
+      : `${pair}: quiet - need Fetch for bars, then Train (Lab/Replay) for a flash.`;
+  } else if (status === "need_fetch" || status === "missing") {
+    kind = "status";
+    body = `${pair}: quiet - need Fetch for fresh bars (OHLCV only; no Train).`;
   } else if (status === "error" || status === "fail" || status === "failed") {
     kind = "status";
     const detail = cleanGate(String((row as BoardRow & { details?: string }).details || row.validity_reason || "").trim());
@@ -172,8 +175,14 @@ export function formatBoardChatLine(
         ? "active"
         : "light";
 
+  const idleStatus =
+    kind === "status" &&
+    (status === "need_train" ||
+      status === "untrained" ||
+      status === "need_fetch" ||
+      status === "missing");
   return {
-    id: fingerprintLine(pair, kind, body),
+    id: fingerprintLine(pair, kind, idleStatus ? status || "status" : body),
     pair,
     kind,
     weight,

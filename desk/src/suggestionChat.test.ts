@@ -54,9 +54,24 @@ describe("suggestionChat", () => {
       active: "EURUSD",
     });
     expect(line?.kind).toBe("status");
-    expect(line?.text).toContain("no trained flash yet");
+    expect(line?.text).toContain("prices live");
+    expect(line?.text).toContain("Train");
     expect(line?.text).toContain("watching @");
     expect(line?.text.includes("\u2014")).toBe(false);
+    expect(line?.text.includes("Fetch/Train")).toBe(false);
+  });
+
+  it("need_train fingerprint stable across price ticks", () => {
+    const a = formatBoardChatLine(
+      base({ pair: "AUDUSD", signal: "\u2014", status: "need_train", last: 0.69555 }),
+      { active: "EURUSD" },
+    );
+    const b = formatBoardChatLine(
+      base({ pair: "AUDUSD", signal: "\u2014", status: "need_train", last: 0.6961 }),
+      { active: "EURUSD" },
+    );
+    expect(a?.kind).toBe("status");
+    expect(a?.id).toBe(b?.id);
   });
 
   it("paper open monitoring keeps pnl", () => {

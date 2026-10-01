@@ -74,7 +74,8 @@ def test_need_train_placeholder_signal():
     )
     assert line is not None
     assert line["kind"] == "status"
-    assert "no trained flash yet" in line["text"]
+    assert "prices live" in line["text"]
+    assert "no model yet" in line["text"]
     assert "\u2014" not in line["text"]
 
 
@@ -162,7 +163,9 @@ def test_multi_pair_watching_price():
     assert line is not None
     assert line["kind"] == "status"
     assert "watching @ 0.69555" in line["text"]
-    assert "Fetch/Train" in line["text"]
+    assert "prices live" in line["text"]
+    assert "Train" in line["text"]
+    assert "Fetch/Train" not in line["text"]
 
 
 def test_window_gone_no_actionable_levels():
@@ -247,4 +250,28 @@ def test_feed_persists_kinds(tmp_path):
     )
     texts = " ".join(x["text"] for x in feed2["lines"])
     assert "window just closed" in texts
+
+def test_need_train_fingerprint_stable_across_price():
+    a = format_board_line(
+        {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69555},
+        active="EURUSD",
+    )
+    b = format_board_line(
+        {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69610},
+        active="EURUSD",
+    )
+    assert a is not None and b is not None
+    assert a["id"] == b["id"]
+    assert "0.69555" in a["text"]
+    assert "0.69610" in b["text"]
+
+
+def test_need_train_without_price_asks_fetch_then_train():
+    line = format_board_line(
+        {"pair": "USDJPY", "signal": "\u2014", "status": "need_train"},
+        active="EURUSD",
+    )
+    assert line is not None
+    assert "need Fetch for bars" in line["text"]
+    assert "Train" in line["text"]
 

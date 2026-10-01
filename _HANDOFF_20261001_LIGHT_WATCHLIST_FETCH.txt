@@ -1,0 +1,41 @@
+﻿# HANDOFF 2026-10-01 ~13:20 Asia/Dhaka - Light watchlist Fetch + need_train honesty
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- START_DESK already-healthy smoke OK (lock acquire -> skip restart -> release lock)
+- API http://127.0.0.1:8000/health OK (restarted once via .venv uvicorn for chat copy)
+- Vite http://127.0.0.1:5173 OK
+- tip_vol_heal / live sessions=[] / min_conf 0.60 / Active EURUSD / frozen overlays OFF
+- No promote
+
+## Shipped this slice (no promote)
+1) **START_DESK already-healthy path** re-smoked green.
+2) **Need_train honesty (decision aid)**
+   - With live last: "prices live; Train (Lab/Replay) for a flash (no model yet)."
+   - Without bars: "need Fetch for bars, then Train..."
+   - need_fetch copy notes OHLCV-only / no Train
+   - Stable fingerprint for need_train/need_fetch so light price ticks do not spam chat
+3) **Light watchlist Fetch (option a) — does not steal Active heavy compute**
+   - `collectWatchlistLightTargets`: idle pairs @ 1h only; skips Active
+   - Suggestion board **Refresh prices** button (OHLCV only; no Train/pipeline/Replay)
+   - Slow auto ~120s when decision+realtime; skips while Active refresh in-flight
+   - Light POST /refresh omits `active` so server does not expand Active 1h+1d onto the batch
+   - Footnote documents one-click: Refresh prices = OHLCV only
+
+## Explicitly skipped
+- (b) SSE/websocket — 20s board poll still fine
+- (c) portfolio_brain paper week — still enabled:false; left alone
+- (d) new Replay hyp — no clear dominate path outside frozen/vol_scaled family
+- Cheap Train for idle pairs — models still EURUSD-only; Train remains explicit Lab/Replay
+- Promote / live-gate / frozen overlays
+
+## Tests
+- pytest tests/test_suggestion_chat.py: 16 passed
+- desk tsc --noEmit clean; vitest suggestionChat: 6 passed
+- node --test freshness.test.ts: 6 passed (incl. light-target helpers)
+- Manual: idle refresh AUDUSD+NZDUSD count=2 (no Active); board copy shows prices live
+
+## Next practical
+1) Cheap Train / model copy for 1-2 watchlist pairs so light lines become real flashes (still no promote)
+2) Portfolio-paper journal UX while portfolio_brain enabled:false
+3) Only write a NEW Replay hyp if genuinely different from conf/size knobs

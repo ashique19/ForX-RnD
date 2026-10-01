@@ -8,6 +8,7 @@ import {
   classifyThrown,
   coerceChartInterval,
   collectTargets,
+  collectWatchlistLightTargets,
   newestFetchMs,
   refreshIntervalSeconds,
   secondsAgo,
@@ -94,6 +95,7 @@ export function App() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [wlRefreshing, setWlRefreshing] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
@@ -110,6 +112,7 @@ export function App() {
   const failedRows = useRef<BoardRow[]>([]);
   const boardReady = useRef(false);
   const inflight = useRef(false);
+  const wlInflight = useRef(false);
   const retryLock = useRef(false);
   const attempt = useRef(0);
   const selectedRef = useRef(selected);
@@ -299,6 +302,42 @@ export function App() {
     }
   }, []);
 
+  /** Idle watchlist OHLCV only (1h). Skips Active; never Train/pipeline. */
+  const refreshWatchlistLight = useCallback(async (manual = false) => {
+    if (wlInflight.current || inflight.current || retryLock.current) return;
+    const targets = collectWatchlistLightTargets(rowsRef.current, selectedRef.current);
+    if (!targets.length) {
+      if (manual) setTick((n) => n + 1);
+      return;
+    }
+    wlInflight.current = true;
+    setWlRefreshing(true);
+    try {
+      // Omit active so server does not expand Active 1h+1d onto this light batch.
+      const result = await api.refreshWatchlist(targets);
+      if (!result || !Array.isArray(result.results)) {
+        throw new Error("Decision API returned an unexpected watchlist refresh.");
+      }
+      const problem = classifyBatch(result);
+      if (problem === "rate_limited") {
+        // Soft: do not steal Active strip; board foot already explains OHLCV-only.
+        setTick((n) => n + 1);
+        return;
+      }
+      if (result.updated && !problem) {
+        setLastOkMs(Date.now());
+      }
+      setTick((n) => n + 1);
+    } catch (err) {
+      if (manual && !isUnreachable(err)) {
+        setError(err instanceof Error ? err.message : "Watchlist price refresh failed");
+      }
+    } finally {
+      wlInflight.current = false;
+      setWlRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (mode !== "decision" || !realtime || offline) return;
     if (nextAt == null) {
@@ -313,6 +352,16 @@ export function App() {
     }, delay + AUTO_REFRESH_FUDGE_MS);
     return () => window.clearTimeout(id);
   }, [mode, realtime, nextAt, refreshing, refreshData, offline]);
+
+  // Light idle-watchlist prices ~every 2 min. Never on Active 18s path; skips when Active refresh busy.
+  useEffect(() => {
+    if (mode !== "decision" || !realtime || offline) return;
+    const id = window.setInterval(() => {
+      if (offlineRef.current || inflight.current || wlInflight.current) return;
+      void refreshWatchlistLight(false);
+    }, 120_000);
+    return () => window.clearInterval(id);
+  }, [mode, realtime, offline, refreshWatchlistLight]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -468,7 +517,13 @@ export function App() {
               </div>
             ) : null}
             <div className="right-col">
-              <SuggestionBoard board={board} brief={brief} active={selected} />
+              <SuggestionBoard
+                board={board}
+                brief={brief}
+                active={selected}
+                onRefreshWatchlist={() => void refreshWatchlistLight(true)}
+                refreshingWatchlist={wlRefreshing}
+              />
               <SignalBrief
                 pair={brief?.pair ?? selected}
                 bias={brief?.bias ?? "—"}

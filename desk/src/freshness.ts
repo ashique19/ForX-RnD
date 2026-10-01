@@ -88,6 +88,28 @@ export function collectTargets(
   return out;
 }
 
+/** Idle watchlist pairs at 1h only. Skips Active so the 18s Active path keeps 1h+1d.
+ *  Market data only — never Train / pipeline / Replay.
+ */
+export function collectWatchlistLightTargets(
+  rows: { pair: string; interval?: string | null }[],
+  active: string,
+): { pair: string; interval: string }[] {
+  const out: { pair: string; interval: string }[] = [];
+  const seen = new Set<string>();
+  const act = String(active || "").trim().toUpperCase();
+  for (const row of rows || []) {
+    const pair = String(row?.pair || "").trim();
+    if (!pair) continue;
+    if (pair.toUpperCase() === act) continue;
+    const key = pair.toUpperCase() + ":1h";
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ pair, interval: "1h" });
+  }
+  return out;
+}
+
 export function newestFetchMs(rows: BoardRow[], nowMs: number): number | null {
   let best: number | null = null;
   for (const row of rows) {

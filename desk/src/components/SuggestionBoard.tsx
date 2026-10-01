@@ -26,10 +26,15 @@ export function SuggestionBoard({
   board,
   brief,
   active,
+  onRefreshWatchlist,
+  refreshingWatchlist = false,
 }: {
   board: Board | null;
   brief: Brief | null;
   active: string;
+  /** Light OHLCV refresh for idle watchlist pairs (no Train / pipeline). */
+  onRefreshWatchlist?: () => void;
+  refreshingWatchlist?: boolean;
 }) {
   const [lines, setLines] = useState<SuggestionChatLine[]>([]);
   const [openPositions, setOpenPositions] = useState<PortfolioRow[]>([]);
@@ -145,7 +150,20 @@ export function SuggestionBoard({
     <section className="panel suggestion-board" aria-label="Suggestion board">
       <div className="panel-hd">
         <h2>Suggestion board</h2>
-        <span className="sug-hd-note">Realtime chat - research only</span>
+        <div className="sug-hd-actions">
+          <span className="sug-hd-note">Realtime chat - research only</span>
+          {onRefreshWatchlist ? (
+            <button
+              className="btn sm"
+              type="button"
+              disabled={refreshingWatchlist}
+              title="Refresh idle watchlist prices (1h OHLCV only). Does not Train, Replay, or touch Active heavy compute."
+              onClick={() => onRefreshWatchlist()}
+            >
+              {refreshingWatchlist ? "Refreshing…" : "Refresh prices"}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="suggestion-scroll" ref={scroller} role="log" aria-live="polite">
         {lines.length === 0 ? (
@@ -159,8 +177,11 @@ export function SuggestionBoard({
           ))
         )}
       </div>
-      <div className="suggestion-foot" title={SUGGESTION_HONESTY}>
-        {SUGGESTION_HONESTY}
+      <div
+        className="suggestion-foot"
+        title={`${SUGGESTION_HONESTY} Refresh prices = idle watchlist OHLCV only (no Train). Active still uses Update now / auto-refresh.`}
+      >
+        {SUGGESTION_HONESTY} · Refresh prices = OHLCV only (no Train).
       </div>
     </section>
   );

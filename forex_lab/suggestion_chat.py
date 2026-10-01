@@ -200,14 +200,17 @@ def format_board_line(
         kind = "status"
         if last_txt:
             body = (
-                f"{pair}: watching @ {last_txt} - no trained flash yet "
-                f"(Fetch/Train for a model)."
+                f"{pair}: watching @ {last_txt} - prices live; Train "
+                f"(Lab/Replay) for a flash (no model yet)."
             )
         else:
-            body = f"{pair}: quiet - no trained flash yet (Fetch/Train)."
+            body = (
+                f"{pair}: quiet - need Fetch for bars, then Train "
+                f"(Lab/Replay) for a flash."
+            )
     elif status in {"need_fetch", "missing"}:
         kind = "status"
-        body = f"{pair}: quiet - need Fetch for fresh bars."
+        body = f"{pair}: quiet - need Fetch for fresh bars (OHLCV only; no Train)."
     elif status in {"error", "fail", "failed"}:
         kind = "status"
         detail = str(row.get("details") or row.get("validity_reason") or "").strip()
@@ -225,7 +228,12 @@ def format_board_line(
         weight = "active"
     else:
         weight = "active" if is_active else "light"
-    fp = fingerprint_line(pair, kind, body)
+    # Idle need_train/need_fetch: keep fingerprint stable so light price refreshes
+    # do not spam the chat; Watchlist/board rows still show the live last.
+    if kind == "status" and status in {"need_train", "untrained", "need_fetch", "missing"}:
+        fp = fingerprint_line(pair, kind, status or "status")
+    else:
+        fp = fingerprint_line(pair, kind, body)
     return {
         "id": fp,
         "pair": pair,
