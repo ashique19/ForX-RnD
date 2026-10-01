@@ -1,0 +1,21 @@
+﻿# Hypothesis - EURUSD minimum TP-distance filter for low-excursion DD control
+Date: 2026-10-01 23:33 Asia/Dhaka
+Status: NEW Replay-able challenger; research-only, no live adoption
+Pin: `2cee7e7163134266ad8c2b39234442d8` (after-cost EURUSD reference)
+
+## One-line hypothesis
+Skip only entries whose causal 2.0-ATR target distance is below 16 pips (`signals.min_tp_pips=16.0`), because tiny-target / low-excursion trades expose the book to a larger fixed spread-and-slippage fraction and adverse chop; unlike a tighter stop, this leaves SL/TP geometry unchanged for trades that remain.
+
+## Why this is distinct
+- This is a target-distance eligibility floor, not stop ATR, news blackout, confidence scaling, position sizing, purge/embargo, ADX/trend regime, session, or portfolio-brain logic.
+- The prior screen used `min_tp_pips=8`, which was effectively a no-op on the cached sample (about 99.99% of causal 2-ATR targets were already >=8 pips). This pre-registers 16 pips, near the lower-tail boundary, so it is a distinct and measurable filter rather than a retune of a failed family.
+- Cached EURUSD H1 causal target-distance distribution: p01 11.6 pips, p05 14.6, p10 16.5, median 26.3; 16 pips would screen roughly 9% of bars before model-side eligibility, without changing fills or exits.
+
+## Protocol
+- Pair EURUSD, interval 1h, start 2015-01-01, pull=false, cached Jetta bid/ask history, costs ON (`slippage_pips=0.2`, adverse exit slippage ON).
+- Research config only: `signals.min_tp_pips=16.0`; retain min_confidence 0.60, session overlap, PIT blackout 60/15/30, vol skip-extremes, weekday gate, exit_hold, SL/TP, and all frozen overlays exactly as-is.
+- One Replay only; no promote. Temporary research YAML must be removed/reverted after completion so the live default remains unchanged.
+
+## Acceptance / kill
+- Useful only if after-cost PF and total return are not degraded and max DD improves materially with a sensible trade count; PF/DD alone is insufficient.
+- Any failed improve criterion -> record FAIL, keep default `min_tp_pips: 0.0`, no second threshold sweep, and no live-gate change.
