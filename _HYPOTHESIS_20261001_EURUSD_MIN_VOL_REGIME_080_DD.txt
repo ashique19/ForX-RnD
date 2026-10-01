@@ -1,0 +1,20 @@
+﻿# Hypothesis - EURUSD causal minimum volatility-regime floor for DD control
+Date: 2026-10-01 23:42 Asia/Dhaka
+Status: NEW Replay-able challenger; research-only, no live adoption
+
+## One-line hypothesis
+Require the causal short/long volatility ratio to be at least 0.80 (`signals.min_vol_regime=0.8`) so the model does not open during low-activity regimes where fixed spread/slippage consumes a larger share of the move and adverse chop clusters; keep the existing Replay `vol_regime` extreme skips unchanged.
+
+## Why this is distinct
+- This is a static causal volatility-activity floor, not `vol_scaled_conf` threshold scaling, not the frozen ADX/trend family, not min-TP distance, not stop/news/session/weekday/sizing/purge, and not portfolio_brain.
+- It changes entry eligibility only; SL/TP, horizon, costs, fills, model features, and all existing replay overlays remain unchanged.
+- The cached EURUSD short/long `vol_regime` distribution is broad (p10 0.61, median 0.92, p75 1.13). A 0.80 floor retains about 68% of bars, targeting low-activity losers without the severe 1.0+ high-vol screen collapse; this is a pre-registered single threshold, not a sweep.
+
+## Protocol
+- Pair EURUSD, interval 1h, start 2015-01-01, pull=false, cached Jetta bid/ask history, costs ON (`slippage_pips=0.2`, adverse exit slippage ON).
+- Temporary research YAML only: `signals.min_vol_regime=0.8`; retain min_confidence 0.60, session overlap, PIT blackout 60/15/30, existing `replay.vol_regime` skip-extremes, weekday gate, exit_hold, SL/TP, and all frozen overlays exactly as-is.
+- One Replay only; no promote. Remove/revert temporary YAML after completion so the live default remains unchanged.
+
+## Acceptance / kill
+- Useful only if after-cost PF and total return are not degraded and max DD improves materially with a sensible trade count; PF/DD alone is insufficient.
+- Any failed improve criterion -> record FAIL, keep default `min_vol_regime: 0.0`, no threshold sweep, and no live-gate change.
