@@ -1,0 +1,8 @@
+# Daily PnL correlation vs EURUSD (champion) - 2026-10-01 Asia/Dhaka
+Research only.
+
+- USDJPY: corr=0.200
+- GBPUSD: corr=0.217
+- AUDUSD: corr=0.174
+- EURJPY: corr=0.147
+- USDCAD: corr=0.118
