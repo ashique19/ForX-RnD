@@ -1,0 +1,20 @@
+﻿# FINAL autonomy scoreboard - 2026-10-01 (pre-stop draft; stop at 07:40)
+Standing ForX. **No promote.** Live Active=EURUSD min_confidence=0.60.
+
+## Ordered work completed
+1. Meta-label strike 3/3 asia_loud_weak `c2f9814b` FAIL → **FREEZE meta family**
+2. cross_pair_veto wired into paperdesk behind enabled:false + tests
+3. Multi-pair hole-fill + costs-on pins: EURJPY, EURGBP, USDCHF, GBPJPY (all TRUST)
+4. Desk pin_scoreboard.json refreshed (10 rows); tip densify3; research tables
+
+## Meta-label FREEZE 3/3
+quiet_weak / asia_quiet / asia_loud_weak all FAIL vs pin 2cee7e71. conf_atr rejected offline. enabled=false.
+
+## Pin rank (research PF)
+USDJPY 3.037 ≈ EURJPY 3.037 > AUDUSD 2.980 > NZDUSD 2.851 > GBPJPY 2.780 > USDCAD 2.735 > GBPUSD 2.601 ≈ USDCHF 2.601 > EURGBP 2.382 > EURUSD 1.989 Active
+
+## FREEZEs
+measured-intel 3/3; purge/size 3/3; meta-label 3/3
+
+## Stop
+Hard stop **07:40 Asia/Dhaka** for weekly retrain. See `_WEEKLY_RETRAIN_HANDOFF_20261001.txt`.
