@@ -50,6 +50,50 @@ def test_close_hint_when_flash_flips():
     assert "consider closing paper BUY" in line["text"]
 
 
+def test_paper_open_monitoring_includes_pnl():
+    line = format_board_line(
+        {"pair": "EURUSD", "signal": "BUY", "last": 1.13},
+        active="EURUSD",
+        open_position={
+            "pair": "EURUSD",
+            "trigger": "BUY",
+            "entry_price": 1.13392,
+            "pnl_text": "+0.12R",
+        },
+    )
+    assert line is not None
+    assert line["kind"] == "open_pos"
+    assert "paper BUY open" in line["text"]
+    assert "+0.12R" in line["text"]
+
+
+def test_need_train_placeholder_signal():
+    line = format_board_line(
+        {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69},
+        active="EURUSD",
+    )
+    assert line is not None
+    assert line["kind"] == "status"
+    assert "no trained flash yet" in line["text"]
+    assert "\u2014" not in line["text"]
+
+
+def test_gate_separator_cleaned():
+    line = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "HOLD",
+            "raw_signal": "BUY",
+            "gate_reason": "conf=0.46 < min 0.60 \u00b7 weekday_gate blocks Mon,Thu",
+            "last": 1.13,
+        },
+        active="EURUSD",
+    )
+    assert line is not None
+    assert "\u00b7" not in line["text"]
+    assert "weekday_gate" in line["text"]
+
+
 def test_feed_active_first_and_honesty():
     feed = build_suggestion_feed(
         [

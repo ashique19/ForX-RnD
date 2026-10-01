@@ -1,0 +1,12 @@
+﻿# HYP / NOTE: board-driven paper journal enrichment (RESEARCH / UX) - 2026-10-01
+Status: NEXT UX candidate after Suggestion Board v1.1
+Not a Replay hyp. Frozen overlays untouched.
+
+## Idea
+When paper open[] non-empty, Suggestion Board already emits open_pos / close_hint.
+Next cheap step: append a one-line paper journal annotation into desk chat when a position
+opens/closes (source, R, exit_reason) so the board doubles as a paper diary without auto-trade.
+
+## Out of scope
+- Live session_overlap gate (76c3d050 research-only; live sessions=[] unchanged)
+- size_by_conf / vol_scaled_conf enable

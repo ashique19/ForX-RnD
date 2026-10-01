@@ -1,0 +1,30 @@
+﻿# HANDOFF 2026-10-01 ~12:40 Asia/Dhaka - Suggestion Board v1.1 polish
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK; Vite http://127.0.0.1:5173 OK
+- Started manually (uvicorn + npm run dev) after START_DESK.ps1 false-failed on PID race / port 5173
+- tip_vol_heal intact (earlier heal AUDUSD:1); Jetta Sep /2026/9 still HTTP 400 (unchanged)
+
+## Shipped this slice (no promote)
+Suggestion Board polish (decision aid only):
+- Normalize placeholder / em-dash signals on watchlist rows
+- need_train -> "quiet - no trained flash yet (Fetch/Train)."
+- window_gone gate separator cleaned (middle-dot/mojibake -> " | ")
+- paper-open awareness: open_pos / close_hint + optional pnl_text
+- UI header: "Realtime chat - research only"
+- pytest tests/test_suggestion_chat.py: 7 passed; desk tsc --noEmit clean
+
+Live sample:
+- EURUSD window_gone: Don't buy now - conf=0.46 < min 0.60 | weekday_gate ...
+- Other pairs: quiet Fetch/Train (not garbled dashes)
+
+## Skipped / deferred
+- _HYP_VOL_SCALED_CONF_QUEUED_20261001.txt DEFERRED (clear hyp, NOT size_by_conf redux, but UX preferred)
+- session-overlap 76c3d050 research PASS unchanged; live sessions=[] UNCHANGED; no promote
+- Frozen OFF: meta_label, trend_regime, purge, size_by_conf, portfolio_brain, cross_pair
+
+## Next practical
+1) Board paper-journal enrichment (_HYP_BOARD_PAPER_JOURNAL_ENRICH_20261001.txt)
+2) OR ONE serial vol_scaled_conf Replay vs pin 2cee7e71 when UX quiet
+3) Fix START_DESK.ps1 false-fail (uvicorn child PID / 5173 race) if launcher pain returns

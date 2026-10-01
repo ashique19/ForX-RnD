@@ -5,17 +5,33 @@ from typing import Any
 
 
 HONESTY = (
-    "Decision aid only — not broker quotes, not auto-trade, not a promote signal."
+    "Decision aid only - not broker quotes, not auto-trade, not a promote signal."
 )
+
+_PLACEHOLDER = {
+    "",
+    "-",
+    "--",
+    "---",
+    "\u2014",
+    "\u2013",
+    "\u2212",
+    "?",
+    "N/A",
+    "NA",
+    "NONE",
+    "NULL",
+    "\ufffd",
+}
 
 
 def _px(pair: str, value: float | None) -> str:
     if value is None:
-        return "—"
+        return "-"
     try:
         v = float(value)
     except (TypeError, ValueError):
-        return "—"
+        return "-"
     upper = str(pair or "").upper()
     if "JPY" in upper:
         return f"{v:.3f}"
@@ -38,6 +54,46 @@ def _conf_text(raw: Any) -> str | None:
     return f"{v:.0%}" if v <= 1 else f"{v:.2f}"
 
 
+def _norm_side(raw: Any) -> str:
+    """BUY/SELL/HOLD or empty; strip em-dash placeholders and mojibake."""
+    s = str(raw or "").strip().upper()
+    if not s or s in _PLACEHOLDER:
+        return ""
+    if s in {"BUY", "SELL", "HOLD"}:
+        return s
+    # Non-alpha junk (encoding-broken dashes) -> empty
+    if not any(ch.isalpha() for ch in s):
+        return ""
+    return s
+
+
+def _clean_gate(gate: str) -> str:
+    if not gate:
+        return ""
+    g = str(gate)
+    for bad in (
+        " \u00b7 ",
+        "\u00b7",
+        " Â· ",
+        " Â·",
+        "Â·",
+        " A· ",
+        " · ",
+        " ·",
+        "·",
+        " � ",
+        " �",
+        "�",
+    ):
+        if bad in g:
+            g = g.replace(bad, " | ")
+    while "  " in g:
+        g = g.replace("  ", " ")
+    while " |  | " in g:
+        g = g.replace(" |  | ", " | ")
+    return g.strip(" |")
+
+
 def fingerprint_line(pair: str, kind: str, body: str) -> str:
     return f"{str(pair).upper()}|{kind}|{body.strip()}"
 
@@ -52,9 +108,10 @@ def format_board_line(
     pair = str(row.get("pair") or "").upper()
     if not pair:
         return None
-    signal = str(row.get("signal") or "").upper()
-    raw = str(row.get("raw_signal") or "").upper()
-    gate = str(row.get("gate_reason") or "").strip()
+    signal = _norm_side(row.get("signal"))
+    raw = _norm_side(row.get("raw_signal"))
+    gate = _clean_gate(str(row.get("gate_reason") or "").strip())
+    status = str(row.get("status") or "").strip().lower()
     last = row.get("last")
     target = row.get("target")
     stop = row.get("stop")
@@ -64,52 +121,73 @@ def format_board_line(
     body: str
 
     if open_position and str(open_position.get("pair") or "").upper() == pair:
-        side = str(open_position.get("side") or open_position.get("trigger") or "").upper()
+        side = _norm_side(
+            open_position.get("side") or open_position.get("trigger")
+        ) or "position"
         entry = open_position.get("entry_price")
-        entry_txt = open_position.get("entry_price_text") or _px(pair, entry if isinstance(entry, (int, float)) else None)
+        entry_txt = open_position.get("entry_price_text") or _px(
+            pair, entry if isinstance(entry, (int, float)) else None
+        )
+        pnl = str(open_position.get("pnl_text") or "").strip()
+        pnl_bit = f" ({pnl})" if pnl else ""
         flash = signal if signal in {"BUY", "SELL"} else raw
-        if flash and side and flash != side and flash in {"BUY", "SELL"}:
+        if flash and side in {"BUY", "SELL"} and flash != side and flash in {"BUY", "SELL"}:
             kind = "close_hint"
             body = (
-                f"{pair}: consider closing paper {side} opened @ {entry_txt} — "
+                f"{pair}: consider closing paper {side} opened @ {entry_txt}{pnl_bit} - "
                 f"flash is now {flash} (research hint, not an auto-close)."
             )
         elif signal == "HOLD" and gate:
             kind = "close_hint"
             body = (
-                f"{pair}: open paper {side or 'position'} @ {entry_txt} still open; "
+                f"{pair}: open paper {side} @ {entry_txt}{pnl_bit} still open; "
                 f"live flash HOLD ({gate}). No auto-close."
             )
         else:
             kind = "open_pos"
-            body = f"{pair}: paper {side or 'position'} open @ {entry_txt} — monitoring."
+            mon = f"flash {flash}" if flash in {"BUY", "SELL"} else "monitoring"
+            body = f"{pair}: paper {side} open @ {entry_txt}{pnl_bit} - {mon}."
     elif signal in {"BUY", "SELL"}:
         kind = "open_window"
-        bits = [f"{pair}: open {signal} window now @ {_px(pair, last if isinstance(last, (int, float)) else None)}"]
+        bits = [
+            f"{pair}: open {signal} window now @ {_px(pair, last if isinstance(last, (int, float)) else None)}"
+        ]
         if isinstance(target, (int, float)):
             bits.append(f"target @ {_px(pair, float(target))}")
         if isinstance(stop, (int, float)):
             bits.append(f"stop/limit @ {_px(pair, float(stop))}")
         if conf:
             bits.append(f"conf {conf}")
-        body = " — ".join(bits[:2])
+        body = " - ".join(bits[:2])
         if len(bits) > 2:
             body += ", " + ", ".join(bits[2:])
         body += " (research, not an order)."
-    elif raw in {"BUY", "SELL"} and (signal in {"HOLD", "—", "", "—"} or gate):
+    elif raw in {"BUY", "SELL"} and (signal in {"HOLD", ""} or gate):
         kind = "window_gone"
         why = gate or "gated to HOLD"
-        body = f"{pair}: open window gone. Don't {raw.lower()} now — {why}."
+        body = f"{pair}: open window gone. Don't {raw.lower()} now - {why}."
     elif signal == "HOLD":
         kind = "hold"
-        body = f"{pair}: HOLD — no directional flash right now."
+        body = f"{pair}: HOLD - no directional flash right now."
         if conf:
             body += f" (conf {conf})"
+        if gate:
+            body += f" [{gate}]"
+    elif status in {"need_train", "untrained"}:
+        kind = "status"
+        body = f"{pair}: quiet - no trained flash yet (Fetch/Train)."
+    elif status in {"error", "fail", "failed"}:
+        kind = "status"
+        detail = str(row.get("details") or row.get("validity_reason") or "").strip()
+        detail = _clean_gate(detail)
+        body = f"{pair}: data/model issue - check Fetch."
+        if detail and len(detail) < 80:
+            body = f"{pair}: data/model issue - {detail}."
     else:
         kind = "status"
-        body = f"{pair}: {signal or '—'} — waiting on a clean flash."
+        body = f"{pair}: quiet - waiting on a clean flash."
 
-    if is_active and kind in {"open_window", "window_gone", "close_hint"}:
+    if is_active and kind in {"open_window", "window_gone", "close_hint", "open_pos"}:
         weight = "active"
     else:
         weight = "active" if is_active else "light"
@@ -155,7 +233,7 @@ def build_suggestion_feed(
         enriched = dict(row)
         if brief_primary and pair == active_u:
             for key in ("stop", "target", "confidence", "gate_reason", "raw_signal", "signal", "last", "now"):
-                if enriched.get(key) in (None, "", "—") and brief_primary.get(key) not in (None, ""):
+                if enriched.get(key) in (None, "", "-", "\u2014", "\u2013") and brief_primary.get(key) not in (None, ""):
                     enriched[key] = brief_primary.get(key)
             if enriched.get("last") is None and brief_primary.get("now") is not None:
                 enriched["last"] = brief_primary.get("now")

@@ -47,4 +47,49 @@ describe("suggestionChat", () => {
     });
     expect(lines[0]?.pair).toBe("EURUSD");
   });
+
+  it("need_train placeholder becomes quiet line", () => {
+    const line = formatBoardChatLine(base({ pair: "AUDUSD", signal: "\u2014", status: "need_train" }), {
+      active: "EURUSD",
+    });
+    expect(line?.kind).toBe("status");
+    expect(line?.text).toContain("no trained flash yet");
+    expect(line?.text.includes("\u2014")).toBe(false);
+  });
+
+  it("paper open monitoring keeps pnl", () => {
+    const line = formatBoardChatLine(base({ signal: "BUY" }), {
+      active: "EURUSD",
+      openPosition: {
+        id: "x",
+        pair: "EURUSD",
+        strategy_id: "brief",
+        strategy_name: "Brief",
+        status: "open",
+        trigger: "BUY",
+        confidence: 0.7,
+        confidence_text: "70%",
+        entry_price: 1.13392,
+        entry_price_text: "1.13392",
+        entry_time: 0,
+        entry_time_dhaka: "",
+        exit_price: null,
+        exit_price_text: null,
+        exit_time_dhaka: null,
+        duration: "",
+        pnl_price: 0.0001,
+        pnl_text: "+0.12R",
+        pnl_r: 0.12,
+        pnl_basis: "mtm",
+        outcome: null,
+        exit_reason: null,
+        source: "auto",
+        size: 1,
+        sl: null,
+        tp: null,
+      } as any,
+    });
+    expect(line?.kind).toBe("open_pos");
+    expect(line?.text).toContain("+0.12R");
+  });
 });

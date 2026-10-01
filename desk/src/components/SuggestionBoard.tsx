@@ -93,7 +93,7 @@ export function SuggestionBoard({
     <section className="panel suggestion-board" aria-label="Suggestion board">
       <div className="panel-hd">
         <h2>Suggestion board</h2>
-        <span className="sug-hd-note">Realtime chat · research only</span>
+        <span className="sug-hd-note">Realtime chat - research only</span>
       </div>
       <div className="suggestion-scroll" ref={scroller} role="log" aria-live="polite">
         {lines.length === 0 ? (
@@ -113,3 +113,4 @@ export function SuggestionBoard({
     </section>
   );
 }
+
