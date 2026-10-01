@@ -1,0 +1,2 @@
+﻿# GBPJPY after-cost pin - 2026-10-01 06:14 Asia/Dhaka
+job **1b8485ecd70c4f7e82b17bc25548c117**. Champ PF **2.780** / WR 71.1% / n 5904 / DD -2.09% / ret 2216. Promote null. True Jetta Sep. Active=EURUSD. No promote.

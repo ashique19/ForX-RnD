@@ -1,0 +1,3 @@
+﻿# XAUUSD / XAGUSD pin SKIP - 2026-10-01 06:15 Asia/Dhaka
+Jetta probe returned HTTP 429 (rate-limit after multi-pair pull burst). Metals not pulled this window.
+Also: pip_size_for_pair for XAU may need explicit handling (not *JPY / not 0.0001 FX). Defer hole-fill+pin to a later window with cool-down + pip audit first. No promote.

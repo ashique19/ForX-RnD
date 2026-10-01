@@ -1,0 +1,3 @@
+﻿# QA GBPJPY pin 1b8485ec - 2026-10-01 06:15 Asia/Dhaka
+## Verdict: TRUST
+PF~2.78 WR 71.1%; pip 0.01 (JPY); SMA 0.856 not rich. True Jetta Sep BA. Same high-WR JPY-cross class as EURJPY/USDJPY. Research only. No promote.
