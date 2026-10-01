@@ -1,0 +1,32 @@
+﻿# Hypothesis - EURUSD expanded high-impact calendar blackout window
+Date: 2026-10-01 Asia/Dhaka
+Status: NEW written challenger; do not Replay tonight
+Pin: `2cee7e7163134266ad8c2b39234442d8` (after-cost PF 1.989 / return 11.17 / DD -10.0% / n 3791)
+
+## One-line hypothesis
+On the existing causal High-impact EUR/USD PIT event set, widening the Replay-only blackout from 60/15/30 to 120/30/60 minutes (before/during/after) will remove residual event-adjacent opens whose one-hour holding path is most exposed to release spread/volatility, improving after-cost EURUSD PF, total return, and max drawdown versus the pin without a trivial trade-count collapse.
+
+## Why this is distinct and grounded
+- This is a calendar-window refinement, not purge/embargo, size-by-confidence, vol-scaled confidence, regime, ADX, or meta-label logic.
+- The existing PIT blackout is causal and already covered 2015-01-01 through 2026-09-25: `data/calendars/pit_high_impact_usd_eur.json` (476 High USD/EUR events).
+- The prior 60/15/30 PIT unlock was positive in the earlier full-history benchmark: PF 1.161 -> 1.176, return +5.68% -> +5.93%, and DD -3.86% -> -3.18% with 10 fewer trades. The current Replay default remains 60/15/30, so this challenger changes only the event window.
+- The current one-hour path uses bid/ask where available, `slippage_pips=0.2`, and adverse exit slippage. A 15-minute during / 30-minute after window can leave opens close to a release in the next hourly bar; the wider window tests that execution-risk boundary directly.
+
+## Pre-registered challenger
+Replay-only override under `replay.news_blackout`:
+- `enabled: true`
+- `before_minutes: 120`
+- `during_minutes: 30`
+- `after_minutes: 60`
+- `min_impact: High`
+- `currencies: null` (pair legs, EUR + USD)
+- `event_windows: [before, during, after]`
+- `require_historic_coverage: true`
+- `events_file: data/calendars/pit_high_impact_usd_eur.json`
+
+Do not edit the calendar, add omitted event families, change session/vol/weekday/exit/model settings, or change the live desk gate.
+
+## Next-window protocol
+- Run exactly one EURUSD 1h Replay, `start=2015-01-01`, `pull=false`, `min_confidence=0.60`, costs ON, against pin `2cee7e71`.
+- Clean WIN requires challenger PF > 1.989, total return > 11.17, and max DD better than -10.0%, with `n >= 2843` (75% of pin) and causal PIT coverage active.
+- Otherwise record FAIL and leave the existing 60/15/30 setting unchanged. No promote, no live gate change, and no Replay tonight.
