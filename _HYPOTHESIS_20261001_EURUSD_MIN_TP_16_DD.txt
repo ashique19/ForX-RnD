@@ -19,3 +19,10 @@ Skip only entries whose causal 2.0-ATR target distance is below 16 pips (`signal
 ## Acceptance / kill
 - Useful only if after-cost PF and total return are not degraded and max DD improves materially with a sensible trade count; PF/DD alone is insufficient.
 - Any failed improve criterion -> record FAIL, keep default `min_tp_pips: 0.0`, no second threshold sweep, and no live-gate change.
+
+## Outcome - Replay 5cfd0a27abd747cda14af02c65981002 (2026-10-01 23:38 Asia/Dhaka)
+- Cached Jetta bid/ask rows: 71,939; `min_tp_pips=16.0`; costs and all frozen overlays unchanged.
+- In-job champion: PF 2.5744, DD -2.12%, return +80.77%, n=629.
+- Challenger: PF 2.7488, DD -3.34%, return +93.29%, n=635.
+- Verdict: **FAIL**; PF/return improved but max DD worsened by 1.22 percentage points, so promotion is null and the champion is kept.
+- Temporary research YAML was removed; `config/default.yaml` remains `signals.min_tp_pips: 0.0`. Do not sweep another TP threshold without a new distinct written hypothesis.

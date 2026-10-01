@@ -1,0 +1,11 @@
+﻿# FAIL strike - EURUSD minimum TP-distance filter family
+Date: 2026-10-01 Asia/Dhaka
+
+Replay `5cfd0a27abd747cda14af02c65981002` tested `signals.min_tp_pips=16.0` on 71,939 cached Jetta bid/ask H1 rows with costs on and all frozen gates unchanged.
+
+- In-job champion: PF 2.5744 | DD -2.12% | return +80.77% | n 629
+- Challenger: PF 2.7488 | DD -3.34% | return +93.29% | n 635
+- Verdict: **FAIL**; PF and return rose, but DD worsened by 1.22pp. Promotion null; champion kept.
+- Auto-revert confirmed: temporary research YAML removed and default `signals.min_tp_pips` is 0.0.
+
+Strike 1 for the minimum TP-distance family. No second threshold sweep without a new distinct written hypothesis; no live-gate or promote change.
