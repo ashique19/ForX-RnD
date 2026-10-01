@@ -1,0 +1,38 @@
+﻿# HANDOFF 2026-10-01 ~14:15 Asia/Dhaka — Decision 1h-only + desk_call + paper board
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK (restarted for this ship)
+- Vite :5173 left running (HMR for desk UI)
+- Active **EURUSD** unchanged; no promote; frozen overlays untouched
+- weekday_gate Thu UTC mute expected; desk_call honest: "no open window — weekday mute"
+
+## Shipped this slice (no promote)
+1) **Decision desk = 1h only** (steering priority)
+   - `desk/src/freshness.ts`: collectTargets Active → 1h only (no 1d); coerceChartInterval always 1h
+   - `collectWatchlistLightTargets`: ALL watchlist pairs @1h **including Active** (board coverage)
+   - ChartPanel TF chips: 1h only (1d chip removed)
+   - App levels overlays: hourly only on Decision
+   - `api/deskdata.py`: expand_active_intervals no longer adds 1d; drops Active 1d; `_decision_intervals` → [1h]
+   - DESK_CHART_INTERVALS = {1h}; OHLCV_INTERVALS still {1h,1d} for Lab/Replay explicit reads
+2) **Suggestion Board desk_call** sticky strip (chat still appends below)
+   - `pick_desk_call` ranks close_hint > open_window > open_pos; mute day → honest non-actionable watch
+   - API `/suggestions/board` returns `desk_call`
+3) **Fingerprint heal**: `fingerprint_stable_body` regex `|` bug fixed (was splitting every char → mute spam / broken dedup)
+4) **Richer paper open narratives** (source / held / sl / tp) + **one-click paper open/close** from desk_call / open_window / close_hint (paper journal only)
+5) Parent note: `_NOTE_PARENT_OVERNIGHT_BOARD_HEAL_20261001.txt` (overnight should know board + heal + 1h Decision)
+
+## Tests
+- pytest tests/test_suggestion_chat.py → 23 passed
+- node --experimental-strip-types --test desk/src/freshness.test.ts → 9 passed
+- tsc --noEmit clean
+
+## Explicitly skipped
+- Promote / live-gate / min_conf / frozen overlays / portfolio_brain enable
+- New Replay hyp (vol_scaled still FAIL 1/3)
+- 1d Decision chart path (intentionally removed)
+
+## Next practical
+1) Fri UTC: confirm open_window desk_call + Paper BUY button when mute lifts
+2) Optional: client suggestionChat.ts mirror of desk_call when API soft-fails
+3) Parent: fold overnight note into idle-batch routine skill when convenient

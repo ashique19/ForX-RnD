@@ -55,13 +55,13 @@ export function classifyThrown(err: unknown): { problem: StripProblem; retryAfte
   return { problem: "error", retryAfterS: null };
 }
 
-/** Decision desk live refresh: 1h then 1d for the selected pair only. */
-export const DESK_CHART_INTERVALS = ["1h", "1d"] as const;
+/** Decision desk live refresh: 1h only for the selected pair (no 1d on Decision). */
+export const DESK_CHART_INTERVALS = ["1h"] as const;
 export type DeskChartInterval = (typeof DESK_CHART_INTERVALS)[number];
 
 export function coerceChartInterval(interval: string | null | undefined): DeskChartInterval {
-  const iv = String(interval || "").trim();
-  return iv === "1d" ? "1d" : "1h";
+  void interval;
+  return "1h";
 }
 
 export function collectTargets(
@@ -81,27 +81,24 @@ export function collectTargets(
     out.push({ pair: symbol, interval: iv });
   };
   if (!selected.trim()) return [];
-  // H1 first so a missing daily file can be aggregated from fresh hourly bars.
-  // 15m/4h are not Decision chart intervals and must not waste live fetches.
+  // Decision focus: 1h only. 1d/15m/4h must not waste live fetches here.
   add(selected, "1h");
-  add(selected, "1d");
   return out;
 }
 
-/** Idle watchlist pairs at 1h only. Skips Active so the 18s Active path keeps 1h+1d.
- *  Market data only — never Train / pipeline / Replay.
+/** All watchlist pairs at 1h (including Active). Market data only — never Train/pipeline/Replay.
+ *  Frees capacity formerly spent on Active 1d so the board can catch more opportunities.
  */
 export function collectWatchlistLightTargets(
   rows: { pair: string; interval?: string | null }[],
-  active: string,
+  _active: string,
 ): { pair: string; interval: string }[] {
   const out: { pair: string; interval: string }[] = [];
   const seen = new Set<string>();
-  const act = String(active || "").trim().toUpperCase();
+  void _active;
   for (const row of rows || []) {
     const pair = String(row?.pair || "").trim();
     if (!pair) continue;
-    if (pair.toUpperCase() === act) continue;
     const key = pair.toUpperCase() + ":1h";
     if (seen.has(key)) continue;
     seen.add(key);

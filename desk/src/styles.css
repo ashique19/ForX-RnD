@@ -2361,6 +2361,51 @@
       background: var(--surface-2);
       border-color: var(--border);
     }
+
+    .sug-desk-call {
+      margin: 0 0 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border, #d0d5dd);
+      background: #f8fafc;
+    }
+    .sug-desk-call.sug-buy {
+      border-color: #abefc6;
+      background: #f0fdf4;
+    }
+    .sug-desk-call.sug-warn {
+      border-color: #fedf89;
+      background: #fffaeb;
+    }
+    .sug-desk-call.sug-hold {
+      border-color: #d0d5dd;
+      background: #f9fafb;
+    }
+    .sug-desk-call-hd {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text, #101828);
+    }
+    .sug-desk-call-body {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-2, #475467);
+      word-break: break-word;
+    }
+    .sug-paper-btn {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+    .suggestion-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 6px 8px;
+    }
+
     .suggestion-foot {
       border-top: 1px solid var(--border);
       padding: 4px 10px;

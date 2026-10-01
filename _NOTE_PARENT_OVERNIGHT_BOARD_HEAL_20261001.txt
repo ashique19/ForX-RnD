@@ -1,0 +1,18 @@
+﻿# NOTE FOR PARENT — overnight idle batch awareness (2026-10-01 Asia/Dhaka)
+PC: DESKTOP-GK9IH4N · C:\AI\forex-lab
+Parent owns routines / skills. Executor does not edit overnight prompt skills.
+
+## Please fold into overnight idle batch prompt (when easy)
+1) **Suggestion Board** is live on Decision desk (`/suggestions/board` + sticky **desk_call**).
+   - Board chat appends; desk_call pins best actionable / mute-aware watch line.
+   - Paper diary lines + optional one-click **paper** open/close from board (journal only).
+2) **tip_vol_heal boot** is capped (~2s Active-only; hard 45s kill in START_DESK) — commit `18b1e1f` family.
+   - Overnight should NOT re-run long Duka tip repairs as a blocking step.
+3) **Decision = 1h only** (shipped this slice): no Active 1h+1d expand; light refresh = ALL watchlist @1h.
+   - Overnight Fetch/light paths should prefer **1h** for Decision capacity; leave 1d to Lab/Replay explicit jobs.
+4) Frozen overlays / promote / live-gate still OFF. vol_scaled_conf FAIL 1/3 — do not enable.
+5) weekday_gate Thu mute expected until Fri UTC.
+
+## Do not
+- Flip promote / live sessions / min_conf / portfolio_brain from overnight.
+- Treat board paper buttons as live orders.

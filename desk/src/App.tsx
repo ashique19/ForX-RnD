@@ -305,7 +305,7 @@ export function App() {
     }
   }, []);
 
-  /** Idle watchlist OHLCV only (1h). Skips Active; never Train/pipeline. */
+  /** Watchlist OHLCV @1h for ALL pairs (incl Active). Never Train/pipeline; no 1d. */
   const refreshWatchlistLight = useCallback(async (manual = false) => {
     if (wlInflight.current || inflight.current || retryLock.current) return;
     const targets = collectWatchlistLightTargets(rowsRef.current, selectedRef.current);
@@ -316,7 +316,7 @@ export function App() {
     wlInflight.current = true;
     setWlRefreshing(true);
     try {
-      // Omit active so server does not expand Active 1h+1d onto this light batch.
+      // Light batch is all watchlist @1h. Omit active kw so server skip-expand stays honest; targets already include Active 1h.
       const result = await api.refreshWatchlist(targets);
       if (!result || !Array.isArray(result.results)) {
         throw new Error("Decision API returned an unexpected watchlist refresh.");
@@ -440,7 +440,8 @@ export function App() {
     setGateNote(null);
   }, [selected]);
 
-  const levels = chartTf === "1d" ? brief?.daily : chartTf === "1h" ? brief?.hourly : null;
+  // Decision = 1h only; daily brief levels stay available for Lab elsewhere but not chart overlays here.
+  const levels = brief?.hourly ?? null;
   const modelBuild = brief && brief.pair === selected ? brief.model_build ?? null : null;
 
   const runRetrainGate = useCallback(() => {
@@ -560,6 +561,18 @@ export function App() {
                 onTrainIdle={() => void trainIdlePair()}
                 trainingIdle={idleTrainBusy}
                 idleTrainLabel={idleTrainTarget}
+                paperBusy={manualBusy}
+                onPaperOrder={async (pair, side, positionId) => {
+                  const result = await api.paperOrder(
+                    pair,
+                    side,
+                    undefined,
+                    rowTf,
+                    positionId || undefined,
+                  );
+                  setPaperToast(result.message);
+                  setTick((n) => n + 1);
+                }}
               />
               <SignalBrief
                 pair={brief?.pair ?? selected}

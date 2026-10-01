@@ -335,3 +335,96 @@ def test_open_window_lists_stop_target_at_price():
     assert "@ 1.13276" in line["text"]
     assert "target @ 1.13454" in line["text"]
     assert "stop @ 1.13098" in line["text"]
+
+def test_fingerprint_stable_no_char_split():
+    from forex_lab.suggestion_chat import fingerprint_stable_body
+
+    body = (
+        "EURUSD: muted (weekday gate) - don't buy now. "
+        "muted Thu (UTC weekday gate; also Mon) - lifts Fri UTC | also conf=0.50 < min 0.60. "
+        "No actionable target/stop while muted."
+    )
+    stable = fingerprint_stable_body("window_gone", body, "weekday")
+    assert "E U R U S D" not in stable
+    assert "EURUSD" in stable
+
+
+def test_desk_call_prefers_open_window():
+    from forex_lab.suggestion_chat import build_suggestion_feed
+
+    feed = build_suggestion_feed(
+        [
+            {"pair": "AUDUSD", "signal": "HOLD", "last": 0.69, "confidence": 0.9},
+            {
+                "pair": "EURUSD",
+                "signal": "BUY",
+                "last": 1.13276,
+                "target": 1.13454,
+                "stop": 1.13098,
+                "confidence": 0.72,
+            },
+        ],
+        active="EURUSD",
+    )
+    call = feed.get("desk_call")
+    assert call is not None
+    assert call["pair"] == "EURUSD"
+    assert call["source_kind"] == "open_window"
+    assert call["actionable"] is True
+    assert call.get("paper_action", {}).get("side") == "BUY"
+    assert "Desk call" in call["headline"]
+
+
+def test_desk_call_muted_day_not_actionable():
+    from forex_lab.suggestion_chat import build_suggestion_feed
+
+    feed = build_suggestion_feed(
+        [
+            {
+                "pair": "EURUSD",
+                "signal": "HOLD",
+                "raw_signal": "BUY",
+                "gate_reason": "weekday_gate blocks Mon,Thu (UTC); today=Thu",
+                "confidence": 0.5,
+                "last": 1.13,
+            },
+            {
+                "pair": "NZDUSD",
+                "signal": "HOLD",
+                "raw_signal": "BUY",
+                "gate_reason": "weekday_gate blocks Mon,Thu (UTC); today=Thu",
+                "confidence": 0.68,
+                "last": 0.62,
+            },
+        ],
+        active="EURUSD",
+    )
+    call = feed.get("desk_call")
+    assert call is not None
+    assert call["actionable"] is False
+    assert "no open window" in call["headline"].lower() or "mute" in call["headline"].lower()
+
+
+def test_open_pos_richer_narrative():
+    from forex_lab.suggestion_chat import format_board_line
+
+    line = format_board_line(
+        {"pair": "EURUSD", "signal": "BUY", "last": 1.13},
+        active="EURUSD",
+        open_position={
+            "pair": "EURUSD",
+            "trigger": "BUY",
+            "entry_price": 1.13392,
+            "pnl_text": "+0.12R",
+            "source": "manual",
+            "duration": "2h",
+            "sl": 1.13000,
+            "tp": 1.13800,
+        },
+    )
+    assert line is not None
+    assert line["kind"] == "open_pos"
+    assert "via manual" in line["text"]
+    assert "held 2h" in line["text"]
+    assert "sl 1.13000" in line["text"]
+

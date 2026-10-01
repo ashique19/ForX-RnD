@@ -94,8 +94,9 @@ INTERVAL_ALIASES = {
 HOURLY_INTERVAL = "1h"
 DAILY_INTERVAL = "1d"
 # Decision desk chart / live OHLCV: 1h + 1d only (15m/4h removed from UI + auto-refresh).
-DESK_CHART_INTERVALS = frozenset({HOURLY_INTERVAL, DAILY_INTERVAL})
-OHLCV_INTERVALS = DESK_CHART_INTERVALS
+# Decision chart/live refresh: 1h only. OHLCV still allows 1d for Lab/Replay explicit reads.
+DESK_CHART_INTERVALS = frozenset({HOURLY_INTERVAL})
+OHLCV_INTERVALS = frozenset({HOURLY_INTERVAL, DAILY_INTERVAL})
 ASSET_ALLOW = (
     "EURUSD",
     "GBPUSD",
@@ -143,10 +144,14 @@ def parse_interval(raw: str | None, *, default: str = "1h") -> str:
     return key
 
 
-def coerce_desk_chart_interval(interval: str | None, *, default: str = HOURLY_INTERVAL) -> str:
-    """Map any timeframe onto the Decision chart allowlist (1h / 1d)."""
-    iv = parse_interval(interval, default=default)
-    return iv if iv in DESK_CHART_INTERVALS else HOURLY_INTERVAL
+def coerce_desk_chart_interval(interval: str | None = None, *, default: str = HOURLY_INTERVAL) -> str:
+    """Decision chart allowlist: 1h only. Unknown or 1d coerce to 1h."""
+    _ = default
+    iv = str(interval or "").strip().lower()
+    if iv in {"1h", "h1", "60m", "60"}:
+        return HOURLY_INTERVAL
+    return HOURLY_INTERVAL
+
 
 
 def _num(value: object) -> float | None:
@@ -1335,25 +1340,26 @@ def expand_active_intervals(
     targets: list[tuple[str, str]],
     active: str | None,
 ) -> list[tuple[str, str]]:
-    """Heavy H1+D1 fill for the one Active pair. Other pairs stay on their interval."""
+    """Ensure Active pair has 1h on Decision. No 1d expand (frees capacity for watchlist 1h)."""
     text = str(active or "").strip()
     if not text:
         return targets
     symbol = normalize_pair(text)
     out = list(targets)
     seen = set(out)
-    for iv in (HOURLY_INTERVAL, DAILY_INTERVAL):
-        key = (symbol, iv)
-        if key not in seen:
-            out.append(key)
-            seen.add(key)
-    return _hourly_before_daily(out, symbol)
+    key = (symbol, HOURLY_INTERVAL)
+    if key not in seen:
+        out.append(key)
+        seen.add(key)
+    # Drop any Active 1d that slipped in from older clients.
+    out = [(p, iv) for (p, iv) in out if not (p == symbol and iv == DAILY_INTERVAL)]
+    return out
 
 
 def _decision_intervals(primary: str) -> list[str]:
-    """Decision live path: 1h then 1d only. Daily last so resample can see fresh 1h."""
+    """Decision live path: 1h only. Lab/Replay may still use 1d elsewhere."""
     _ = coerce_desk_chart_interval(primary)
-    return [HOURLY_INTERVAL, DAILY_INTERVAL]
+    return [HOURLY_INTERVAL]
 
 
 def _dedupe_targets(raw: list[tuple[str, str | None]], cfg: dict[str, Any]) -> list[tuple[str, str]]:

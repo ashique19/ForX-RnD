@@ -185,7 +185,7 @@ def fingerprint_stable_body(kind: str, body: str, gate: str = "") -> str:
     body_l = body.lower()
     if "weekday" in gate_l or "muted " in gate_l or "weekday" in body_l or "muted " in body_l:
         stable = re.sub(r"conf=[^|\-]+\|\s*", "", stable)
-    stable = re.sub(r"|\s*also\s*\.?\s*", " ", stable)
+    stable = re.sub(r"\|\s*also\s*\.?\s*", " ", stable)
     stable = re.sub(r"\balso\s*\.?\s*$", "", stable)
     return re.sub(r"\s{2,}", " ", stable).strip(" |")
 
@@ -236,24 +236,42 @@ def format_board_line(
             pair, entry if isinstance(entry, (int, float)) else None
         )
         pnl = str(open_position.get("pnl_text") or "").strip()
-        pnl_bit = f" ({pnl})" if pnl else ""
+        pnl = _clean_gate(pnl.replace("·", " | "))
+        pnl_bit = f" ({pnl})" if pnl and pnl not in _PLACEHOLDER else ""
+        extras: list[str] = []
+        source = str(open_position.get("source") or "").strip()
+        if source:
+            extras.append(f"via {source}")
+        dur = str(open_position.get("duration") or "").strip()
+        if dur and dur not in _PLACEHOLDER and dur not in {" - ", "–", "-"}:
+            extras.append(f"held {dur}")
+        opened = str(open_position.get("entry_time_dhaka") or "").strip()
+        if opened and len(extras) < 3:
+            extras.append(f"in since {opened}")
+        sl_v = open_position.get("sl")
+        tp_v = open_position.get("tp")
+        if isinstance(sl_v, (int, float)):
+            extras.append(f"sl {_px(pair, float(sl_v))}")
+        if isinstance(tp_v, (int, float)) and len(extras) < 5:
+            extras.append(f"tp {_px(pair, float(tp_v))}")
+        extra_bit = (" - " + ", ".join(extras[:4])) if extras else ""
         flash = signal if signal in {"BUY", "SELL"} else raw
         if flash and side in {"BUY", "SELL"} and flash != side and flash in {"BUY", "SELL"}:
             kind = "close_hint"
             body = (
-                f"{pair}: consider closing paper {side} opened @ {entry_txt}{pnl_bit} - "
-                f"flash is now {flash} (research hint, not an auto-close)."
+                f"{pair}: consider closing paper {side} opened @ {entry_txt}{pnl_bit}"
+                f"{extra_bit} - flash is now {flash} (research hint, not an auto-close)."
             )
         elif signal == "HOLD" and gate:
             kind = "close_hint"
             body = (
-                f"{pair}: open paper {side} @ {entry_txt}{pnl_bit} still open; "
-                f"live flash HOLD ({gate}). No auto-close."
+                f"{pair}: open paper {side} @ {entry_txt}{pnl_bit} still open"
+                f"{extra_bit}; live flash HOLD ({gate}). No auto-close."
             )
         else:
             kind = "open_pos"
             mon = f"flash {flash}" if flash in {"BUY", "SELL"} else "monitoring"
-            body = f"{pair}: paper {side} open @ {entry_txt}{pnl_bit} - {mon}."
+            body = f"{pair}: paper {side} open @ {entry_txt}{pnl_bit}{extra_bit} - {mon}."
     elif signal in {"BUY", "SELL"}:
         kind = "open_window"
         px_txt = _px(pair, last) if last is not None else "-"
@@ -345,7 +363,7 @@ def format_board_line(
         fp = fingerprint_line(pair, kind, fingerprint_stable_body(kind, body, gate))
     else:
         fp = fingerprint_line(pair, kind, body)
-    return {
+    out = {
         "id": fp,
         "pair": pair,
         "kind": kind,
@@ -356,6 +374,28 @@ def format_board_line(
         "confidence": row.get("confidence"),
         "honesty": HONESTY,
     }
+    if kind == "open_window" and signal in {"BUY", "SELL"}:
+        out["paper_action"] = {
+            "pair": pair,
+            "side": signal,
+            "can_paper_open": True,
+            "label": f"Paper {signal}",
+        }
+    if kind == "close_hint" and open_position:
+        pos_id = str(open_position.get("id") or "").strip() or None
+        close_side = _norm_side(
+            open_position.get("side") or open_position.get("trigger")
+        )
+        if close_side in {"BUY", "SELL"}:
+            out["paper_action"] = {
+                "pair": pair,
+                "side": "CLOSE",
+                "can_paper_close": True,
+                "position_id": pos_id,
+                "label": "Paper close",
+            }
+    return out
+
 
 def format_closed_trade_line(row: dict[str, Any]) -> dict[str, Any] | None:
     """One friendly diary line for a recently closed paper trade (research only)."""
@@ -501,6 +541,142 @@ def save_prev_kinds(kinds: dict[str, str], path: Path | None = None) -> None:
         pass
 
 
+
+def _conf_rank(raw: Any) -> float:
+    try:
+        if raw is None:
+            return -1.0
+        v = float(raw)
+    except (TypeError, ValueError):
+        return -1.0
+    if v > 1.0:
+        v = v / 100.0
+    return v if v >= 0 else -1.0
+
+
+_DESK_CALL_RANK = {
+    "close_hint": 100,
+    "open_window": 90,
+    "open_pos": 70,
+    "window_gone": 30,
+    "hold": 20,
+    "paper_closed": 10,
+    "status": 5,
+}
+
+
+def pick_desk_call(
+    lines: list[dict[str, Any]],
+    *,
+    active: str | None = None,
+) -> dict[str, Any] | None:
+    """Best actionable / watch line across pairs for a sticky desk-call strip."""
+    active_u = str(active or "").upper() or None
+    actionable = [
+        ln
+        for ln in lines
+        if str(ln.get("kind") or "") in {"close_hint", "open_window", "open_pos"}
+    ]
+
+    def sort_key(ln: dict[str, Any]) -> tuple:
+        kind = str(ln.get("kind") or "")
+        weight_bonus = 1 if str(ln.get("weight") or "") == "active" else 0
+        pair_bonus = 1 if str(ln.get("pair") or "").upper() == active_u else 0
+        return (
+            _DESK_CALL_RANK.get(kind, 0),
+            weight_bonus,
+            pair_bonus,
+            _conf_rank(ln.get("confidence")),
+        )
+
+    if actionable:
+        best = max(actionable, key=sort_key)
+        kind = str(best.get("kind") or "")
+        pair = str(best.get("pair") or "").upper()
+        side = _norm_side(best.get("signal") or best.get("raw_signal"))
+        if kind == "open_window":
+            headline = (
+                f"Desk call: {pair} {side or 'window'} - "
+                "actionable research window (paper only)."
+            )
+        elif kind == "close_hint":
+            headline = (
+                f"Desk call: {pair} - consider paper close "
+                "(research hint, not auto)."
+            )
+        else:
+            headline = f"Desk call: {pair} paper still open - monitor (no auto)."
+        return {
+            "id": f"desk_call|{best.get('id')}",
+            "kind": "desk_call",
+            "pair": pair,
+            "source_kind": kind,
+            "headline": headline,
+            "text": str(best.get("text") or ""),
+            "weight": "active",
+            "signal": best.get("signal"),
+            "raw_signal": best.get("raw_signal"),
+            "confidence": best.get("confidence"),
+            "honesty": HONESTY,
+            "actionable": True,
+            "paper_action": best.get("paper_action"),
+        }
+
+    watch = [
+        ln
+        for ln in lines
+        if str(ln.get("kind") or "") in {"window_gone", "hold"}
+        and str(ln.get("pair") or "").upper() not in PIN_SKIP_PAIRS
+    ]
+    if not watch:
+        return {
+            "id": "desk_call|none",
+            "kind": "desk_call",
+            "pair": active_u,
+            "source_kind": "none",
+            "headline": "Desk call: no clean flash across watchlist right now.",
+            "text": "Waiting on board flashes. Decision aid only - not auto-trade.",
+            "weight": "active",
+            "signal": None,
+            "raw_signal": None,
+            "confidence": None,
+            "honesty": HONESTY,
+            "actionable": False,
+            "paper_action": None,
+        }
+    best = max(watch, key=sort_key)
+    pair = str(best.get("pair") or "").upper()
+    kind = str(best.get("kind") or "")
+    muted = (
+        "muted" in str(best.get("text") or "").lower()
+        or "weekday" in str(best.get("text") or "").lower()
+    )
+    if muted:
+        headline = (
+            f"Desk call: no open window - weekday mute in force. "
+            f"Closest watch: {pair} (gated; not actionable)."
+        )
+    elif kind == "hold":
+        headline = f"Desk call: no open window. Quietest watch: {pair} HOLD (research)."
+    else:
+        headline = f"Desk call: no open window. Closest: {pair} gated (not actionable)."
+    return {
+        "id": f"desk_call|{best.get('id')}",
+        "kind": "desk_call",
+        "pair": pair,
+        "source_kind": kind,
+        "headline": headline,
+        "text": str(best.get("text") or ""),
+        "weight": "active",
+        "signal": best.get("signal"),
+        "raw_signal": best.get("raw_signal"),
+        "confidence": best.get("confidence"),
+        "honesty": HONESTY,
+        "actionable": False,
+        "paper_action": None,
+    }
+
+
 def build_suggestion_feed(
     rows: list[dict[str, Any]],
     *,
@@ -582,11 +758,13 @@ def build_suggestion_feed(
         merged = dict(prior)
         merged.update(new_kinds)
         save_prev_kinds(merged, path=state_path)
+    desk_call = pick_desk_call(lines, active=active_u)
     return {
         "ok": True,
         "active": active_u,
         "count": len(lines),
         "lines": lines,
+        "desk_call": desk_call,
         "honesty": HONESTY,
         "decision_aid": True,
         "auto_trade": False,

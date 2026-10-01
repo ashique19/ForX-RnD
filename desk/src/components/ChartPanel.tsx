@@ -21,11 +21,8 @@ import {
 } from "../patterns";
 import { RefreshIcon } from "./SignalBrief";
 
-/** Decision desk chart: 1h (default) + 1d only. */
-const TFS = [
-  { id: "1h", label: "1h" },
-  { id: "1d", label: "1d" },
-];
+/** Decision desk chart: 1h only (1d removed to free Decision capacity). */
+const TFS = [{ id: "1h", label: "1h" }];
 
 /** Right-scale precision. Majors 5dp, JPY 3, gold/silver 2. Volume stays separate. */
 export function priceFormatFor(pair: string): { type: "price"; precision: number; minMove: number } {

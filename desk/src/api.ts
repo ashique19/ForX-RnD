@@ -221,7 +221,34 @@ export const api = {
         text: string;
         honesty?: string;
         transition?: string;
+        paper_action?: {
+          pair: string;
+          side: string;
+          can_paper_open?: boolean;
+          can_paper_close?: boolean;
+          position_id?: string | null;
+          label?: string;
+        };
       }>;
+      desk_call?: {
+        id: string;
+        kind: string;
+        pair?: string | null;
+        source_kind?: string;
+        headline: string;
+        text: string;
+        actionable?: boolean;
+        paper_action?: {
+          pair: string;
+          side: string;
+          can_paper_open?: boolean;
+          can_paper_close?: boolean;
+          position_id?: string | null;
+          label?: string;
+        } | null;
+        honesty?: string;
+        confidence?: number | null;
+      } | null;
       kinds?: Record<string, string>;
       honesty?: string;
     }>("/suggestions/board", { cache: "no-store" }),
