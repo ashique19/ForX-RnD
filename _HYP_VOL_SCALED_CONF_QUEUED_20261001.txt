@@ -1,0 +1,29 @@
+﻿# HYP: volatility-scaled confidence (NEW family) - DRAFT pending session Replay
+Date: 2026-10-01 Asia/Dhaka
+Status: QUEUED — do not start until session-overlap Replay 76c3d050 finishes (serial only).
+NOT a reopen of frozen families (meta_label / trend_regime / purge / size_by_conf / portfolio_brain / cross_pair_veto).
+
+## Mechanism (new)
+Scale the effective confidence threshold by local realized vol vs long-run:
+  effective_min_conf = base_min_conf * clip(atr_pctile_or_vol_regime / vol_ref, lo, hi)
+Or equivalently: require higher confidence in high-vol bars, allow slightly lower in calm bars,
+without changing live min_confidence yaml (Replay override / research flag only).
+
+Rationale: EURUSD pin 2cee7e71 still takes Asia/weak-hour noise; vol-scaled conf is a
+DIFFERENT lever than ADX chop skip (frozen trend_regime) and meta-label ATR rules (frozen).
+
+## Pre-registered thresholds (must not tune post-hoc)
+- base_min_conf = 0.60 (unchanged live)
+- vol feature = vol_regime column if present else atr percentile over 100 bars
+- vol_ref = 1.0 (neutral)
+- clip lo=0.90, hi=1.15  → effective conf band ~0.54..0.69
+- Research flag name: signals.vol_scaled_conf.enabled (default false)
+
+## Gate
+- ONE serial EURUSD Replay after 76c3d050 done; start=2015-01-01; pull=false
+- Improve vs pin 2cee7e71 after-cost champion PF/DD/n; promote=null
+- FAIL -> FREEZE this family strike 1/3; leave enabled=false
+
+## Do NOT
+- Flip live min_confidence
+- Enable while session_overlap result unknown (may interact)

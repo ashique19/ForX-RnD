@@ -1,0 +1,6 @@
+﻿# Jetta Sep remesh probe - 2026-10-01 ~12:17 Asia/Dhaka
+Result: BLOCKED
+- https://jetta.dukascopy.com/v1/candles/trade/hour/EURUSD/BID/2026/{7,8,9}
+- All returned HTTP 400 Bad Request (4s timeout; reachable host).
+- Sep (0-index m=8) not live yet. No remesh. Tip stays yfinance mid + hist heal.
+- Re-probe later; do not burn Replay SKIP until /2026/8 or /2026/9 returns 200.
