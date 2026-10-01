@@ -1,0 +1,7 @@
+﻿# Yearly PF robustness - 2026-10-01 ~07:01 Asia/Dhaka
+From `_ALL_PAIRS_YEARLY_PF_20261001.csv` (champion books):
+
+- **Only EURUSD** shows calendar years with PF<1 (4 years: 2015/16/20/21).
+- Other TRUST pins (JPY/AUD/NZD/GBP/CAD/CHF/EURGBP/EURJPY/GBPJPY) have min yearly PF >= 1 in this mesh.
+- This is research context for why Active EURUSD pin PF~1.99 looks "weaker" than multi-pair ~2.6-3.0 — early-year drag + lower WR, not a cost bug.
+- Does **not** authorize promote or Active switch. PinEURUSD remains live Active.
