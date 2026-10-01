@@ -434,4 +434,3 @@ export function buildClientSuggestionFeed(args: {
   });
   return { lines: filtered, kinds };
 }
-
