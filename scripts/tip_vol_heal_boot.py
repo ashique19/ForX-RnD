@@ -1,4 +1,4 @@
-"""START_DESK tip Volume heal entrypoint (fail-soft, Active-capped Duka)."""
+"""START_DESK tip Volume heal entrypoint (fail-soft, Jetta then Active-capped Duka)."""
 from __future__ import annotations
 
 import sys
@@ -16,9 +16,11 @@ def main() -> None:
         tip_bars=200,
         duka_lookback_hours=16,
         use_dukascopy=True,
+        use_jetta=True,
         write=True,
         max_pairs=4,
         duka_max_pairs=1,
+        jetta_max_pairs=3,
         budget_sec=40,
     )
     print(format_heal_log_line(summary), flush=True)

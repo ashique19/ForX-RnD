@@ -5,14 +5,14 @@ Never changes OHLC on existing bars. Never promotes / never touches gates.
 Fail-soft: callers must catch exceptions and continue desk start.
 
 Boot path (START_DESK) must stay fast: skip Dukascopy when history already
-cleared tip zeros; cap Duka to Active (duka_max_pairs); honor budget_sec.
+cleared tip zeros; try Jetta months covering tip zeros (Sep donors) before
+Duka; cap Duka to Active (duka_max_pairs); honor budget_sec.
 """
 from __future__ import annotations
 
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -28,6 +28,7 @@ from forex_lab.data import (
 )
 from forex_lab.history import (
     fetch_dukascopy_recent_bars,
+    fetch_jetta_month,
     history_path,
     load_history_csv,
 )
@@ -92,6 +93,26 @@ def _watchlist_pairs(cfg: dict[str, Any]) -> list[str]:
 def _tip_zero_count(frame: pd.DataFrame, tip_n: int) -> int:
     vol = pd.to_numeric(frame["Volume"], errors="coerce").fillna(0.0)
     return int((vol.tail(max(8, int(tip_n))) <= 0).sum())
+
+
+def _tip_zero_months(frame: pd.DataFrame, tip_n: int) -> list[tuple[int, int]]:
+    """Calendar (year, month) covering tip Volume<=0 stamps (1-indexed months)."""
+    tip_n = max(8, int(tip_n))
+    vol = pd.to_numeric(frame["Volume"], errors="coerce").fillna(0.0)
+    tip = frame.tail(tip_n)
+    zmask = vol.tail(tip_n) <= 0
+    if not bool(zmask.any()):
+        return []
+    months: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for ts in tip.index[zmask]:
+        t = pd.Timestamp(ts)
+        key = (int(t.year), int(t.month))
+        if key not in seen:
+            seen.add(key)
+            months.append(key)
+    months.sort()
+    return months
 
 
 def _coalesce_volume_only(base: pd.DataFrame, donor: pd.DataFrame) -> tuple[pd.DataFrame, int]:
@@ -161,6 +182,106 @@ def _fetch_duka_budgeted(
     return payload, None  # type: ignore[return-value]
 
 
+def _fetch_jetta_months_budgeted(
+    pair: str,
+    months: list[tuple[int, int]],
+    *,
+    timeout_sec: float | None,
+) -> tuple[pd.DataFrame | None, str | None]:
+    """Pull Jetta calendar months for tip-zero coverage; fail-soft / budgeted.
+
+    Positive-Volume rows only are useful to callers (coalesce ignores <=0 anyway).
+    Non-FX pairs (e.g. BTCUSD) return jetta_skip:not_fx without network.
+    """
+    pair_u = str(pair).upper().replace("/", "").replace("-", "")
+    # Jetta is FX H1 only — skip crypto/metals (avoids empty-month noise on boot).
+    _non_fx = ("BTC", "ETH", "XAU", "XAG", "XBT")
+    if (
+        len(pair_u) != 6
+        or not pair_u.isalpha()
+        or pair_u[:3] in _non_fx
+        or pair_u[3:] in _non_fx
+    ):
+        return None, "jetta_skip:not_fx"
+    if not months:
+        return None, "jetta_skip:no_zero_months"
+
+    def _pull() -> pd.DataFrame:
+        frames: list[pd.DataFrame] = []
+        for year, month in months:
+            try:
+                frame = fetch_jetta_month(
+                    pair_u,
+                    int(year),
+                    int(month),
+                    scale_volume=True,
+                )
+            except Exception:
+                continue
+            if frame is None or frame.empty:
+                continue
+            vol = pd.to_numeric(frame["Volume"], errors="coerce").fillna(0.0)
+            pos = frame.loc[vol > 0]
+            if not pos.empty:
+                frames.append(pos)
+        if not frames:
+            return pd.DataFrame()
+        out = pd.concat(frames)
+        out = out[~out.index.duplicated(keep="last")].sort_index()
+        out.index.name = "Datetime"
+        return out
+
+    if timeout_sec is None or timeout_sec <= 0:
+        try:
+            got = _pull()
+            if got is None or got.empty:
+                return None, "jetta_empty"
+            return got, None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"jetta_error:{exc}"
+
+    box: list[tuple[str, Any]] = []
+
+    def _run() -> None:
+        try:
+            box.append(("ok", _pull()))
+        except Exception as exc:  # noqa: BLE001
+            box.append(("err", exc))
+
+    th = threading.Thread(target=_run, name=f"jetta-tip-heal-{pair_u}", daemon=True)
+    th.start()
+    th.join(timeout=float(timeout_sec))
+    if th.is_alive():
+        return None, "jetta_timeout"
+    if not box:
+        return None, "jetta_empty"
+    kind, payload = box[0]
+    if kind == "err":
+        return None, f"jetta_error:{payload}"
+    if payload is None or getattr(payload, "empty", True):
+        return None, "jetta_empty"
+    return payload, None  # type: ignore[return-value]
+
+
+def _persist_history_volume(
+    pair: str,
+    cfg: dict[str, Any],
+    donor: pd.DataFrame,
+) -> int:
+    """Positive-only Volume coalesce into history CSV (OHLC untouched). Returns fills."""
+    try:
+        hp = history_path(pair, "1h", cfg)
+        hist = load_history_csv(hp)
+        if hist is None or hist.empty or donor is None or donor.empty:
+            return 0
+        merged, n = _coalesce_volume_only(hist, donor)
+        if n <= 0:
+            return 0
+        merged.to_csv(hp)
+        return int(n)
+    except Exception:
+        return 0
+
 
 def heal_pair_tip_volume(
     pair: str,
@@ -169,14 +290,19 @@ def heal_pair_tip_volume(
     tip_bars: int = 200,
     duka_lookback_hours: int = 72,
     use_dukascopy: bool = True,
+    use_jetta: bool = True,
     write: bool = True,
     duka_deadline: float | None = None,
+    jetta_deadline: float | None = None,
 ) -> TipVolHealResult:
     """Refill zero/blank Volume on recent tip bars for one pair.
 
-    Order: history same-ts positive Volume, then Dukascopy recent (optional).
-    Skip Dukascopy when history already cleared tip zeros, or when duka_deadline
-    (time.monotonic) has passed. OHLC on existing timestamps is preserved.
+    Order: history same-ts positive Volume, then Jetta months covering tip
+    zeros (Sep donors when densify wiped hist), then Dukascopy recent.
+    Skip network donors when history already cleared tip zeros, or when
+    deadlines (time.monotonic) have passed. OHLC on existing timestamps is
+    preserved. Jetta positive fills are also written back to history when
+    write=True so the next boot can hist_enough without re-fetch.
     """
     cfg = cfg or load_config()
     pair_u = str(pair).upper().replace("/", "")
@@ -212,8 +338,46 @@ def heal_pair_tip_volume(
         result.sources.append(f"history_error:{exc}")
 
     zeros_after_hist = _tip_zero_count(merged, tip_n)
+
+    # Jetta donor (Sep / tip-zero months) — before Duka; heals densify wipe
+    run_jetta = bool(use_jetta) and zeros_after_hist > 0
+    if run_jetta and jetta_deadline is not None and time.monotonic() >= float(jetta_deadline):
+        result.sources.append("jetta_skipped:budget")
+        run_jetta = False
+    if run_jetta:
+        months = _tip_zero_months(merged, tip_n)
+        # Cap to 2 most recent zero-months for START_DESK speed
+        if len(months) > 2:
+            months = months[-2:]
+        remaining = None
+        if jetta_deadline is not None:
+            remaining = max(0.5, float(jetta_deadline) - time.monotonic())
+        jetta, err = _fetch_jetta_months_budgeted(
+            pair_u, months, timeout_sec=remaining
+        )
+        if err:
+            result.sources.append(err)
+        elif jetta is not None and not jetta.empty:
+            try:
+                jetta = _normalize_ohlcv(jetta)
+                merged, n = _coalesce_volume_only(merged, jetta)
+                if n:
+                    total += n
+                    result.sources.append(f"jetta:{n}")
+                    if write:
+                        nh = _persist_history_volume(pair_u, cfg, jetta)
+                        if nh:
+                            result.sources.append(f"jetta_hist:{nh}")
+                else:
+                    result.sources.append("jetta:0")
+            except Exception as exc:
+                result.sources.append(f"jetta_error:{exc}")
+        else:
+            result.sources.append("jetta_empty")
+
+    zeros_after_jetta = _tip_zero_count(merged, tip_n)
     run_duka = bool(use_dukascopy)
-    if run_duka and zeros_after_hist == 0:
+    if run_duka and zeros_after_jetta == 0:
         result.sources.append("duka_skipped:hist_enough")
         run_duka = False
     elif run_duka and duka_deadline is not None and time.monotonic() >= float(duka_deadline):
@@ -265,17 +429,20 @@ def heal_watchlist_tip_volumes(
     tip_bars: int = 200,
     duka_lookback_hours: int = 72,
     use_dukascopy: bool = True,
+    use_jetta: bool = True,
     write: bool = True,
     max_pairs: int | None = None,
     duka_max_pairs: int = 1,
+    jetta_max_pairs: int = 3,
     budget_sec: float | None = 45.0,
 ) -> dict[str, Any]:
     """Heal Active + watchlist live caches. Fail-soft per pair.
 
-    Dukascopy is slow (bi5 downloads). Boot defaults:
-    - duka_max_pairs=1 → only Active (first) may hit Duka after hist
-    - budget_sec=45 → wall-clock cap for all Duka work; remaining pairs hist-only
-    Hist always runs for every pair (cheap, correctness for Volume=0 when donor has data).
+    Two-pass boot (reduces no_donor when Duka hangs):
+    1) Hist + Jetta for up to jetta_max_pairs (Sep donors) under the shared budget
+    2) Active-only Dukascopy with whatever budget remains
+
+    Hist always runs for every pair (cheap). Duka never starves Jetta slots.
     """
     cfg = cfg or load_config()
     pairs = _watchlist_pairs(cfg)
@@ -287,48 +454,107 @@ def heal_watchlist_tip_volumes(
         else None
     )
     duka_slots = max(0, int(duka_max_pairs)) if use_dukascopy else 0
-    results: list[TipVolHealResult] = []
+    jetta_slots = max(0, int(jetta_max_pairs)) if use_jetta else 0
+    by_pair: dict[str, TipVolHealResult] = {}
     healed_total = 0
     duka_used = 0
+    jetta_used = 0
+
+    def _count_jetta(allow: bool, r: TipVolHealResult) -> None:
+        nonlocal jetta_used
+        if not allow:
+            return
+        if any(
+            s.startswith("jetta:")
+            or s.startswith("jetta_error:")
+            or s.startswith("jetta_hist:")
+            or s in ("jetta_empty", "jetta_timeout", "jetta:0")
+            for s in r.sources
+        ):
+            jetta_used += 1
+
+    def _count_duka(allow: bool, r: TipVolHealResult) -> None:
+        nonlocal duka_used
+        if not allow:
+            return
+        if any(
+            s.startswith("dukascopy:")
+            or s.startswith("dukascopy_error:")
+            or s == "dukascopy_timeout"
+            for s in r.sources
+        ):
+            duka_used += 1
+        elif any(s.startswith("duka_skipped:") for s in r.sources):
+            return
+        elif r.tip_zeros_before and "history:" not in "".join(r.sources) and "jetta:" not in "".join(r.sources):
+            duka_used += 1
+
+    # Pass 1: history + Jetta (no Duka) so Sep donors land before bi5 can burn budget
     for pair in pairs:
         try:
-            allow_duka = use_dukascopy and duka_used < duka_slots
-            if allow_duka and deadline is not None and time.monotonic() >= deadline:
-                allow_duka = False
+            allow_jetta = use_jetta and jetta_used < jetta_slots
+            if allow_jetta and deadline is not None and time.monotonic() >= deadline:
+                allow_jetta = False
             r = heal_pair_tip_volume(
                 pair,
                 cfg,
                 tip_bars=tip_bars,
                 duka_lookback_hours=duka_lookback_hours,
-                use_dukascopy=allow_duka,
+                use_dukascopy=False,
+                use_jetta=allow_jetta,
                 write=write,
-                duka_deadline=deadline if allow_duka else None,
+                jetta_deadline=deadline if allow_jetta else None,
             )
-            # Count a Duka slot only when we actually attempted a download (not hist_enough skip).
-            if allow_duka and any(
-                s.startswith("dukascopy:")
-                or s.startswith("dukascopy_error:")
-                or s == "dukascopy_timeout"
-                for s in r.sources
-            ):
-                duka_used += 1
-            elif allow_duka and any(s.startswith("duka_skipped:") for s in r.sources):
-                # hist_enough / budget skip did not consume network; keep slot for next needy pair
-                pass
-            elif allow_duka and not any(s.startswith("duka_skipped:") for s in r.sources):
-                # attempted path with empty sources is rare; still reserve if tip needed Duka
-                if r.tip_zeros_before and "history:" not in "".join(r.sources):
-                    duka_used += 1
+            _count_jetta(allow_jetta, r)
         except Exception as exc:
             r = TipVolHealResult(pair=pair, error=str(exc))
-        results.append(r)
-        healed_total += int(r.healed_bars or 0)
+        by_pair[pair] = r
+
+    # Pass 2: Active-first Dukascopy only for pairs still needing tip fills
+    if use_dukascopy and duka_slots > 0:
+        for pair in pairs:
+            if duka_used >= duka_slots:
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            prev = by_pair.get(pair)
+            if prev is None:
+                continue
+            if prev.skipped == "tip_already_positive" or int(prev.tip_zeros_after or 0) == 0:
+                continue
+            if prev.error:
+                continue
+            try:
+                r = heal_pair_tip_volume(
+                    pair,
+                    cfg,
+                    tip_bars=tip_bars,
+                    duka_lookback_hours=duka_lookback_hours,
+                    use_dukascopy=True,
+                    use_jetta=False,
+                    write=write,
+                    duka_deadline=deadline,
+                )
+                _count_duka(True, r)
+                # Merge source trails so boot log shows hist/jetta + duka
+                if prev.sources:
+                    r.sources = list(prev.sources) + [s for s in r.sources if s not in prev.sources]
+                r.tip_zeros_before = prev.tip_zeros_before
+                r.healed_bars = int(prev.healed_bars or 0) + int(r.healed_bars or 0)
+                by_pair[pair] = r
+            except Exception as exc:
+                prev.error = str(exc)
+                by_pair[pair] = prev
+
+    results = [by_pair[p] for p in pairs if p in by_pair]
+    healed_total = sum(int(r.healed_bars or 0) for r in results)
 
     out: dict[str, Any] = {
         "ok": True,
         "healed_bars": healed_total,
         "pairs": [r.as_dict() for r in results],
         "duka_used": duka_used,
+        "jetta_used": jetta_used,
     }
     if deadline is not None:
         out["budget_sec"] = float(budget_sec) if budget_sec is not None else None
@@ -356,9 +582,10 @@ def format_heal_log_line(summary: dict[str, Any]) -> str:
             parts.append(f"{p.get('pair')}=0({src};z{z0})")
     detail = ",".join(parts) if parts else "none"
     extra = ""
+    if summary.get("jetta_used") is not None:
+        extra += f" jetta_used={summary.get('jetta_used')}"
     if summary.get("duka_used") is not None:
         extra += f" duka_used={summary.get('duka_used')}"
     if summary.get("budget_remaining_sec") is not None:
         extra += f" budget_left={summary.get('budget_remaining_sec')}s"
     return f"tip_vol_healed {n} bars ({detail}){extra}"
-

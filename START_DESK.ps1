@@ -227,7 +227,7 @@ if (Test-Path $viteCache) {
 try {
     # Hard wall-clock cap: Dukascopy bi5 uses non-daemon pool threads inside
     # history.py; killing this heal process is the reliable START_DESK unblock.
-    Write-DeskLog 'tip_vol_heal: starting Active-only Duka, 45s hard budget'
+    Write-DeskLog 'tip_vol_heal: starting Jetta tip donors + Active-only Duka, 45s hard budget'
     $healScript = Join-Path $Root 'scripts\tip_vol_heal_boot.py'
     $healOutFile = Join-Path $Root 'data\_tip_vol_heal_boot.out'
     $healErrFile = Join-Path $Root 'data\_tip_vol_heal_boot.err'
