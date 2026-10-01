@@ -1,0 +1,13 @@
+﻿# USDCHF H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+Multi-pair proof. Active=EURUSD. No promote.
+
+## Fill
+- `python -m forex_lab history --pair USDCHF --interval 1h --start 2015-01-01 --source jetta`
+- Jetta months 2015-01 .. **2026-09 OK** (Sep published for CHF) -> **73226** bars ending 2026-09-30 22:00
+- **No synth tip remesh** (true Jetta BA through Sep)
+- Daily remesh saved
+
+## After
+- H1: **73226** rows, 2015-01-01 22:00 -> 2026-09-30 22:00
+- high<low 0; neg_spread 0; bid_ask true; source jetta
+- Watchlist +USDCHF; active EURUSD

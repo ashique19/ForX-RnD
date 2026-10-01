@@ -9,6 +9,7 @@ pairs:
   BTCUSD: "BTC-USD"  # crypto; yfinance only (no Dukascopy)
   EURJPY: "EURJPY=X"  # multi-pair pin track
   EURGBP: "EURGBP=X"  # multi-pair pin track
+  USDCHF: "USDCHF=X"  # multi-pair pin track
 
 # OHLCV defaults
 interval: "1h"
