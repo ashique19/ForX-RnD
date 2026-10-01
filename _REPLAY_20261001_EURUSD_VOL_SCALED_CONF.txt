@@ -1,0 +1,34 @@
+# EURUSD vol_scaled_conf Replay - NEW track strike 1/3 - 2026-10-01 12:54 Asia/Dhaka
+Standing ForX autonomy. Do NOT promote. Live gate stays 0.60.
+
+## Hypothesis
+Volatility-scaled confidence threshold (NOT size_by_conf):
+effective_min_conf = 0.60 * clip(atr_pctile / 0.5, 0.90, 1.15) -> ~0.54..0.69
+Research flag signals.vol_scaled_conf.enabled (in-memory for this job only).
+See _HYP_VOL_SCALED_CONF_QUEUED_20261001.txt.
+
+## Job
+- job_id: **aec0334897c54d21a31896be03546b87**
+- finished: **2026-10-01 12:52 Asia/Dhaka**
+- metric=atr_pctile vol_ref=0.5 lo/hi=0.90/1.15; costs ON; after-cost
+- in-run promotion verdict=null (promote=false)
+
+## Before / after vs pin
+
+| | pin 2cee7e71 | **vol_scaled ec03348** |
+|---|---:|---:|
+| Champ PF | 1.989 | **2.961** |
+| WR | 64.8% | **72.8%** |
+| n | 3791 | **489** |
+| max DD | -10.00% | **-1.47%** |
+| total_return | **11.17** | **0.65** |
+
+## Verdict: FAIL adoption (NEW track **strike 1 of 3**)
+- PF and DD look better, but trade count collapsed (3791 -> 489) and **return 0.65 << 11.17**.
+- Not a clean dominate vs pin. Threshold scaling in this clip band over-filters.
+- **LEFT DISABLED** signals.vol_scaled_conf.enabled=false in default.yaml (never flipped live).
+- No promote. Live conf 0.60 untouched. Frozen overlays stay off.
+
+## Notes
+- Distinct from frozen size_by_conf (qty bands). This only moves the conf floor.
+- Strike counter: vol_scaled_conf family 1/3. Do not enable live without a new hyp + hard beat.

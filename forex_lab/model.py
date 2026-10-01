@@ -109,7 +109,27 @@ def apply_signal_filters(pred_frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.Se
     raw = (pred_frame["pred_raw"] if "pred_raw" in pred_frame.columns else pred_frame["pred"]).astype(int)
     keep = raw != LABEL_MAP["HOLD"]
     if "confidence" in pred_frame.columns:
-        keep = keep & (pred_frame["confidence"] >= min_conf)
+        # Vol-scaled conf: per-row effective floor (NEW family). Distinct from size_by_conf.
+        # When enabled + metric present, replaces static min_conf so the floor can ease
+        # in quiet regimes (~0.54) as well as tighten in loud ones (~0.69).
+        eff = None
+        try:
+            from forex_lab.vol_scaled_conf import (
+                effective_min_confidence_series,
+                vol_scaled_conf_enabled,
+            )
+            if vol_scaled_conf_enabled(cfg):
+                eff = effective_min_confidence_series(
+                    pred_frame, cfg, base_min_conf=min_conf
+                )
+        except Exception:
+            eff = None
+        if eff is not None:
+            keep = keep & (pred_frame["confidence"] >= eff)
+            pred_frame = pred_frame.copy()
+            pred_frame["effective_min_conf"] = eff
+        else:
+            keep = keep & (pred_frame["confidence"] >= min_conf)
     if "dir_edge" in pred_frame.columns:
         keep = keep & (pred_frame["dir_edge"] >= min_edge)
     sessions = sig_cfg.get("sessions") or []

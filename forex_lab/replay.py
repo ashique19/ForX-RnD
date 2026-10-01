@@ -564,6 +564,7 @@ def run_replay(
     from forex_lab.weekday_gate import apply_replay_weekday_gate
     from forex_lab.trend_regime import apply_replay_trend_regime
     from forex_lab.meta_label import apply_replay_meta_label
+    from forex_lab.vol_scaled_conf import apply_replay_vol_scaled_conf
 
     apply_replay_session_gate(cfg)
     apply_replay_news_blackout(cfg, pair=pair_u, index=frame.index)
@@ -571,6 +572,7 @@ def run_replay(
     apply_replay_weekday_gate(cfg)
     apply_replay_trend_regime(cfg)
     apply_replay_meta_label(cfg)
+    apply_replay_vol_scaled_conf(cfg)
     rc = replay_cfg(cfg)
     wf = dict(cfg.get("walk_forward") or {})
     horizon = int(cfg.get("horizon") or 8)
@@ -1009,6 +1011,12 @@ def _predict_window(
             cfg, x_tr, y_tr, x_te, model_type=model_type, balanced=balanced
         )
         pred = _attach_policy_columns(pred, x_te, ohlcv, cfg, pair)
+        from forex_lab.vol_scaled_conf import (
+            attach_metric_for_vol_scaled,
+            vol_scaled_conf_enabled,
+        )
+        if vol_scaled_conf_enabled(cfg):
+            pred = attach_metric_for_vol_scaled(pred, ohlcv, cfg)
         pred["pred"] = apply_signal_filters(pred, cfg)
         from forex_lab.news_blackout import apply_news_blackout_to_pred
         from forex_lab.vol_regime import apply_vol_regime_to_pred
@@ -1211,6 +1219,7 @@ def _report_md(
         f"- {__import__('forex_lab.weekday_gate', fromlist=['weekday_gate_report_line']).weekday_gate_report_line(cfg)}",
         f"- {__import__('forex_lab.trend_regime', fromlist=['trend_regime_report_line']).trend_regime_report_line(cfg)}",
         f"- {__import__('forex_lab.meta_label', fromlist=['meta_label_report_line']).meta_label_report_line(cfg)}",
+        f"- {__import__('forex_lab.vol_scaled_conf', fromlist=['vol_scaled_conf_report_line']).vol_scaled_conf_report_line(cfg)}",
         f"- Costs: spread_pips={float((cfg or {}).get('spread_pips') or 0.0):g} (mid RT; ignored when bid/ask) | slippage_pips={float(((cfg or {}).get('replay') or {}).get('slippage_pips') or 0.0):g} | exit_slippage={bool(((cfg or {}).get('replay') or {}).get('exit_slippage', True))}",
         "",
         "## Promotion",

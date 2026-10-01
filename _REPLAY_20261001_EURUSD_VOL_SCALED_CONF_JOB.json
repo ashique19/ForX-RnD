@@ -1,0 +1,99 @@
+{
+  "job_id": "aec0334897c54d21a31896be03546b87",
+  "kind": "replay",
+  "status": "done",
+  "phase": "done",
+  "pair": "EURUSD",
+  "interval": "1h",
+  "start": "2015-01-01",
+  "end": null,
+  "min_confidence": 0.6,
+  "fraction": 1.0,
+  "message": "Scoreboard ready",
+  "as_of_dhaka": "2026-10-01 12:52 Asia/Dhaka",
+  "error": null,
+  "reason": null,
+  "hypothesis": "vol_scaled_conf",
+  "vol_scaled_conf": {
+    "enabled": true,
+    "metric": "atr_pctile",
+    "vol_ref": 0.5,
+    "lo": 0.9,
+    "hi": 1.15,
+    "atr_window": 100
+  },
+  "pin_ref": "2cee7e7163134266ad8c2b39234442d8",
+  "finished_at_dhaka": "2026-10-01 12:52 Asia/Dhaka",
+  "source": "jetta",
+  "bid_ask": true,
+  "rows": 71939,
+  "report": null,
+  "updated_at": 1790837533.0710795,
+  "scoreboard": [
+    {
+      "book": "champion",
+      "n_trades": 489,
+      "win_rate": 0.7280163599182005,
+      "expectancy": 0.001025952821657356,
+      "avg_return_per_trade": 0.001025952821657356,
+      "net_pnl": 0.501690929790447,
+      "total_return": 0.6493597338526973,
+      "max_drawdown": -0.014672899992429822,
+      "profit_factor": 2.9614647028976835,
+      "trades_per_hour": 0.004788718601576654,
+      "n_open": 0,
+      "promotion": "incumbent"
+    },
+    {
+      "book": "challenger",
+      "n_trades": 486,
+      "win_rate": 0.757201646090535,
+      "expectancy": 0.0011570063429728404,
+      "avg_return_per_trade": 0.0011570063429728404,
+      "net_pnl": 0.5623050826848004,
+      "total_return": 0.7523479518173033,
+      "max_drawdown": -0.01767222677149305,
+      "profit_factor": 3.3958427122133883,
+      "trades_per_hour": 0.004759339959849189,
+      "n_open": 0,
+      "promotion": "null"
+    },
+    {
+      "book": "sma",
+      "n_trades": 13369,
+      "win_rate": 0.47370783155060214,
+      "expectancy": -0.00011766248059536537,
+      "avg_return_per_trade": -0.00011766248059536537,
+      "net_pnl": -1.5730297030794396,
+      "total_return": -0.7994343498960571,
+      "max_drawdown": -0.8137809238822041,
+      "profit_factor": 0.8831813563992272,
+      "trades_per_hour": 0.130921020418156,
+      "n_open": 0,
+      "promotion": "baseline"
+    }
+  ],
+  "promotion": {
+    "promote": false,
+    "verdict": "null",
+    "reasons": [
+      "max DD worsened (-0.0177 vs champion -0.0147, delta -0.0030, bar 0)",
+      "keep champion and report null"
+    ],
+    "deltas": {
+      "profit_factor": 0.4343780093157048,
+      "total_return": 0.102988217964606,
+      "max_drawdown": -0.002999326779063227
+    },
+    "mode": "improve",
+    "pf_ok": true,
+    "return_ok": true,
+    "dd_ok": false,
+    "floors_ok": true,
+    "pf_floor_ok": true,
+    "dd_floor_ok": true,
+    "wr_floor_ok": true,
+    "honest_note": "Walk-forward champion/challenger comparison on cached yfinance bars \u2014 not a live edge, not broker truth, not a deployable trading system. Past WF metrics do not predict future results."
+  },
+  "promotion_line": "Promotion null: max DD worsened (-0.0177 vs champion -0.0147, delta -0.0030, bar 0); keep champion and report null. Same retrain gate as live (improve) on profit factor, total return, and max drawdown. min_confidence=0.6. trades/hour is reported only. Live promotion does not gate on it. Replay uses the retrain gate (profit factor, total return, max drawdown, min_trades) and the same min_confidence filter as signal generation."
+}

@@ -1,6 +1,6 @@
-﻿# HYP: volatility-scaled confidence (NEW family) - DEFERRED 2026-10-01
+# HYP: volatility-scaled confidence (NEW family) - DEFERRED 2026-10-01
 Date: 2026-10-01 Asia/Dhaka
-Status: DEFERRED (not dropped) - prefer assistant UX polish this slice.
+Status: RAN 2026-10-01 - FAIL vs pin (strike 1/3). enabled=false. See _REPLAY_20261001_EURUSD_VOL_SCALED_CONF.txt.
 Session-overlap Replay 76c3d050 already finished (research PASS, promote=null).
 Still NOT a reopen of frozen families (meta_label / trend_regime / purge / size_by_conf / portfolio_brain / cross_pair_veto).
 

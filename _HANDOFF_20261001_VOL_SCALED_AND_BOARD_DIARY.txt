@@ -1,0 +1,27 @@
+# HANDOFF 2026-10-01 ~12:55 Asia/Dhaka - vol_scaled_conf FAIL + board paper diary
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK; Vite http://127.0.0.1:5173 OK
+- uvicorn restarted once for board diary wiring (vite left alone)
+- tip_vol_heal / Jetta Sep 400 / live sessions=[] unchanged; no promote
+
+## Shipped this slice (no promote)
+1) **vol_scaled_conf** NEW family implemented + ONE serial after-cost EURUSD Replay
+   - job ec0334897c54d21a31896be03546b87
+   - vs pin 2cee7e71: PF 2.961 vs 1.989 | DD -1.47% vs -10% | **ret 0.65 vs 11.17** | n 489 vs 3791
+   - verdict **FAIL** strike **1/3**; yaml stays signals.vol_scaled_conf.enabled=false
+   - note: _REPLAY_20261001_EURUSD_VOL_SCALED_CONF.txt
+2) Suggestion Board paper-journal diary lines (friendly closed trades)
+   - ormat_closed_trade_line + 
+ecent_closed into /suggestions/board
+   - smoke: paper_closed_lines=3; pytest suggestion_chat 9 + vol_scaled 3 = 12 passed
+
+## Frozen OFF (unchanged)
+meta_label, trend_regime, purge, size_by_conf, portfolio_brain, cross_pair
+live sessions=[] (76c3d050 research-only)
+
+## Next practical
+1) Multi-pair board light path so non-EURUSD leave Fetch/Train cheaply (models), OR
+2) New written hyp only if not another conf-threshold clip / size curve
+3) START_DESK.ps1 PID race still open if launcher pain returns

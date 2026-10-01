@@ -428,13 +428,16 @@ def create_app() -> FastAPI:
         rows = list(board.get("rows") or [])
         active = board.get("active") or (cfg.get("watchlist") or {}).get("active")
         open_positions: list[dict] = []
+        recent_closed: list[dict] = []
         try:
             from api import paperdesk as paper
 
             port = paper.portfolio_payload(cfg, sync=False)
             open_positions = list(port.get("open") or [])
+            recent_closed = list(port.get("closed") or [])[:5]
         except Exception:
             open_positions = []
+            recent_closed = []
         brief_primary = None
         try:
             if active:
@@ -460,6 +463,7 @@ def create_app() -> FastAPI:
             rows,
             active=str(active) if active else None,
             open_positions=open_positions,
+            recent_closed=recent_closed,
             brief_primary=brief_primary,
         )
         lines = list(feed.get("lines") or [])

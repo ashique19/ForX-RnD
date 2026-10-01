@@ -181,6 +181,15 @@ signals:
   min_tp_pips: 0.0         # skip entries whose TP distance is below this (0 = off)
   htf_trend_filter: null   # null/off | 4h | 1D â€” require HTF SMA slope to agree with BUY/SELL
                            # Default off: session/vol filters hurt EURUSD in prior screens.
+  # Volatility-scaled confidence (NEW family). Threshold scaling by vol — NOT size_by_conf.
+  # effective_min_conf = base * clip(metric/vol_ref, lo, hi); base = min_confidence.
+  vol_scaled_conf:
+    enabled: false           # research Replay only; leave false for live/pin bit-identical
+    metric: atr_pctile       # atr_pctile | vol_regime
+    vol_ref: 0.5             # atr_pctile median -> multiplier ~1.0
+    lo: 0.90
+    hi: 1.15                 # with base 0.60 -> effective ~0.54..0.69
+    atr_window: 100          # policy-only atr_pctile when vol_percentile_window=0
 
 # News lane (decision context beside math; not a trade instruction)
 news:
