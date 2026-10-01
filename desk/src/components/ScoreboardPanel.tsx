@@ -106,15 +106,18 @@ export function ScoreboardPanel({
         {books.length ? (
           <div className="score-wrap">
             <table className="score">
+              <caption className="score-caption">
+                Last scoreboard results for {job.pair || "the Active pair"} {(job.interval || "1h").toUpperCase()}
+              </caption>
               <thead>
                 <tr>
-                  <th>Book</th>
-                  <th>Trades</th>
-                  <th>Win rate</th>
-                  <th>Expectancy</th>
-                  <th>Net P/L</th>
-                  <th>Max DD</th>
-                  <th>PF</th>
+                  <th scope="col">Book</th>
+                  <th scope="col">Trades</th>
+                  <th scope="col">Win rate</th>
+                  <th scope="col">Expectancy</th>
+                  <th scope="col">Net P/L</th>
+                  <th scope="col">Max DD</th>
+                  <th scope="col">PF</th>
                 </tr>
               </thead>
               <tbody>

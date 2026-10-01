@@ -119,6 +119,7 @@ export function ModelBuildStrip({
       <span className="reason">{gateNote ? `${reason} ${gateNote}` : reason}</span>
       {champion ? (
         <span className="champ" title={championTitle}>
+          <span className="champ-label">Champion</span>
           {champion}
         </span>
       ) : null}

@@ -3102,3 +3102,78 @@ html, body, #root, .shell, .app {
 .model-dialog .model-panel-scoreboard table.score {
   min-width: 620px;
 }
+
+
+/* Model modal readability and scoreboard semantics. */
+.score-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.model-dialog .model-build.in-modal .champ {
+  display: flex;
+  flex: 1 1 100%;
+  order: 4;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.model-dialog .model-build.in-modal .champ-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.model-dialog .model-panel-scoreboard .score-wrap {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.model-dialog .model-panel-scoreboard table.score thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-2);
+}
+.model-dialog .model-panel-scoreboard table.score tbody th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.model-dialog .model-panel-scoreboard table.score thead th:first-child {
+  left: 0;
+  z-index: 3;
+}
+@media (max-width: 480px) {
+  .modal-root { padding: 8px; }
+  .modal-dialog.model-dialog {
+    width: 100%;
+    max-height: calc(100vh - 16px);
+    padding: 10px 10px 12px;
+  }
+  .model-dialog .model-build.in-modal { gap: 6px; }
+  .model-dialog .model-build.in-modal .model-when {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .model-dialog .model-panel-scoreboard .replay-advisory {
+    font-size: 11.5px;
+  }
+}
