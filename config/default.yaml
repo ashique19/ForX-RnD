@@ -24,7 +24,7 @@ period: "2y"
 #     HOLD on timeout or same-bar both-hit (ambiguous path)
 #   forward_return (legacy): close-to-close vs label_threshold
 label_scheme: triple_barrier
-horizon: 6                 # DD hypothesis: cap max trade life at 6 bars; TP/SL unchanged                 # vertical barrier / max holding period (bars)
+horizon: 6                 # DD hypothesis: cap max trade life at 6 bars; TP/SL unchanged
 label_threshold: 0.0005    # used only by forward_return
 entry_timing: next_open    # next_open (honest fill) | same_close (legacy)
 
