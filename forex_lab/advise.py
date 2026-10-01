@@ -379,13 +379,16 @@ def suggest_actions(
                 )
 
     if mtf is not None and mtf.status == MTF_CONFLICT:
-        if not side and sig in {"BUY", "SELL"}:
+        # raw directional class may live on mtf.signal when flash was already rewritten to HOLD
+        mtf_sig = str(getattr(mtf, "signal", "") or "").upper()
+        directional = sig in {"BUY", "SELL"} or mtf_sig in {"BUY", "SELL"}
+        if not side and directional:
             cards.append(
                 _card(
                     ACTION_NO_NEW,
                     "Suggest: hold off (MTF conflict)",
-                    f"{mtf.note}. Config can also flash HOLD/weaker "
-                    f"(board.mtf_confirm.conflict_flash). Advisory only.",
+                    f"{mtf.note}. Desk call stays HOLD while HTF disagrees — "
+                    f"not a Buy/Sell setup. Advisory only.",
                     window="mtf",
                     severity="caution",
                     event=event,
@@ -407,12 +410,17 @@ def suggest_actions(
                 )
             )
 
-    # Deduplicate by action, keep first (event window outranks MTF hold-off if same action).
-    seen: set[str] = set()
+    # Deduplicate by action and title (event window outranks MTF hold-off if same action;
+    # identical titles never appear twice even across windows).
+    seen_actions: set[str] = set()
+    seen_titles: set[str] = set()
     uniq: list[Suggestion] = []
     for c in cards:
-        if c.action in seen:
+        title = str(c.title or "").strip()
+        if c.action in seen_actions or (title and title in seen_titles):
             continue
-        seen.add(c.action)
+        seen_actions.add(c.action)
+        if title:
+            seen_titles.add(title)
         uniq.append(c)
     return uniq[:2]

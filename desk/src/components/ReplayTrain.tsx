@@ -6,7 +6,7 @@ import type { ReplayJob, ReplayLatest } from "../types";
 import { ScoreboardPanel } from "./ScoreboardPanel";
 
 const CALENDAR_GAP =
-  "Calendar and news are not replayed as-of 2015 — the desk calendar is the current week only. Bars, bid/ask, and costs are. No live orders.";
+  "Calendar and news are not replayed as of 2015. The desk calendar is the current week only. Bars, bid/ask, and costs are replayed. No live orders.";
 
 function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
@@ -198,7 +198,7 @@ export function ReplayTrainButton({ compact = false }: { compact?: boolean } = {
   );
 }
 
-export function LastReplayStrip({ compact = false }: { compact?: boolean } = {}) {
+export function LastReplayStrip({ compact = false, modelPanel = false }: { compact?: boolean; modelPanel?: boolean } = {}) {
   const { pair, interval, open, setOpen, failure, latest, ready, loadFailed } = useReplay();
   const [scoreboardDismissed, setScoreboardDismissed] = useState(false);
   const storedFail = latest?.recent_error ? failureText(latest.recent_error) : null;
@@ -217,8 +217,8 @@ export function LastReplayStrip({ compact = false }: { compact?: boolean } = {})
           <span className="tag">Replay</span>
           <span>
             Running {running.pair} {(running.interval || "").toUpperCase()}
-            {running.message ? ` · ${running.message}` : ""}
-            {running.as_of_dhaka ? ` · ${running.as_of_dhaka}` : ""}
+            {running.message ? ` - ${running.message}` : ""}
+            {running.as_of_dhaka ? ` - ${running.as_of_dhaka}` : ""}
           </span>
           <span className="replay-progress slim" aria-hidden="true">
             <span style={{ width: `${pct(running)}%` }} />
@@ -237,8 +237,8 @@ export function LastReplayStrip({ compact = false }: { compact?: boolean } = {})
           clampReasons
           mismatch={mismatch}
           onOpen={() => setOpen(true)}
-          collapsible
-          onDismiss={() => setScoreboardDismissed(true)}
+          collapsible={!modelPanel}
+          onDismiss={modelPanel ? undefined : () => setScoreboardDismissed(true)}
         />
       ) : !compact && ready && !loadFailed && pair && !running && !failLine && !job ? (
         <p className="replay-empty">
@@ -397,13 +397,13 @@ function ReplayModal() {
             <h2 id="replay-heading">Replay train</h2>
             <span className="spacer" />
             <button className="btn sm icon" type="button" aria-label="Close" onClick={() => onCloseRef.current()}>
-              <span aria-hidden="true">×</span>
+              <span aria-hidden="true">x</span>
             </button>
           </div>
           <p className="replay-pair">
             <span>Active pair</span>
             <strong>
-              {pair || "—"} · {(interval || "1h").toUpperCase()}
+              {pair || "-"} - {(interval || "1h").toUpperCase()}
             </strong>
           </p>
           <p className="replay-note">
@@ -426,7 +426,7 @@ function ReplayModal() {
           </div>
           <p className="replay-gap">{job?.calendar_note || CALENDAR_GAP}</p>
           <button className="btn primary" type="button" onClick={() => void onRun()} disabled={busy || !pair}>
-            {busy ? "Running…" : "Pull and replay"}
+            {busy ? "Running..." : "Pull and replay"}
           </button>
           {busy || (job && job.status === "running") ? (
             <div className="replay-progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
@@ -436,7 +436,7 @@ function ReplayModal() {
           {job?.status !== "error" && job?.message ? (
             <p className="replay-msg">
               {job.message}
-              {job.as_of_dhaka ? ` · ${job.as_of_dhaka}` : ""}
+              {job.as_of_dhaka ? ` - ${job.as_of_dhaka}` : ""}
             </p>
           ) : null}
           {shownFailure ? (

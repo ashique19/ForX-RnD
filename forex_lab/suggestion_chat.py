@@ -72,6 +72,13 @@ def _below_min_conf(gate: str) -> bool:
         or "below min confidence" in g
     )
 
+
+def _mtf_conflict(gate: str) -> bool:
+    """True when gate text says HTF/MTF conflict blocked the flash."""
+    g = (gate or "").lower()
+    return "mtf conflict" in g or ("mtf" in g and "conflict" in g)
+
+
 def _norm_side(raw: Any) -> str:
     """BUY/SELL/HOLD or empty; strip em-dash placeholders and mojibake."""
     s = str(raw or "").strip().upper()
@@ -391,10 +398,19 @@ def format_board_line(
         why = prefer_mute_why(gate) if gate else "gated to HOLD"
         muted = "muted " in why.lower() or "weekday gate" in why.lower()
         below_min = _below_min_conf(gate)
+        mtf_blocked = _mtf_conflict(why) or _mtf_conflict(gate)
         px_txt = _px(pair, last) if last is not None else "-"
         has_target = isinstance(target, (int, float))
         has_stop = isinstance(stop, (int, float))
-        if muted or below_min:
+        if mtf_blocked:
+            # Desk HOLD wins over model lean / consensus — never frame as Buy/Sell setup.
+            kind = "window_gone"
+            body = (
+                f"{pair}: desk HOLD — MTF conflict wins over model {raw}"
+                f" ({why}). Don't {raw.lower()} now. "
+                f"No actionable target/stop while gated."
+            )
+        elif muted or below_min:
             # Keep raw direction visible as a decision aid while the live gate stays closed.
             kind = "open_window"
             conf_bit = conf or "n/a"

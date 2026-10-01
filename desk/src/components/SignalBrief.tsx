@@ -227,9 +227,18 @@ function ConsensusPanel({ consensus, pair }: { consensus: Consensus; pair: strin
   );
 }
 
+/** HOLD / gated barriers are research-only — never framed as a live Buy/Sell setup. */
+function researchLevels(suggestion: Suggestion | null | undefined): boolean {
+  if (!suggestion) return false;
+  if (suggestion.levels_role === "research") return true;
+  if (suggestion.levels_role === "live") return false;
+  return suggestion.signal == null || suggestion.tone === "hold";
+}
+
 function Card({ title, suggestion, consensus, pair }: { title: string; suggestion: Suggestion; consensus: Consensus; pair: string }) {
   const reason = failureReason(suggestion);
   const scenario = (suggestion.scenario || "").trim();
+  const research = researchLevels(suggestion);
   return (
     <article className="tf-card">
       <div className="tf-card-hd">
@@ -243,12 +252,12 @@ function Card({ title, suggestion, consensus, pair }: { title: string; suggestio
             <div className="val" title={suggestion.now == null ? reason || undefined : undefined}>{suggestion.now_text}</div>
           </div>
           <div className="lvl">
-            <div className="lbl">Stop</div>
-            <div className={suggestion.stop != null ? "val stop" : "val"} title={suggestion.stop == null ? reason || undefined : undefined}>{suggestion.stop_text}</div>
+            <div className="lbl">{research ? "Research stop" : "Stop"}</div>
+            <div className={suggestion.stop != null ? "val stop" : "val"} title={suggestion.stop == null ? reason || undefined : research ? "Research barrier only — not an order" : undefined}>{suggestion.stop_text}</div>
           </div>
           <div className="lvl">
-            <div className="lbl">Target</div>
-            <div className={suggestion.target != null ? "val tgt" : "val"} title={suggestion.target == null ? reason || undefined : undefined}>{suggestion.target_text}</div>
+            <div className="lbl">{research ? "Research target" : "Target"}</div>
+            <div className={suggestion.target != null ? "val tgt" : "val"} title={suggestion.target == null ? reason || undefined : research ? "Research barrier only — not an order" : undefined}>{suggestion.target_text}</div>
           </div>
           <div className="lvl">
             <div className="lbl">Duration</div>
@@ -275,26 +284,38 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function BriefMetrics({ suggestion, chartInterval }: { suggestion: Suggestion | null; chartInterval: string }) {
+function BriefMetrics({
+  suggestion,
+  chartInterval,
+  compact = false,
+}: {
+  suggestion: Suggestion | null;
+  chartInterval: string;
+  compact?: boolean;
+}) {
   const showHorizon = Boolean(suggestion?.tf && suggestion.interval !== chartInterval);
   const reason = failureReason(suggestion);
+  const research = researchLevels(suggestion);
+  const labels = compact
+    ? { now: "Now", stop: research ? "RS" : "S", target: research ? "RT" : "T", duration: "Dur" }
+    : { now: "Now at", stop: research ? "Research stop" : "Stop", target: research ? "Research target" : "Target", duration: "Duration" };
   return (
     <div className="brief-metrics" aria-label="Key levels">
       {showHorizon ? <span className="tf-pill">{suggestion?.tf}</span> : null}
       <span className="brief-metric">
-        <span className="lbl">Now at</span>
+        <span className="lbl" title="Now at">{labels.now}</span>
         <span className="val" title={suggestion?.now == null ? reason || undefined : undefined}>{shownText(suggestion?.now_text)}</span>
       </span>
       <span className="brief-metric">
-        <span className="lbl">Stop</span>
-        <span className={suggestion?.stop != null ? "val stop" : "val"} title={suggestion?.stop == null ? reason || undefined : undefined}>{shownText(suggestion?.stop_text)}</span>
+        <span className="lbl" title={research ? "Research stop" : "Stop"}>{labels.stop}</span>
+        <span className={suggestion?.stop != null ? "val stop" : "val"} title={suggestion?.stop == null ? reason || undefined : research ? "Research barrier only — not an order" : undefined}>{shownText(suggestion?.stop_text)}</span>
       </span>
       <span className="brief-metric">
-        <span className="lbl">Target</span>
-        <span className={suggestion?.target != null ? "val tgt" : "val"} title={suggestion?.target == null ? reason || undefined : undefined}>{shownText(suggestion?.target_text)}</span>
+        <span className="lbl" title={research ? "Research target" : "Target"}>{labels.target}</span>
+        <span className={suggestion?.target != null ? "val tgt" : "val"} title={suggestion?.target == null ? reason || undefined : research ? "Research barrier only — not an order" : undefined}>{shownText(suggestion?.target_text)}</span>
       </span>
       <span className="brief-metric">
-        <span className="lbl">Duration</span>
+        <span className="lbl" title="Duration">{labels.duration}</span>
         <span className="val" title={reason || undefined}>{shownText(suggestion?.duration)}</span>
       </span>
     </div>
@@ -378,6 +399,7 @@ export function SignalBrief({
   paper,
   toast,
   chartInterval = "1h",
+  compact = false,
   nextEvent = null,
   calendarNote = null,
   calendarStale = false,
@@ -401,6 +423,7 @@ export function SignalBrief({
   paper: PaperState | null;
   toast: string | null;
   chartInterval?: string;
+  compact?: boolean;
   nextEvent?: NextEvent | null;
   calendarNote?: string | null;
   calendarStale?: boolean;
@@ -464,7 +487,13 @@ export function SignalBrief({
   };
   const pairLabel = pair.trim();
   const collapsedTitle = collapsedBriefTitle(pairLabel, bias, confidence, rawSignal);
-  const caution = advice.find((card) => card.severity === "warn" || card.severity === "caution");
+  // Event-row action only for calendar windows — MTF hold-off stays once in the advice list.
+  const caution = advice.find(
+    (card) =>
+      (card.severity === "warn" || card.severity === "caution") &&
+      card.window !== "mtf" &&
+      card.window !== "none",
+  );
   const chip = nextEvent
     ? eventChip(nextEvent.currency, nextEvent.short_title || nextEvent.title, nextEvent.when, nextEvent.warn, nowMs)
     : "";
@@ -473,7 +502,9 @@ export function SignalBrief({
     <>
       {advice.length > 0 && (
         <div className="advice-list">
-          {advice.map((card) => (
+          {advice
+            .filter((card, i, all) => all.findIndex((c) => c.title === card.title) === i)
+            .map((card) => (
             <p className={`advice ${card.severity}`} key={`${card.action}-${card.window}`}>
               <strong>{card.title}</strong> {card.detail}
             </p>
@@ -521,7 +552,7 @@ export function SignalBrief({
 
   return (
     <>
-      <section className="panel brief is-collapsed" aria-label="Signal brief">
+      <section className={compact ? "panel brief is-collapsed brief-toolbar" : "panel brief is-collapsed"} aria-label="Signal brief">
         <div className="panel-hd">
           <h2
             className="brief-pair brief-open-title"
@@ -538,7 +569,7 @@ export function SignalBrief({
           >
             {collapsedTitle}
           </h2>
-          <BriefMetrics suggestion={focus} chartInterval={chartInterval} />
+          <BriefMetrics suggestion={focus} chartInterval={chartInterval} compact={compact} />
           <span className="spacer" />
           <button
             ref={openButtonRef}

@@ -176,3 +176,39 @@ def test_advice_disabled():
         )
         == []
     )
+
+
+def test_mtf_conflict_not_duplicated_with_event():
+    """Event no-new-opens outranks MTF; identical MTF title never doubles."""
+    mtf = MtfStatus(status=MTF_CONFLICT, timeframe="4h", direction="down", signal="BUY", note="4h down vs BUY")
+    now = datetime(2026, 9, 21, 16, 0, tzinfo=timezone.utc)
+    cards = suggest_actions(
+        pair="EURUSD",
+        signal="BUY",
+        validity="OK",
+        position=None,
+        events=_events(),
+        cfg=CFG,
+        mtf=mtf,
+        now=now,
+    )
+    titles = [c.title for c in cards]
+    assert titles.count("Suggest: hold off (MTF conflict)") <= 1
+    assert any(c.action == ACTION_NO_NEW for c in cards)
+
+
+def test_mtf_conflict_when_flash_already_hold():
+    mtf = MtfStatus(status=MTF_CONFLICT, timeframe="4h", direction="down", signal="BUY", note="4h down vs BUY")
+    cards = suggest_actions(
+        pair="NZDUSD",
+        signal="HOLD",
+        validity="OK",
+        position=None,
+        events=[],
+        cfg=CFG,
+        mtf=mtf,
+        now=datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc),
+    )
+    assert cards and cards[0].action == ACTION_NO_NEW
+    assert "MTF conflict" in cards[0].title
+    assert "Desk call stays HOLD" in cards[0].detail or "HTF disagrees" in cards[0].detail

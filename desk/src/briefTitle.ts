@@ -31,8 +31,7 @@ export function confidencePercent(value: number | null | undefined): number | nu
 /**
  * Collapsed heading.
  * Ungated: `PAIR (Side : NN%)` when bias matches the live call.
- * Gated:   `PAIR (SELL 38% gated → HOLD)` when min_confidence (or similar) rewrote
- *          the flash to HOLD but raw_signal is still BUY/SELL.
+ * Gated:   `PAIR (HOLD · gated from SELL 38%)` — desk HOLD leads; raw class is context.
  */
 export function collapsedBriefTitle(
   pair: string | null | undefined,
@@ -45,10 +44,10 @@ export function collapsedBriefTitle(
   const side = briefSide(bias);
   const raw = rawSide(rawSignal);
   const pct = confidencePercent(confidence);
-  // Gated flash: model wanted BUY/SELL, desk shows HOLD.
+  // Gated flash: desk call is HOLD; raw BUY/SELL is why it was gated (not a live setup).
   if (side === "Hold" && raw && raw !== "HOLD") {
-    if (pct == null) return `${name} (${raw} gated → HOLD)`;
-    return `${name} (${raw} ${pct}% gated → HOLD)`;
+    if (pct == null) return `${name} (HOLD · gated from ${raw})`;
+    return `${name} (HOLD · gated from ${raw} ${pct}%)`;
   }
   if (!side) return name;
   if (pct == null) return `${name} (${side})`;

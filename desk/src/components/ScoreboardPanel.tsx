@@ -43,14 +43,14 @@ export function ScoreboardPanel({
   mismatch?: string | null;
   /** When true, header chevron collapses body to a compact title bar (session React state). */
   collapsible?: boolean;
-  /** Session dismiss — same pattern as Model strip (parent hides until reload). */
+  /** Session dismiss - same pattern as Model strip (parent hides until reload). */
   onDismiss?: () => void;
 }) {
   const books = orderedBooks(job.scoreboard);
   const when = replayWhen(job);
   const tone = verdictTone(job.promotion);
   const verdict = job.promotion?.verdict ? verdictLabel(job.promotion) : job.promotion_line || verdictLabel(job.promotion);
-  const reasons = (job.promotion?.reasons || []).map((item) => item.trim()).filter(Boolean).join(" · ");
+  const reasons = (job.promotion?.reasons || []).map((item) => item.trim()).filter(Boolean).join("; ");
   const chart = showChart && job.report?.equity_png ? `${job.report.equity_png}?t=${job.job_id}` : null;
   const note = (advisory || job.advisory || REPLAY_ADVISORY).trim();
   const [expanded, setExpanded] = useState(!collapsible);
@@ -65,7 +65,7 @@ export function ScoreboardPanel({
       <div className="replay-strip-hd">
         <span className="tag">Last scoreboard</span>
         <strong>
-          {job.pair || "—"} · {(job.interval || "1h").toUpperCase()}
+          {job.pair || "-"} - {(job.interval || "1h").toUpperCase()}
         </strong>
         {when ? <span className="replay-when">{when}</span> : null}
         <span className={`score-verdict ${tone}`}>{verdict}</span>
@@ -96,7 +96,7 @@ export function ScoreboardPanel({
             title="Dismiss last scoreboard"
             onClick={onDismiss}
           >
-            <span aria-hidden="true">×</span>
+            <span aria-hidden="true">x</span>
           </button>
         ) : null}
       </div>

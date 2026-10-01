@@ -14,6 +14,83 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
   });
 }
 
+
+
+function parseResearchBand(rationale: string | null | undefined): { upper: number | null; lower: number | null } {
+  const text = String(rationale || "");
+  const m = text.match(/upper\s+([0-9.]+)\s*\/\s*lower\s+([0-9.]+)/i);
+  if (!m) return { upper: null, lower: null };
+  const upper = Number(m[1]);
+  const lower = Number(m[2]);
+  return {
+    upper: Number.isFinite(upper) ? upper : null,
+    lower: Number.isFinite(lower) ? lower : null,
+  };
+}
+
+function fmtPx(pair: string, value: number | null | undefined, fallback?: string | null): string {
+  if (value != null && Number.isFinite(value)) {
+    const u = pair.toUpperCase();
+    if (u.includes("JPY")) return value.toFixed(3);
+    if (u.startsWith("BTC") || u.startsWith("XAU") || u.startsWith("XAG")) return value.toFixed(2);
+    return value.toFixed(5);
+  }
+  const fb = String(fallback || "").trim();
+  return fb && fb !== "—" && fb !== "-" && fb !== "?" ? fb : "—";
+}
+
+function confPctLabel(confidence: number | null | undefined): string {
+  if (confidence == null || !Number.isFinite(confidence)) return "n/a";
+  let v = confidence;
+  if (v <= 1) v = v * 100;
+  return `${Math.round(v)}%`;
+}
+
+/** Watchlist Signal: BUY-HOLD (% Conf) / SELL-HOLD (% Conf) / DONT-TRADE (% Conf) + levels. */
+function watchlistSignalView(row: BoardRow): { label: string; detail: string | null; tone: "buy" | "sell" | "hold" | "na" } {
+  const pair = String(row.pair || "").toUpperCase();
+  const signal = String(row.signal || "").toUpperCase();
+  const raw = String(row.raw_signal || "").toUpperCase();
+  const status = String(row.status || "").toLowerCase();
+  const confBit = confPctLabel(row.confidence ?? null);
+  const pinSkip =
+    pair === "BTCUSD" ||
+    status === "need_train" ||
+    status === "untrained" ||
+    status === "need_fetch" ||
+    status === "missing";
+  const side = signal === "BUY" || signal === "SELL" ? signal : raw === "BUY" || raw === "SELL" ? raw : "";
+
+  if (pinSkip || !side) {
+    return { label: `DONT-TRADE (${confBit} Conf)`, detail: null, tone: "na" };
+  }
+
+  const band = parseResearchBand(row.rationale);
+  const open = row.last != null && Number.isFinite(row.last) ? row.last : null;
+  let close: number | null = row.target != null && Number.isFinite(row.target) ? row.target : null;
+  let stop: number | null = row.stop != null && Number.isFinite(row.stop) ? row.stop : null;
+  if (close == null || stop == null) {
+    if (side === "BUY") {
+      if (close == null) close = band.upper;
+      if (stop == null) stop = band.lower;
+    } else {
+      if (close == null) close = band.lower;
+      if (stop == null) stop = band.upper;
+    }
+  }
+
+  if (pair.startsWith("BTC") && open != null && open < 1000) {
+    return { label: `DONT-TRADE (${confBit} Conf)`, detail: "bad price scale", tone: "na" };
+  }
+
+  const openTxt = fmtPx(pair, open, row.last_text);
+  const closeTxt = fmtPx(pair, close, row.target_text);
+  const stopTxt = fmtPx(pair, stop, row.stop_text ?? null);
+  const label = `${side === "BUY" ? "BUY-HOLD" : "SELL-HOLD"} (${confBit} Conf)`;
+  const detail = `open ${openTxt} · close ${closeTxt} · SL ${stopTxt}`;
+  return { label, detail, tone: side === "BUY" ? "buy" : "sell" };
+}
+
 export function WatchlistModal({
   open,
   onClose,
@@ -234,9 +311,19 @@ function WatchlistPanel({
                 <td colSpan={8} className="last">No pairs — add one. Empty is not a signal.</td>
               </tr>
             )}
-            {rows.map((row) => {
-              const sig = row.signal.toLowerCase();
-              const sigClass = sig === "buy" || sig === "sell" ? sig : sig === "hold" ? "hold" : "na";
+            {[...rows]
+              .sort((a, b) => {
+                const norm = (c: number | null | undefined) => {
+                  if (c == null || !Number.isFinite(c)) return -1;
+                  return c <= 1 ? c : c / 100;
+                };
+                const d = norm(b.confidence) - norm(a.confidence);
+                if (d !== 0) return d;
+                return String(a.pair).localeCompare(String(b.pair));
+              })
+              .map((row) => {
+              const view = watchlistSignalView(row);
+              const sigClass = view.tone;
               const fetched = primaryFetchLabel(row, nowMs);
               const barAge = barAgeLabel(row);
               return (
@@ -259,11 +346,12 @@ function WatchlistPanel({
                     {row.pair === selected ? <span className="wl-active">Active</span> : null}
                   </td>
                   <td><span className="tf-pill">{row.tf}</span></td>
-                  <td>
-                    <span className={`sig ${sigClass}`}>
+                  <td className="wl-signal">
+                    <span className={`sig ${sigClass}`} title={row.gate_reason || row.rationale || undefined}>
                       {sigClass === "buy" || sigClass === "sell" ? <span className="dot" /> : null}
-                      {row.signal}
+                      {view.label}
                     </span>
+                    {view.detail ? <div className="wl-sig-levels">{view.detail}</div> : null}
                   </td>
                   <td className="mono">{row.target_text}</td>
                   <td className="wl-fresh">

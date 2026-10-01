@@ -846,7 +846,7 @@ def _scenario(
     barriers = ""
     if stop is not None and target is not None and not live_signal:
         barriers = (
-            f" Research barriers (not an order): stop {price_text(pair, stop)}"
+            f" Research barriers only (not an order): stop {price_text(pair, stop)}"
             f" / target {price_text(pair, target)}."
         )
     if validity in {VALIDITY_STALE, VALIDITY_MISSING, VALIDITY_ERROR}:
@@ -861,7 +861,12 @@ def _scenario(
         if status == "need_fetch" or status == "need_train":
             return f"If scenario changes: n/a — need Fetch/Train ({interval}).{barriers}"
         if barriers:
-            return f"If scenario changes: n/a — HOLD has no directional call.{barriers}"
+            raw_cls = str(getattr(row, "raw_signal", "") or "").upper()
+            gated = f" Model lean was {raw_cls} but desk call is HOLD." if raw_cls in {"BUY", "SELL"} else ""
+            return (
+                f"Desk HOLD — no directional call.{gated}"
+                f"{barriers} Not a Buy/Sell setup."
+            )
         return "If scenario changes: n/a — no live stop on this bar."
     level = price_text(pair, stop)
     if live_signal == "BUY":
@@ -945,7 +950,8 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
     elif flashed == "HOLD":
         raw_cls = str(getattr(row, "raw_signal", "") or "").upper()
         if raw_cls in {"BUY", "SELL"}:
-            chip = f"{raw_cls} gated → HOLD"
+            # Desk call leads; raw class is gate context (not a live BUY/SELL setup).
+            chip = f"HOLD (gated from {raw_cls})"
             tone = "hold"
         else:
             chip = "HOLD"
@@ -1006,6 +1012,7 @@ def suggestion_from_row(row: Any, cfg: dict[str, Any], *, ohlcv: pd.DataFrame | 
         "raw_signal": None if not getattr(row, "raw_signal", None) else str(row.raw_signal),
         "gate_reason": (str(getattr(row, "gate_reason", "") or "").strip() or None),
         "confidence": _num(getattr(row, "confidence", None)),
+        "levels_role": "live" if signal in {"BUY", "SELL"} else "research",
     }
 
 
@@ -1046,8 +1053,13 @@ def _headline(pair: str, primary: dict[str, Any]) -> tuple[str, str, str]:
     if validity in {VALIDITY_MISSING, VALIDITY_ERROR} or primary.get("status") in {"need_fetch", "need_train"}:
         return "flat", "NO LIVE BIAS", f"{pair} — need Fetch/Train"
     chip = str(primary.get("chip") or "")
-    # True HOLD, or flash gated to HOLD (chip like "SELL gated → HOLD").
-    if chip == "HOLD" or chip.endswith("gated → HOLD") or primary.get("tone") == "hold":
+    # True HOLD, or flash gated to HOLD (chip like "HOLD (gated from SELL)").
+    if (
+        chip == "HOLD"
+        or chip.startswith("HOLD (gated from")
+        or "gated" in chip and "HOLD" in chip
+        or primary.get("tone") == "hold"
+    ):
         return "flat", "HOLD", f"{pair} — no directional call on {tf}"
     return "flat", "NO LIVE BIAS", f"{pair} — no live bias on {tf}"
 
@@ -1147,11 +1159,45 @@ def build_brief(pair: str, tf: str | None = None, cfg: dict[str, Any] | None = N
     except Exception:
         champ_id = "brief"
     champ = champion_view(primary_row, cfg, primary, champ_id)
-    parts = [lean_label(hourly_c if primary_iv != DAILY_INTERVAL else daily_c)]
-    if primary.get("mtf") or getattr(primary_row, "mtf", None) is not None:
-        mtf = getattr(primary_row, "mtf", None)
-        if mtf is not None and getattr(mtf, "status", None):
-            parts.append(f"MTF {mtf.status}")
+    lean = lean_label(hourly_c if primary_iv != DAILY_INTERVAL else daily_c)
+    mtf = getattr(primary_row, "mtf", None)
+    mtf_status = str(getattr(mtf, "status", "") or "").lower() if mtf is not None else ""
+    mtf_note = str(getattr(mtf, "note", "") or "").strip() if mtf is not None else ""
+    gate_reason = str(primary.get("gate_reason") or getattr(primary_row, "gate_reason", "") or "").strip()
+    desk_hold = str(bias).upper() == "HOLD" or str(primary.get("tone") or "") == "hold"
+    parts: list[str] = []
+    if desk_hold:
+        # One desk story: mute/MTF wins; consensus is context, not a co-equal command.
+        why: list[str] = []
+        if mtf_status == "conflict":
+            extra = f" — {mtf_note}" if mtf_note else ""
+            why.append(f"desk call HOLD (MTF conflict wins{extra})")
+        gate_l = gate_reason.lower()
+        if "muted" in gate_l or "weekday" in gate_l:
+            try:
+                from forex_lab.suggestion_chat import prefer_mute_why
+
+                why.append(prefer_mute_why(gate_reason))
+            except Exception:
+                why.append(gate_reason)
+        elif gate_reason and "mtf conflict" not in gate_l:
+            why.append(gate_reason)
+        elif gate_reason and mtf_status != "conflict":
+            why.append(gate_reason)
+        if why:
+            parts.extend(why)
+        else:
+            parts.append("desk call HOLD — no directional flash")
+        if lean and "lean" in lean.lower():
+            parts.append(f"context: {lean} (not the desk call)")
+        elif lean and lean.upper() not in {"", "MISSING", "N/A", "—", "-"}:
+            parts.append(f"context: {lean}")
+        if mtf_status and mtf_status != "conflict":
+            parts.append(f"MTF {mtf_status}")
+    else:
+        parts.append(lean)
+        if mtf is not None and mtf_status:
+            parts.append(f"MTF {mtf_status}")
     atr = primary.get("atr_pips")
     if isinstance(atr, (int, float)):
         parts.append(f"ATR 14 ≈ {atr:.0f} pips")

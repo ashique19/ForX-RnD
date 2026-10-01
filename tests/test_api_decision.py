@@ -924,3 +924,43 @@ def test_model_status_missing_joblib_needs_train(client: TestClient, monkeypatch
 
     bad = client.get("/model/status/EUR")
     assert bad.status_code == 400
+
+
+def test_gated_hold_chip_leads_with_hold_and_research_levels():
+    from types import SimpleNamespace
+
+    from api.deskdata import suggestion_from_row
+    from forex_lab.data import generate_synthetic_ohlcv
+
+    df = generate_synthetic_ohlcv(bars=80, seed=2)
+    close = float(df["Close"].iloc[-1])
+    cfg = {
+        "label_scheme": "triple_barrier",
+        "horizon": 8,
+        "atr_period": 14,
+        "barrier": {"tp_atr": 2.0, "sl_atr": 2.0},
+        "entry_timing": "next_open",
+        "spread_pips": 1.0,
+    }
+    row = SimpleNamespace(
+        pair="NZDUSD",
+        timeframe="1h",
+        validity="OK",
+        buy_sell="HOLD",
+        raw_signal="BUY",
+        close=close,
+        status="ready",
+        rationale="",
+        signal_details="",
+        risk=None,
+        quote=None,
+        gate_reason="MTF conflict (4h down vs BUY)",
+        confidence=0.75,
+    )
+    sug = suggestion_from_row(row, cfg, ohlcv=df)
+    assert sug["signal"] is None
+    assert sug["chip"] == "HOLD (gated from BUY)"
+    assert sug["levels_role"] == "research"
+    assert "Desk HOLD" in sug["scenario"]
+    assert "Not a Buy/Sell setup" in sug["scenario"]
+    assert "not an order" in sug["scenario"].lower()

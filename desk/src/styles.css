@@ -781,7 +781,8 @@
       align-items: center;
       gap: 8px;
       padding: 6px 12px 4px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      min-width: 0;
     }
     .tf-chips {
       display: flex;
@@ -832,7 +833,7 @@
       box-shadow: 0 1px 2px rgba(0,0,0,.15);
     }
     .ohlc {
-      margin-left: auto;
+      margin-left: 0;
       display: flex;
       gap: 12px;
       font-family: var(--mono);
@@ -2676,11 +2677,63 @@
       font-size: 12px;
       line-height: 1;
     }
+    /* Keep the chart controls and collapsed signal brief in one compact strip. */
+    .chart-toolbar-brief {
+      display: flex;
+      align-items: center;
+      flex: 1 1 360px;
+      min-width: 0;
+    }
+    .chart-toolbar-brief > .brief {
+      width: auto;
+      min-width: 0;
+      flex: 1 1 auto;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      background: transparent;
+      overflow: visible;
+    }
+    .chart-toolbar-brief .brief-toolbar .panel-hd {
+      min-height: 28px;
+      padding: 0;
+      gap: 8px;
+      border-bottom: 0;
+    }
+    .chart-toolbar-brief .brief-toolbar h2.brief-pair {
+      max-width: min(220px, 30vw);
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-2);
+    }
+    .chart-toolbar-brief .brief-toolbar .brief-metrics {
+      gap: 8px;
+    }
+    .chart-toolbar-brief .brief-toolbar .brief-toggle {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      justify-content: center;
+    }
+    .chart-toolbar .ohlc {
+      flex: 0 1 auto;
+      white-space: nowrap;
+    }
+
     .chart-toolbar-extra {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       flex: 0 0 auto;
+    }
+    @media (max-width: 720px) {
+      .chart-toolbar {
+        flex-wrap: wrap;
+      }
+      .chart-toolbar-brief {
+        flex-basis: 100%;
+      }
     }
     .chart-toolbar .replay-launch.compact,
     .chart-toolbar-extra .replay-launch.compact {
@@ -2823,4 +2876,179 @@ html, body, #root, .shell, .app {
 .desk-bar.desk-bar-slim .replay-strip-hd .spacer {
   flex: 1 1 0;
   min-width: 4px;
+}
+
+/* watchlist-signal-meaningful 2026-10-01 */
+.watchlist .wl-signal {
+  min-width: 11rem;
+  max-width: 16rem;
+}
+.watchlist .wl-sig-levels {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
+.watchlist .sig.na {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+/* topnav-watchlist-model 2026-10-01 */
+.desk-bar.desk-bar-replay-only {
+  min-height: 0;
+}
+.desk-bar.desk-bar-replay-only:empty {
+  display: none;
+}
+.modal-dialog.model-dialog {
+  width: min(720px, 94vw);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+  padding: 12px 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  position: relative;
+  z-index: 60;
+}
+.model-panel-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.model-panel-hd h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+}
+.modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+}
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(16, 24, 40, 0.45);
+  cursor: pointer;
+}
+
+/* model-panel-scoreboard 2026-10-01 */
+.model-panel-scoreboard {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.model-panel-scoreboard .replay-strip {
+  flex: none !important;
+  width: 100%;
+  max-width: 100%;
+}
+.model-dialog .replay-strip-hd {
+  flex-wrap: wrap;
+}
+
+/* Model modal layout fix: keep the dialog self-contained and let the scoreboard scroll. */
+.modal-root {
+  z-index: 300;
+  box-sizing: border-box;
+  padding: 16px;
+  overflow: hidden;
+}
+.modal-dialog.model-dialog {
+  box-sizing: border-box;
+  width: min(720px, 100%);
+  max-width: 100%;
+  max-height: min(calc(100vh - 32px), 720px);
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-dialog.model-dialog > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.model-dialog .model-panel-hd {
+  flex: 0 0 auto;
+}
+.model-dialog .model-build.in-modal {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  overflow: visible;
+  padding: 8px;
+}
+.model-dialog .model-build.in-modal .reason {
+  display: block;
+  flex: 1 1 100%;
+  order: 5;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.35;
+}
+.model-dialog .model-build.in-modal .model-retrain {
+  order: 6;
+  margin-left: 0;
+}
+.model-dialog .model-panel-scoreboard {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.model-dialog .model-panel-scoreboard .replay-strip {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+  box-shadow: none;
+}
+.model-dialog .model-panel-scoreboard .replay-strip-hd {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.model-dialog .model-panel-scoreboard .replay-strip-hd .spacer {
+  flex: 1 1 8px;
+  min-width: 8px;
+}
+.model-dialog .model-panel-scoreboard .replay-strip-hd strong,
+.model-dialog .model-panel-scoreboard .replay-when,
+.model-dialog .model-panel-scoreboard .score-verdict {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.model-dialog .model-panel-scoreboard .replay-advisory,
+.model-dialog .model-panel-scoreboard .score-reasons,
+.model-dialog .model-panel-scoreboard .replay-msg {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.model-dialog .model-panel-scoreboard .score-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.model-dialog .model-panel-scoreboard table.score {
+  min-width: 620px;
 }

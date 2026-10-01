@@ -12,15 +12,15 @@ test("collapsed title is pair, side, and integer confidence", () => {
 test("gated HOLD exposes raw BUY/SELL class", () => {
   assert.equal(
     collapsedBriefTitle("EURUSD", "HOLD", 0.38, "SELL"),
-    "EURUSD (SELL 38% gated → HOLD)",
+    "EURUSD (HOLD · gated from SELL 38%)",
   );
   assert.equal(
     collapsedBriefTitle("EURUSD", "HOLD", 0.42, "BUY"),
-    "EURUSD (BUY 42% gated → HOLD)",
+    "EURUSD (HOLD · gated from BUY 42%)",
   );
   assert.equal(
     collapsedBriefTitle("EURUSD", "HOLD", null, "SELL"),
-    "EURUSD (SELL gated → HOLD)",
+    "EURUSD (HOLD · gated from SELL)",
   );
   // Ungated: raw matches bias side — keep the clean form.
   assert.equal(

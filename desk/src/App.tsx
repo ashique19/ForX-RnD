@@ -103,8 +103,8 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
-  const [modelStripDismissed, setModelStripDismissed] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const RAIL_KEY = "forx.decision.assistantRailWidth";
   const RAIL_MIN = 280;
   const RAIL_MAX = 560;
@@ -547,11 +547,46 @@ export function App() {
     [],
   );
 
+  const signalBrief = (
+                <SignalBrief
+                  pair={brief?.pair ?? selected}
+                  bias={brief?.bias ?? "—"}
+                  confidence={brief?.confidence ?? null}
+                  rawSignal={brief?.raw_signal ?? null}
+                  biasTone={brief?.bias_tone ?? "flat"}
+                  headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
+                  sub={brief?.sub ?? "Asia/Dhaka · research desk"}
+                  hourly={brief?.hourly ?? null}
+                  daily={brief?.daily ?? null}
+                  consensus={brief?.consensus ?? null}
+                  paper={brief?.paper ?? null}
+                  toast={paperToast}
+                  chartInterval={chartTf}
+                  compact
+                  nextEvent={brief?.next_event ?? null}
+                  calendarNote={brief?.calendar_note ?? null}
+                  calendarStale={Boolean(brief?.calendar_stale)}
+                  advice={brief?.advice ?? []}
+                  briefReady={brief != null}
+                  onRefresh={() => void refreshData(true)}
+                  onOrder={async (side, size) => {
+                    const result = await api.paperOrder(selected, side, size, rowTf);
+                    setPaperToast(result.message);
+                    setTick((n) => n + 1);
+                  }}
+                  busy={manualBusy}
+                />
+  );
+
   return (
     <>
       <TopNav
         mode={mode}
         onMode={setMode}
+        onWatchlist={() => setWatchlistOpen(true)}
+        watchlistOpen={watchlistOpen}
+        onModel={() => setModelPanelOpen(true)}
+        modelOpen={modelPanelOpen}
         status={
           mode === "decision" ? (
             <>
@@ -586,31 +621,6 @@ export function App() {
         ) : (
           <>
             <ReplayProvider pair={selected} interval={rowTf}>
-            <div className="desk-bar desk-bar-slim">
-              <button
-                ref={watchlistButtonRef}
-                className={selected ? "btn watchlist-launch is-active" : "btn watchlist-launch"}
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded={watchlistOpen}
-                aria-controls="watchlist-dialog"
-                aria-label={selected ? `Open watchlist. Active pair is ${selected}` : "Open watchlist"}
-                onClick={() => setWatchlistOpen(true)}
-              >
-                {selected ? selected : "Pairs"}
-              </button>
-              {modelStripDismissed ? null : (
-                <ModelBuildStrip
-                  pair={selected}
-                  build={modelBuild}
-                  busy={retrainBusy}
-                  gateNote={gateNote}
-                  onRetrain={runRetrainGate}
-                  onDismiss={() => setModelStripDismissed(true)}
-                />
-              )}
-              <LastReplayStrip compact />
-            </div>
             {offline ? (
               <div className="alerts bad api-down">
                 <span className="tag">{offlineTag}</span>
@@ -666,33 +676,6 @@ export function App() {
                     setTick((n) => n + 1);
                   }}
                 />
-                <SignalBrief
-                  pair={brief?.pair ?? selected}
-                  bias={brief?.bias ?? "—"}
-                  confidence={brief?.confidence ?? null}
-                  rawSignal={brief?.raw_signal ?? null}
-                  biasTone={brief?.bias_tone ?? "flat"}
-                  headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
-                  sub={brief?.sub ?? "Asia/Dhaka · research desk"}
-                  hourly={brief?.hourly ?? null}
-                  daily={brief?.daily ?? null}
-                  consensus={brief?.consensus ?? null}
-                  paper={brief?.paper ?? null}
-                  toast={paperToast}
-                  chartInterval={chartTf}
-                  nextEvent={brief?.next_event ?? null}
-                  calendarNote={brief?.calendar_note ?? null}
-                  calendarStale={Boolean(brief?.calendar_stale)}
-                  advice={brief?.advice ?? []}
-                  briefReady={brief != null}
-                  onRefresh={() => void refreshData(true)}
-                  onOrder={async (side, size) => {
-                    const result = await api.paperOrder(selected, side, size, rowTf);
-                    setPaperToast(result.message);
-                    setTick((n) => n + 1);
-                  }}
-                  busy={manualBusy}
-                />
               </aside>
               <div
                 className="assistant-resizer"
@@ -736,9 +719,50 @@ export function App() {
                   refreshKey={tick}
                   onPositionsChanged={() => setTick((n) => n + 1)}
                   toolbarExtra={<ReplayTrainButton compact />}
+                  toolbarBrief={signalBrief}
                 />
               </div>
             </div>
+            {modelPanelOpen ? (
+              <div className="modal-root" role="presentation">
+                <button
+                  className="modal-backdrop"
+                  type="button"
+                  aria-label="Close model panel"
+                  onClick={() => setModelPanelOpen(false)}
+                />
+                <div
+                  className="modal-dialog model-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="model-panel-heading"
+                >
+                  <div className="model-panel-hd">
+                    <h2 id="model-panel-heading">Model</h2>
+                    <button
+                      className="btn sm icon modal-close"
+                      type="button"
+                      aria-label="Close model"
+                      onClick={() => setModelPanelOpen(false)}
+                    >
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </div>
+                  <ModelBuildStrip
+                    pair={selected}
+                    build={modelBuild}
+                    busy={retrainBusy}
+                    gateNote={gateNote}
+                    onRetrain={runRetrainGate}
+                    onDismiss={() => setModelPanelOpen(false)}
+                    modal
+                  />
+                  <div className="model-panel-scoreboard">
+                    <LastReplayStrip compact modelPanel />
+                  </div>
+                </div>
+              </div>
+            ) : null}
             </ReplayProvider>
             <WatchlistModal
               open={watchlistOpen}

@@ -31,6 +31,9 @@ export interface BoardRow {
   gate_reason?: string | null;
   target: number | null;
   target_text: string;
+  stop?: number | null;
+  stop_text?: string | null;
+  confidence?: number | null;
   last: number | null;
   last_text: string;
   validity: string;
@@ -195,6 +198,8 @@ export interface Suggestion {
   raw_signal?: string | null;
   /** Why flash was gated to HOLD (min_confidence / MTF / event). */
   gate_reason?: string | null;
+  /** live = directional setup levels; research = HOLD/gated barriers (not an order). */
+  levels_role?: "live" | "research";
   /** Tighter research SL from advise.py when an open paper position meets a high-impact window. */
   event_stop?: number | null;
   event_stop_text?: string;

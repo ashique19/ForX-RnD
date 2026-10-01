@@ -30,11 +30,19 @@ export function TopNav({
   mode,
   onMode,
   status,
+  onWatchlist,
+  watchlistOpen,
+  onModel,
+  modelOpen,
 }: {
   mode: Mode;
   onMode: (mode: Mode) => void;
   /** Compact Decision status (pair · live · 5s, optional model age). */
   status?: ReactNode;
+  onWatchlist?: () => void;
+  watchlistOpen?: boolean;
+  onModel?: () => void;
+  modelOpen?: boolean;
 }) {
   const [clock, setClock] = useState(() => formatDhaka(new Date()));
   useEffect(() => {
@@ -69,6 +77,34 @@ export function TopNav({
             <span className="mode-short">{item.short || item.label}</span>
           </button>
         ))}
+        {onWatchlist ? (
+          <button
+            className={watchlistOpen ? "mode active" : "mode"}
+            type="button"
+            title="Watchlist"
+            aria-label="Watchlist"
+            aria-haspopup="dialog"
+            aria-expanded={Boolean(watchlistOpen)}
+            onClick={onWatchlist}
+          >
+            <span className="mode-full">Watchlist</span>
+            <span className="mode-short">WL</span>
+          </button>
+        ) : null}
+        {onModel ? (
+          <button
+            className={modelOpen ? "mode active" : "mode"}
+            type="button"
+            title="Model"
+            aria-label="Model"
+            aria-haspopup="dialog"
+            aria-expanded={Boolean(modelOpen)}
+            onClick={onModel}
+          >
+            <span className="mode-full">Model</span>
+            <span className="mode-short">Model</span>
+          </button>
+        ) : null}
       </nav>
       {status ? (
         <div className="nav-status" aria-label="Active data status">

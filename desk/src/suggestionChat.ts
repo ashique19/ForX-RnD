@@ -154,6 +154,12 @@ function belowMinConf(gate: string): boolean {
     || lower.includes("below min confidence");
 }
 
+
+function mtfConflict(gate: string): boolean {
+  const g = (gate || "").toLowerCase();
+  return g.includes("mtf conflict") || (g.includes("mtf") && g.includes("conflict"));
+}
+
 function fingerprintStableBody(kind: string, body: string, gate = ""): string {
   if (kind !== "window_gone" && kind !== "open_window") return body.trim();
   let stable = body.replace(/conf=\d+(?:\.\d+)?\s*<\s*min\s*\d+(?:\.\d+)?\s*\|?\s*/g, "");
@@ -269,10 +275,14 @@ export function formatBoardChatLine(
   } else if ((raw === "BUY" || raw === "SELL") && (signal === "HOLD" || !signal || gate)) {
     const why = gate ? preferMuteWhy(gate) : "gated to HOLD";
     const muted = why.toLowerCase().includes("muted ") || why.toLowerCase().includes("weekday gate");
+    const mtfBlocked = mtfConflict(why) || mtfConflict(gate);
     const pxTxt = last != null && Number.isFinite(last) ? px(pair, last) : "-";
     const hasTarget = target != null && Number.isFinite(target);
     const hasStop = stop != null && Number.isFinite(stop);
-    if (muted || belowMinConf(gate)) {
+    if (mtfBlocked) {
+      kind = "window_gone";
+      body = `${pair}: desk HOLD — MTF conflict wins over model ${raw} (${why}). Don't ${raw.toLowerCase()} now. No actionable target/stop while gated.`;
+    } else if (muted || belowMinConf(gate)) {
       kind = "open_window";
       const confBit = conf || "n/a";
       const label = muted ? "advisory" : "lean";

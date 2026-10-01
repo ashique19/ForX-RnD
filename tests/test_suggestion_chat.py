@@ -489,3 +489,25 @@ def test_desk_call_open_window_when_mute_lifts():
     assert call["pair"] == "EURUSD"
     assert call.get("paper_action", {}).get("side") == "BUY"
     assert "open window" in call["headline"].lower() or "window" in call["headline"].lower()
+
+
+def test_mtf_conflict_is_window_gone_not_buy_advisory():
+    line = format_board_line(
+        {
+            "pair": "NZDUSD",
+            "signal": "HOLD",
+            "raw_signal": "BUY",
+            "gate_reason": "MTF conflict (4h down vs BUY) | muted Thu (UTC weekday gate)",
+            "last": 0.58012,
+            "confidence": 0.75,
+            "stop": 0.578,
+            "target": 0.583,
+        },
+        active="NZDUSD",
+    )
+    assert line is not None
+    assert line["kind"] == "window_gone"
+    assert "desk HOLD" in line["text"]
+    assert "MTF conflict" in line["text"]
+    assert "Buy and hold" not in line["text"]
+    assert line.get("muted_advisory") in (None, False)

@@ -89,6 +89,7 @@ export function ChartPanel({
   refreshKey = 0,
   onPositionsChanged,
   toolbarExtra,
+  toolbarBrief,
 }: {
   pair: string;
   interval: string;
@@ -105,6 +106,8 @@ export function ChartPanel({
   onPositionsChanged?: () => void;
   /** Slim tools (e.g. Replay) live in chart toolbar, not a full desk-bar row. */
   toolbarExtra?: ReactNode;
+  /** Collapsed signal brief rendered in the compact chart toolbar strip. */
+  toolbarBrief?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const area = useRef<HTMLDivElement | null>(null);
@@ -271,6 +274,7 @@ export function ChartPanel({
             </span>
           </div>
         )}
+        {toolbarBrief ? <div className="chart-toolbar-brief">{toolbarBrief}</div> : null}
       </div>
       <div className="ind-toolbar" role="group" aria-label="Indicators">
         {TOGGLE_DEFS.map((item) => {
