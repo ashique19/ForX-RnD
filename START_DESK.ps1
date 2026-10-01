@@ -225,9 +225,32 @@ if (Test-Path $viteCache) {
 # Tip Volume self-heal (fail-soft): refill Volume=0 tip bars before API serves charts.
 # Never blocks desk start; never promote; never change gates/min_conf.
 try {
-    Write-DeskLog 'tip_vol_heal: starting (Active+watchlist tip zeros)'
-    $healOut = & $Python -c "from forex_lab.tip_vol_heal import heal_watchlist_tip_volumes, format_heal_log_line; s=heal_watchlist_tip_volumes(tip_bars=200, duka_lookback_hours=48, use_dukascopy=True, write=True, max_pairs=4); print(format_heal_log_line(s))" 2>&1
-    foreach ($line in @($healOut)) { Write-DeskLog ([string]$line) }
+    # Hard wall-clock cap: Dukascopy bi5 uses non-daemon pool threads inside
+    # history.py; killing this heal process is the reliable START_DESK unblock.
+    Write-DeskLog 'tip_vol_heal: starting Active-only Duka, 45s hard budget'
+    $healScript = Join-Path $Root 'scripts\tip_vol_heal_boot.py'
+    $healOutFile = Join-Path $Root 'data\_tip_vol_heal_boot.out'
+    $healErrFile = Join-Path $Root 'data\_tip_vol_heal_boot.err'
+    '' | Set-Content -Path $healOutFile -Encoding UTF8
+    '' | Set-Content -Path $healErrFile -Encoding UTF8
+    $healProc = Start-Process -FilePath $Python -ArgumentList @($healScript) -WorkingDirectory $Root `
+        -RedirectStandardOutput $healOutFile -RedirectStandardError $healErrFile -PassThru -WindowStyle Hidden
+    if (-not $healProc.WaitForExit(45000)) {
+        Write-DeskLog 'tip_vol_heal: hard budget exceeded - killing heal process fail-soft'
+        try { Stop-Process -Id $healProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+        Start-Sleep -Milliseconds 400
+        try { if (-not $healProc.HasExited) { $healProc.Kill() } } catch {}
+        Write-DeskLog 'tip_vol_heal_boot_skip: budget_kill'
+    } else {
+        foreach ($line in @(Get-Content -Path $healOutFile -ErrorAction SilentlyContinue)) {
+            if ($line) { Write-DeskLog ([string]$line) }
+        }
+        $errTail = @(Get-Content -Path $healErrFile -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | '
+        if ($errTail) { Write-DeskLog ('tip_vol_heal_stderr: ' + $errTail) }
+        if ($null -ne $healProc.ExitCode -and $healProc.ExitCode -ne 0) {
+            Write-DeskLog ('tip_vol_heal_boot_skip: exit=' + $healProc.ExitCode)
+        }
+    }
 } catch {
     Write-DeskLog ('tip_vol_heal_boot_skip: ' + $_.Exception.Message)
 }

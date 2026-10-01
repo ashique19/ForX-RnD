@@ -1,11 +1,16 @@
-﻿"""Boot-time tip Volume self-heal for Decision desk live caches.
+"""Boot-time tip Volume self-heal for Decision desk live caches.
 
 Idempotent: only fills Volume where live<=0 and a donor has Volume>0.
 Never changes OHLC on existing bars. Never promotes / never touches gates.
 Fail-soft: callers must catch exceptions and continue desk start.
+
+Boot path (START_DESK) must stay fast: skip Dukascopy when history already
+cleared tip zeros; cap Duka to Active (duka_max_pairs); honor budget_sec.
 """
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -84,6 +89,11 @@ def _watchlist_pairs(cfg: dict[str, Any]) -> list[str]:
     return pairs
 
 
+def _tip_zero_count(frame: pd.DataFrame, tip_n: int) -> int:
+    vol = pd.to_numeric(frame["Volume"], errors="coerce").fillna(0.0)
+    return int((vol.tail(max(8, int(tip_n))) <= 0).sum())
+
+
 def _coalesce_volume_only(base: pd.DataFrame, donor: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     if base is None or base.empty:
         if donor is None or donor.empty:
@@ -108,6 +118,50 @@ def _coalesce_volume_only(base: pd.DataFrame, donor: pd.DataFrame) -> tuple[pd.D
     return out[REQUIRED_COLS], n
 
 
+def _fetch_duka_budgeted(
+    pair: str,
+    *,
+    lookback_hours: int,
+    timeout_sec: float | None,
+) -> tuple[pd.DataFrame | None, str | None]:
+    """Fetch Dukascopy recent bars; fail-soft on timeout/error.
+
+    timeout_sec caps wall time for this pair's Duka work so START_DESK never
+    sits minutes on a stuck bi5 download. Uses a daemon thread so the heal
+    process can exit on timeout without joining the orphan download.
+    """
+    kwargs = {
+        "lookback_hours": max(8, int(lookback_hours)),
+        "grain": "1h",
+    }
+    if timeout_sec is None or timeout_sec <= 0:
+        try:
+            return fetch_dukascopy_recent_bars(pair, **kwargs), None
+        except Exception as exc:
+            return None, f"dukascopy_error:{exc}"
+
+    box: list[tuple[str, Any]] = []
+
+    def _run() -> None:
+        try:
+            box.append(("ok", fetch_dukascopy_recent_bars(pair, **kwargs)))
+        except Exception as exc:  # noqa: BLE001 - fail-soft to caller
+            box.append(("err", exc))
+
+    th = threading.Thread(target=_run, name=f"duka-tip-heal-{pair}", daemon=True)
+    th.start()
+    th.join(timeout=float(timeout_sec))
+    if th.is_alive():
+        return None, "dukascopy_timeout"
+    if not box:
+        return None, "dukascopy:empty"
+    kind, payload = box[0]
+    if kind == "err":
+        return None, f"dukascopy_error:{payload}"
+    return payload, None  # type: ignore[return-value]
+
+
+
 def heal_pair_tip_volume(
     pair: str,
     cfg: dict[str, Any] | None = None,
@@ -116,11 +170,13 @@ def heal_pair_tip_volume(
     duka_lookback_hours: int = 72,
     use_dukascopy: bool = True,
     write: bool = True,
+    duka_deadline: float | None = None,
 ) -> TipVolHealResult:
     """Refill zero/blank Volume on recent tip bars for one pair.
 
     Order: history same-ts positive Volume, then Dukascopy recent (optional).
-    OHLC on existing timestamps is preserved.
+    Skip Dukascopy when history already cleared tip zeros, or when duka_deadline
+    (time.monotonic) has passed. OHLC on existing timestamps is preserved.
     """
     cfg = cfg or load_config()
     pair_u = str(pair).upper().replace("/", "")
@@ -134,10 +190,8 @@ def heal_pair_tip_volume(
         result.skipped = "no_live_cache"
         return result
     live = _normalize_ohlcv(live)
-    vol = pd.to_numeric(live["Volume"], errors="coerce").fillna(0.0)
     tip_n = max(8, int(tip_bars))
-    tip_slice = vol.tail(tip_n)
-    result.tip_zeros_before = int((tip_slice <= 0).sum())
+    result.tip_zeros_before = _tip_zero_count(live, tip_n)
     if result.tip_zeros_before == 0:
         result.skipped = "tip_already_positive"
         result.tip_zeros_after = 0
@@ -146,7 +200,7 @@ def heal_pair_tip_volume(
     merged = live
     total = 0
 
-    # History donor
+    # History donor (cheap local CSV — always try first)
     try:
         hist = load_history_csv(history_path(pair_u, "1h", cfg))
         if hist is not None and not hist.empty:
@@ -157,29 +211,46 @@ def heal_pair_tip_volume(
     except Exception as exc:
         result.sources.append(f"history_error:{exc}")
 
-    # Dukascopy donor (tip remesh / tick volume)
-    if use_dukascopy:
-        try:
-            duka = fetch_dukascopy_recent_bars(
-                pair_u, lookback_hours=max(8, int(duka_lookback_hours)), grain="1h"
-            )
-            if duka is not None and not duka.empty:
+    zeros_after_hist = _tip_zero_count(merged, tip_n)
+    run_duka = bool(use_dukascopy)
+    if run_duka and zeros_after_hist == 0:
+        result.sources.append("duka_skipped:hist_enough")
+        run_duka = False
+    elif run_duka and duka_deadline is not None and time.monotonic() >= float(duka_deadline):
+        result.sources.append("duka_skipped:budget")
+        run_duka = False
+
+    # Dukascopy donor (tip remesh / tick volume) — budgeted
+    if run_duka:
+        remaining = None
+        if duka_deadline is not None:
+            remaining = max(0.5, float(duka_deadline) - time.monotonic())
+        duka, err = _fetch_duka_budgeted(
+            pair_u, lookback_hours=duka_lookback_hours, timeout_sec=remaining
+        )
+        if err:
+            result.sources.append(err)
+        elif duka is not None and not duka.empty:
+            try:
                 duka = _normalize_ohlcv(duka[REQUIRED_COLS])
                 merged, n = _coalesce_volume_only(merged, duka)
                 if n:
                     total += n
                     result.sources.append(f"dukascopy:{n}")
-                if write:
+                else:
+                    result.sources.append("dukascopy:0")
+                if write and n:
                     try:
                         write_cache_source(pair_u, cfg, "1h", SOURCE_DUKASCOPY)
                     except Exception:
                         pass
-        except Exception as exc:
-            result.sources.append(f"dukascopy_error:{exc}")
+            except Exception as exc:
+                result.sources.append(f"dukascopy_error:{exc}")
+        else:
+            result.sources.append("dukascopy:empty")
 
     result.healed_bars = total
-    vol_after = pd.to_numeric(merged["Volume"], errors="coerce").fillna(0.0)
-    result.tip_zeros_after = int((vol_after.tail(tip_n) <= 0).sum())
+    result.tip_zeros_after = _tip_zero_count(merged, tip_n)
 
     if write and total > 0:
         live_path = data_path(pair_u, cfg, "1h")
@@ -196,36 +267,73 @@ def heal_watchlist_tip_volumes(
     use_dukascopy: bool = True,
     write: bool = True,
     max_pairs: int | None = None,
+    duka_max_pairs: int = 1,
+    budget_sec: float | None = 45.0,
 ) -> dict[str, Any]:
-    """Heal Active + watchlist live caches. Fail-soft per pair."""
+    """Heal Active + watchlist live caches. Fail-soft per pair.
+
+    Dukascopy is slow (bi5 downloads). Boot defaults:
+    - duka_max_pairs=1 → only Active (first) may hit Duka after hist
+    - budget_sec=45 → wall-clock cap for all Duka work; remaining pairs hist-only
+    Hist always runs for every pair (cheap, correctness for Volume=0 when donor has data).
+    """
     cfg = cfg or load_config()
     pairs = _watchlist_pairs(cfg)
     if max_pairs is not None:
         pairs = pairs[: max(1, int(max_pairs))]
+    deadline = (
+        time.monotonic() + float(budget_sec)
+        if budget_sec is not None and float(budget_sec) > 0
+        else None
+    )
+    duka_slots = max(0, int(duka_max_pairs)) if use_dukascopy else 0
     results: list[TipVolHealResult] = []
     healed_total = 0
+    duka_used = 0
     for pair in pairs:
         try:
-            # Active first gets Dukascopy; later pairs can skip Duka if slow — still try hist.
-            use_duka = use_dukascopy
+            allow_duka = use_dukascopy and duka_used < duka_slots
+            if allow_duka and deadline is not None and time.monotonic() >= deadline:
+                allow_duka = False
             r = heal_pair_tip_volume(
                 pair,
                 cfg,
                 tip_bars=tip_bars,
                 duka_lookback_hours=duka_lookback_hours,
-                use_dukascopy=use_duka,
+                use_dukascopy=allow_duka,
                 write=write,
+                duka_deadline=deadline if allow_duka else None,
             )
+            # Count a Duka slot only when we actually attempted a download (not hist_enough skip).
+            if allow_duka and any(
+                s.startswith("dukascopy:")
+                or s.startswith("dukascopy_error:")
+                or s == "dukascopy_timeout"
+                for s in r.sources
+            ):
+                duka_used += 1
+            elif allow_duka and any(s.startswith("duka_skipped:") for s in r.sources):
+                # hist_enough / budget skip did not consume network; keep slot for next needy pair
+                pass
+            elif allow_duka and not any(s.startswith("duka_skipped:") for s in r.sources):
+                # attempted path with empty sources is rare; still reserve if tip needed Duka
+                if r.tip_zeros_before and "history:" not in "".join(r.sources):
+                    duka_used += 1
         except Exception as exc:
             r = TipVolHealResult(pair=pair, error=str(exc))
         results.append(r)
         healed_total += int(r.healed_bars or 0)
 
-    return {
+    out: dict[str, Any] = {
         "ok": True,
         "healed_bars": healed_total,
         "pairs": [r.as_dict() for r in results],
+        "duka_used": duka_used,
     }
+    if deadline is not None:
+        out["budget_sec"] = float(budget_sec) if budget_sec is not None else None
+        out["budget_remaining_sec"] = round(max(0.0, deadline - time.monotonic()), 2)
+    return out
 
 
 def format_heal_log_line(summary: dict[str, Any]) -> str:
@@ -233,10 +341,24 @@ def format_heal_log_line(summary: dict[str, Any]) -> str:
     parts = []
     for p in summary.get("pairs") or []:
         if p.get("healed_bars"):
-            parts.append(f"{p.get('pair')}:{p.get('healed_bars')}")
+            z0 = p.get("tip_zeros_before")
+            z1 = p.get("tip_zeros_after")
+            zbit = f" z{z0}->{z1}" if z0 is not None and z1 is not None else ""
+            parts.append(f"{p.get('pair')}:{p.get('healed_bars')}{zbit}")
         elif p.get("skipped"):
             parts.append(f"{p.get('pair')}={p.get('skipped')}")
         elif p.get("error"):
             parts.append(f"{p.get('pair')}=err")
+        else:
+            # Attempted but no fill — show why (sources) so boot log is not opaque "none"
+            src = ",".join(p.get("sources") or []) or "no_donor"
+            z0 = p.get("tip_zeros_before")
+            parts.append(f"{p.get('pair')}=0({src};z{z0})")
     detail = ",".join(parts) if parts else "none"
-    return f"tip_vol_healed {n} bars ({detail})"
+    extra = ""
+    if summary.get("duka_used") is not None:
+        extra += f" duka_used={summary.get('duka_used')}"
+    if summary.get("budget_remaining_sec") is not None:
+        extra += f" budget_left={summary.get('budget_remaining_sec')}s"
+    return f"tip_vol_healed {n} bars ({detail}){extra}"
+
