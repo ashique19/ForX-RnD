@@ -59,3 +59,7 @@ Leave CPU/IO free for weekly retrain ~08:04 Asia/Dhaka.
 - New after-cost TRUST pins: EURJPY 3.037, GBPJPY 2.780, USDCHF 2.601, EURGBP 2.382.
 - XAU/XAG SKIP (Jetta 429 + pip audit needed).
 - Still no promote. Live Active=EURUSD conf 0.60.
+
+## Update ~07:16 Asia/Dhaka
+- Daily PnL corr vs EURUSD low (0.12-0.22) on USDJPY/GBP/AUD/EURJPY/CAD — diversification exists in research books; still not a promote/Active switch.
+- Only EURUSD has PF<1 calendar years among 10 pins.
