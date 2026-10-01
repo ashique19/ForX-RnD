@@ -1,0 +1,23 @@
+﻿# Weekly retrain handoff - 2026-10-01 Asia/Dhaka
+Stop heavy overnight work by **07:40 Asia/Dhaka**. Weekly retrain owns CPU after.
+
+## Safe to leave alone
+- Live Active=EURUSD; min_confidence=**0.60**
+- `replay.meta_label.enabled=false` (FREEZE 3/3)
+- purge_bars=0; size_by_conf.enabled=false; trend_regime.enabled=false
+- portfolio_brain.enabled=false; cross_pair_veto.enabled=false (wired but OFF)
+- Promote=null on all pins; no live champion overwrite from this window
+
+## FREEZEs (do not reopen casually)
+1. measured-intel 3/3
+2. NEW track purge/size 3/3
+3. **meta-label 3/3** (`_META_LABEL_FREEZE_20261001.txt`)
+
+## Pin book standing (research)
+See `_MULTI_PAIR_PIN_SUMMARY_20261001.txt` / `data/pin_scoreboard.json` (10 pairs).
+EURUSD pin `2cee7e71` remains Active reference.
+
+## After retrain
+- Prefer tip remesh when Jetta `/2026/9` returns 200 for synth-tip pairs
+- XAU/XAG only after cool-down + pip audit
+- New edge family needs written hyp + ONE Replay vs pin; no promote without clean dominate
