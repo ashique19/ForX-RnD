@@ -1,0 +1,28 @@
+﻿# Tip-volume Jetta donor handoff - 2026-10-01 22:13 Asia/Dhaka
+
+This is a compact, git-safe record of the tip-volume repair slice. It records volume-only donor work; it is not a promotion or replay result.
+
+## Repairs
+
+| pair | tip200 zero before | tip200 zero after | donor result |
+|---|---:|---:|---|
+| EURUSD | 128 | 2 | Jetta Sep history coalesce 517; heal history 447 + Dukascopy 8 |
+| AUDUSD (Active) | 129 | 10 | Jetta Sep history coalesce 520; heal history 456 + Dukascopy 0 |
+| USDJPY | 152 | 10 | Jetta Sep positive-only donor + history-to-live |
+| NZDUSD | 129 | 10 | Jetta Sep positive-only donor + history-to-live |
+| USDCAD | 132 | 11 | Jetta Sep positive-only donor + history-to-live |
+| EURJPY | 130 | 10 | Jetta Sep positive-only donor + history-to-live |
+| GBPUSD | 200 | 17 | Jetta Sep positive-only donor + history-to-live |
+| EURGBP | 195 | 17 | Jetta Sep positive-only donor + history-to-live |
+| USDCHF | 17 | 17 | already below the repair threshold |
+| GBPJPY | 17 | 17 | already below the repair threshold |
+| BTCUSD | 86 | 86 | no FX Jetta donor and no positive-history donor |
+
+## Residuals and guardrails
+
+- The remaining AUDUSD zeros are the 2026-09-25 21:00 Friday roll plus forming 2026-10-01 bars 07:00-15:00. EURUSD retains the Friday roll and its forming 15:00 bar. Do not synthesize these volumes.
+- Repairs are positive-volume-only and preserve OHLC/BA. Empty October Jetta and an unhealthy recent Dukascopy source remain explicit no-donor cases.
+- Active pair remains AUDUSD. No promote, live-gate, min-confidence, frozen-overlay, or portfolio-brain change was made.
+- Recheck only when October Jetta data or a healthy recent Dukascopy source is available; otherwise let the bounded `START_DESK` heal handle future tips.
+
+Source artifacts: `_AUDUSD_TIP_VOL_JETTA_EXPAND_20261001.json`, `_EURUSD_TIP_VOL_JETTA_EXPAND_20261001.json`, `_TIP_VOL_WATCHLIST_FINAL_20261001.json`, and `_HANDOFF_20261001_TIP_VOL_JETTA_DONOR.txt`.
