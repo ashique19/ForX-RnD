@@ -22,3 +22,9 @@ Enforcing London∩NY entry filter on after-cost full-history Replay will cut As
 ## Acceptance / kill
 - PASS research only if after-cost champion PF beats pin AND DD not worse than pin (same improve spirit). Still NOT promote-ready without user ask.
 - FAIL -> document; leave session_gate yaml as-is for live (live uses signals.sessions=[] so unaffected); consider setting replay.session_gate: off later if overlap hurts.
+
+## Evidence (pin 2cee7e71 champion trades)
+- n=3791; entries in 13-16 UTC overlap: 655 (17.3%)
+- Outside overlap: 3136 (82.7%) — matches hyp root-cause (filter silently skipped)
+- London|NY union 07-21 UTC: 2462 (64.9%)
+- Replay job 76c3d050 started 2026-10-01 ~12:16 Asia/Dhaka (pull=false, min_conf=0.60)
