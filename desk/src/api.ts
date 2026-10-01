@@ -210,6 +210,21 @@ export const api = {
       body: JSON.stringify({ pair }),
     }),
   board: () => request<Board>("/board"),
+  suggestionsBoard: () =>
+    request<{
+      ok?: boolean;
+      lines?: Array<{
+        id: string;
+        pair: string;
+        kind: string;
+        weight: string;
+        text: string;
+        honesty?: string;
+        transition?: string;
+      }>;
+      kinds?: Record<string, string>;
+      honesty?: string;
+    }>("/suggestions/board", { cache: "no-store" }),
   brief: (pair: string, tf?: string) =>
     request<Brief>(`/brief/${encodeURIComponent(pair)}${tf ? `?tf=${encodeURIComponent(tf)}` : ""}`),
   ohlcv: (pair: string, interval: string, bars = 180) =>

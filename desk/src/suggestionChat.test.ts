@@ -29,7 +29,7 @@ describe("suggestionChat", () => {
     const line = formatBoardChatLine(base({ signal: "BUY", target: 1.13454 }), { active: "EURUSD" });
     expect(line?.kind).toBe("open_window");
     expect(line?.text).toContain("open BUY window");
-    expect(line?.text).toContain("not an order");
+    expect(line?.text).toContain("research levels from gates");
   });
 
   it("formats window gone", () => {
@@ -38,10 +38,11 @@ describe("suggestionChat", () => {
     });
     expect(line?.kind).toBe("window_gone");
     expect(line?.text).toContain("Don't buy now");
+    expect(line?.text).toContain("No actionable target/stop while gated");
   });
 
   it("orders active first", () => {
-    const lines = buildClientSuggestionFeed({
+    const { lines } = buildClientSuggestionFeed({
       rows: [base({ pair: "BTCUSD", signal: "HOLD" }), base({ pair: "EURUSD", signal: "HOLD", raw_signal: "SELL", gate_reason: "gate" })],
       active: "EURUSD",
     });
@@ -54,6 +55,7 @@ describe("suggestionChat", () => {
     });
     expect(line?.kind).toBe("status");
     expect(line?.text).toContain("no trained flash yet");
+    expect(line?.text).toContain("watching @");
     expect(line?.text.includes("\u2014")).toBe(false);
   });
 

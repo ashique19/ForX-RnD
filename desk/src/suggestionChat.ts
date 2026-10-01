@@ -14,6 +14,7 @@ export interface SuggestionChatLine {
   text: string;
   atMs?: number;
   honesty?: string;
+  transition?: string;
 }
 
 const PLACEHOLDER = new Set([
@@ -125,23 +126,33 @@ export function formatBoardChatLine(
   } else if (signal === "BUY" || signal === "SELL") {
     kind = "open_window";
     const bits = [`${pair}: open ${signal} window now @ ${px(pair, last)}`];
-    if (target != null && Number.isFinite(target)) bits.push(`target @ ${px(pair, target)}`);
-    if (stop != null && Number.isFinite(stop)) bits.push(`stop/limit @ ${px(pair, stop)}`);
+    const hasTarget = target != null && Number.isFinite(target);
+    const hasStop = stop != null && Number.isFinite(stop);
+    if (hasTarget) bits.push(`target @ ${px(pair, target)}`);
+    if (hasStop) bits.push(`stop/limit @ ${px(pair, stop)}`);
     if (conf) bits.push(`conf ${conf}`);
     body = `${bits[0]}${bits[1] ? ` - ${bits[1]}` : ""}`;
     if (bits.length > 2) body += `, ${bits.slice(2).join(", ")}`;
-    body += " (research, not an order).";
+    body += hasTarget || hasStop
+      ? " (research levels from gates, not broker orders)."
+      : " (research window; target/stop not set by gates yet).";
   } else if ((raw === "BUY" || raw === "SELL") && (signal === "HOLD" || !signal || gate)) {
     kind = "window_gone";
-    body = `${pair}: open window gone. Don't ${raw.toLowerCase()} now - ${gate || "gated to HOLD"}.`;
+    body = `${pair}: open window gone. Don't ${raw.toLowerCase()} now - ${gate || "gated to HOLD"}. No actionable target/stop while gated.`;
   } else if (signal === "HOLD") {
     kind = "hold";
-    body = `${pair}: HOLD - no directional flash right now.`;
+    const holdPx = last != null && Number.isFinite(last) ? px(pair, last) : null;
+    body = holdPx
+      ? `${pair}: HOLD @ ${holdPx} - no directional flash right now.`
+      : `${pair}: HOLD - no directional flash right now.`;
     if (conf) body += ` (conf ${conf})`;
     if (gate) body += ` [${gate}]`;
   } else if (status === "need_train" || status === "untrained") {
     kind = "status";
-    body = `${pair}: quiet - no trained flash yet (Fetch/Train).`;
+    const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
+    body = lastTxt
+      ? `${pair}: watching @ ${lastTxt} - no trained flash yet (Fetch/Train for a model).`
+      : `${pair}: quiet - no trained flash yet (Fetch/Train).`;
   } else if (status === "error" || status === "fail" || status === "failed") {
     kind = "status";
     const detail = cleanGate(String((row as BoardRow & { details?: string }).details || row.validity_reason || "").trim());
@@ -177,7 +188,8 @@ export function buildClientSuggestionFeed(args: {
   brief?: Brief | null;
   openPositions?: PortfolioRow[];
   nowMs?: number;
-}): SuggestionChatLine[] {
+  prevKinds?: Record<string, string>;
+}): { lines: SuggestionChatLine[]; kinds: Record<string, string> } {
   const active = String(args.active || "").toUpperCase() || null;
   const opens = args.openPositions || [];
   const openByPair = new Map(opens.map((p) => [String(p.pair || "").toUpperCase(), p]));
@@ -189,6 +201,8 @@ export function buildClientSuggestionFeed(args: {
   });
   const seen = new Set<string>();
   const out: SuggestionChatLine[] = [];
+  const kinds: Record<string, string> = {};
+  const prior = args.prevKinds || {};
   const nowMs = args.nowMs ?? Date.now();
   for (const row of ordered) {
     const pair = String(row.pair || "").toUpperCase();
@@ -200,9 +214,36 @@ export function buildClientSuggestionFeed(args: {
       rawSignal: pair === active ? args.brief?.raw_signal ?? row.raw_signal ?? null : row.raw_signal ?? null,
       confidence: pair === active ? args.brief?.confidence ?? null : null,
     });
-    if (!line || seen.has(line.id)) continue;
+    if (!line) continue;
+    kinds[pair] = String(line.kind);
+    const prevK = prior[pair] || "";
+    if (prevK && prevK !== line.kind) {
+      // Client-side transition cue (server feed is authoritative when polled).
+      if (prevK === "open_window" && (line.kind === "window_gone" || line.kind === "hold")) {
+        const body =
+          line.kind === "window_gone" && line.text.startsWith(`${pair}: open window gone`)
+            ? line.text.replace(`${pair}: open window gone.`, `${pair}: window just closed.`)
+            : `${pair}: window just closed - back to HOLD (research; no actionable target/stop).`;
+        const tid = fingerprintLine(pair, `transition:${prevK}->${line.kind}`, body);
+        if (!seen.has(tid)) {
+          seen.add(tid);
+          out.push({
+            id: tid,
+            pair,
+            kind: "window_gone",
+            weight: line.weight,
+            text: body,
+            atMs: nowMs,
+            honesty: SUGGESTION_HONESTY,
+            transition: `${prevK}->${line.kind}`,
+          });
+          continue;
+        }
+      }
+    }
+    if (seen.has(line.id)) continue;
     seen.add(line.id);
     out.push({ ...line, atMs: nowMs });
   }
-  return out;
+  return { lines: out, kinds };
 }

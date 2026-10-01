@@ -459,12 +459,17 @@ def create_app() -> FastAPI:
                 }
         except Exception:
             brief_primary = None
+        from forex_lab.suggestion_chat import load_prev_kinds
+
+        prev = load_prev_kinds()
         feed = build_suggestion_feed(
             rows,
             active=str(active) if active else None,
             open_positions=open_positions,
             recent_closed=recent_closed,
             brief_primary=brief_primary,
+            prev_kinds=prev,
+            persist_state=True,
         )
         lines = list(feed.get("lines") or [])
         if since_id:

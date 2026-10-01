@@ -20,7 +20,7 @@ def test_open_buy_window_line():
     assert line["kind"] == "open_window"
     assert "open BUY window" in line["text"]
     assert "1.13276" in line["text"]
-    assert "not an order" in line["text"]
+    assert "research levels from gates" in line["text"]
 
 
 def test_window_gone_gated():
@@ -152,3 +152,99 @@ def test_feed_includes_recent_closed():
     kinds = [x["kind"] for x in feed["lines"]]
     assert "paper_closed" in kinds
     assert feed.get("paper_closed_lines") == 1
+
+
+def test_multi_pair_watching_price():
+    line = format_board_line(
+        {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69555},
+        active="EURUSD",
+    )
+    assert line is not None
+    assert line["kind"] == "status"
+    assert "watching @ 0.69555" in line["text"]
+    assert "Fetch/Train" in line["text"]
+
+
+def test_window_gone_no_actionable_levels():
+    line = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "HOLD",
+            "raw_signal": "SELL",
+            "gate_reason": "conf=0.44 < min 0.60",
+            "last": 1.13,
+        },
+        active="EURUSD",
+    )
+    assert line is not None
+    assert "No actionable target/stop while gated" in line["text"]
+
+
+def test_open_window_levels_honesty():
+    line = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "BUY",
+            "last": 1.13276,
+            "target": 1.13454,
+            "stop": 1.13098,
+            "confidence": 0.72,
+        },
+        active="EURUSD",
+    )
+    assert line is not None
+    assert "research levels from gates" in line["text"]
+
+
+def test_transition_window_just_closed():
+    from forex_lab.suggestion_chat import format_transition_line
+
+    base = format_board_line(
+        {
+            "pair": "EURUSD",
+            "signal": "HOLD",
+            "raw_signal": "BUY",
+            "gate_reason": "weekday_gate",
+            "last": 1.13,
+        },
+        active="EURUSD",
+    )
+    assert base is not None
+    tline = format_transition_line(
+        "EURUSD", prev_kind="open_window", new_kind="window_gone", new_line=base
+    )
+    assert tline is not None
+    assert "window just closed" in tline["text"]
+    assert tline.get("transition") == "open_window->window_gone"
+
+
+def test_feed_persists_kinds(tmp_path):
+    from forex_lab.suggestion_chat import build_suggestion_feed, load_prev_kinds
+
+    state = tmp_path / "state.json"
+    feed = build_suggestion_feed(
+        [{"pair": "EURUSD", "signal": "BUY", "last": 1.13, "target": 1.14, "stop": 1.12}],
+        active="EURUSD",
+        persist_state=True,
+        state_path=state,
+    )
+    assert feed["kinds"]["EURUSD"] == "open_window"
+    assert load_prev_kinds(state)["EURUSD"] == "open_window"
+    feed2 = build_suggestion_feed(
+        [
+            {
+                "pair": "EURUSD",
+                "signal": "HOLD",
+                "raw_signal": "BUY",
+                "gate_reason": "weekday_gate",
+                "last": 1.13,
+            }
+        ],
+        active="EURUSD",
+        prev_kinds=load_prev_kinds(state),
+        persist_state=True,
+        state_path=state,
+    )
+    texts = " ".join(x["text"] for x in feed2["lines"])
+    assert "window just closed" in texts
+

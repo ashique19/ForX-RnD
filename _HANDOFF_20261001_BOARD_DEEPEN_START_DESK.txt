@@ -1,0 +1,37 @@
+﻿# HANDOFF 2026-10-01 ~13:10 Asia/Dhaka - Suggestion Board deepen + START_DESK race
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK; Vite http://127.0.0.1:5173 OK
+- API restarted once for board deepen; vite left alone
+- tip_vol_heal / Jetta Sep 400 / live sessions=[] unchanged; no promote
+- min_conf 0.60; Active EURUSD; frozen overlays OFF
+
+## Shipped this slice (no promote)
+1) **Suggestion Board deepen (decision aid only)**
+   - Multi-pair light: need_train rows speak with last price
+     e.g. "AUDUSD: watching @ 0.69556 - no trained flash yet (Fetch/Train for a model)."
+   - Window-gone honesty: "No actionable target/stop while gated."
+   - Open-window honesty: "research levels from gates, not broker orders."
+   - Window open/gone transitions via prev kinds (data/suggestion_board_state.json + client prevKinds)
+   - UI polls GET /suggestions/board every 20s (paper_closed diary + server transitions)
+2) **START_DESK.ps1 port race fix**
+   - desk_start.lock single-instance mutex
+   - Wait-PortFree after Stop-Port
+   - Already-healthy early exit (pass -Force to recycle)
+   - Soften npm/uvicorn parent HasExited false-fail when port still listening
+   - Smoke: second START_DESK while up -> "Already healthy... Released desk_start.lock"
+
+## Tests
+- pytest tests/test_suggestion_chat.py: 14 passed
+- desk tsc --noEmit clean; vitest suggestionChat: 5 passed
+
+## Skipped
+- vol_scaled_conf strike 2 SKIPPED (same conf-clip / size-curve family; not a new hyp)
+- Frozen OFF unchanged: meta_label, trend_regime, purge, size_by_conf, portfolio_brain, cross_pair
+- session-overlap 76c3d050 research-only; live sessions=[] UNCHANGED
+
+## Next practical
+1) Cheap Train (or model copy) for 1-2 watchlist pairs so light lines become real flashes — still no promote
+2) Portfolio-paper path / journal UX if board quiet
+3) Only write a NEW Replay hyp if genuinely different from conf/size knobs
