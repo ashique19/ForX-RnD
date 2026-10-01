@@ -1,0 +1,6 @@
+﻿# Ops probes - 2026-10-01 ~06:21 Asia/Dhaka
+- Desk `/pins/scoreboard` HTTP 200 (10-row JSON)
+- Live tip refresh 60d: 10 FX pairs OK through 2026-10-01 00:00
+- Tip densify3 applied (Replay SKIP)
+- Jetta XAU still 429 after cool-down
+- CPU reserved at 07:40 for weekly retrain
