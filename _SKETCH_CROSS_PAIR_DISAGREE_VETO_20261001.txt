@@ -32,3 +32,9 @@ When Active=EURUSD is about to open:
 - Blocks paper BUY/SELL only when cross_pair_veto.enabled=true (still **false** in default.yaml)
 - Tests: 	ests/test_paperdesk_cross_pair.py (noop / veto / allow)
 - Still NOT in Replay. Still does NOT enable portfolio_brain.
+
+## Offline co-occurrence (pin books, 2026-10-01 ~06:21 Asia/Dhaka)
+EURUSD champion entries vs same-hour peer champion sides (JPY/GBP/AUD/NZD/CAD):
+- >=2 disagree peers: **172 / 3791 = 4.5%**
+- >=1 disagree: 17.9%; mean disagree 0.24
+See `_CROSS_PAIR_COOCCUR_20261001.txt`. Suggests veto is rare if peers only counted when they also trade that hour — paper week logging still required before enable.
