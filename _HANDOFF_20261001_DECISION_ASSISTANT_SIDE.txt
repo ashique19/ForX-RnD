@@ -1,0 +1,32 @@
+﻿_HANDOFF_20261001_DECISION_ASSISTANT_SIDE.txt
+ForX agent: Decision assistant-first UI (side rail + header compact)
+When: 2026-10-01 ~14:22 Asia/Dhaka
+Machine: DESKTOP-GK9IH4N C:\AI\forex-lab
+Base: 5f51d0d Decision 1h-only + desk_call
+
+Shipped
+1) Click board line / desk_call -> set Active pair + show 1h chart (paper btn stopPropagation).
+2) Decision layout: resizable assistant side rail (Suggestion board + compact SignalBrief) | main = Chart.
+   - drag handle; width persisted localStorage forx.decision.assistantRailWidth (280-560, default 360).
+3) Top nav rethink:
+   - smaller mode buttons (short labels under 1100px).
+   - compact status in header: "EURUSD · live · 5s" (FreshnessStrip) + optional "model 4.2h" chip.
+   - provider/joblib detail on hover; desk-bar no longer carries long Data strip.
+4) Board = trade advisories only:
+   - need_train/untrained omitted from suggestion chat (ModelBuildStrip / header model age own it).
+   - BTCUSD pin-skip honesty kept.
+5) Decision stays 1h-only. No promote / no Replay roulette.
+6) Strategy note: _UI_STRATEGY_DECISION_ASSISTANT_20261001.txt
+
+Verify
+- API /health ok; Vite 5173 200
+- tsc clean; pytest test_suggestion_chat 23 passed; vitest suggestionChat 9 passed
+
+Do next
+- Soft-collapse ModelBuildStrip further (header age enough day-to-day).
+- Fri-prep open_window desk_call when weekday mute lifts.
+- Keyboard j/k board navigation.
+- Avoid Replay roulette / promote.
+
+Desk
+- http://127.0.0.1:5173/  API :8000

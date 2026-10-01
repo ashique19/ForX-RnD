@@ -68,15 +68,13 @@ def test_paper_open_monitoring_includes_pnl():
 
 
 def test_need_train_placeholder_signal():
+    """Model/joblib/retrain copy stays in ModelBuildStrip — not suggestion chat."""
     line = format_board_line(
         {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69},
         active="EURUSD",
     )
-    assert line is not None
-    assert line["kind"] == "status"
-    assert "prices live" in line["text"]
-    assert "no model yet" in line["text"]
-    assert "\u2014" not in line["text"]
+    assert line is None
+
 
 
 def test_gate_separator_cleaned():
@@ -156,16 +154,13 @@ def test_feed_includes_recent_closed():
 
 
 def test_multi_pair_watching_price():
+    """need_train idle pairs are omitted from chat (trade advisories only)."""
     line = format_board_line(
         {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69555},
         active="EURUSD",
     )
-    assert line is not None
-    assert line["kind"] == "status"
-    assert "watching @ 0.69555" in line["text"]
-    assert "prices live" in line["text"]
-    assert "Train" in line["text"]
-    assert "Fetch/Train" not in line["text"]
+    assert line is None
+
 
 
 def test_window_gone_no_actionable_levels():
@@ -252,28 +247,27 @@ def test_feed_persists_kinds(tmp_path):
     assert "window just closed" in texts
 
 def test_need_train_fingerprint_stable_across_price():
+    """need_train rows are omitted from chat (no fingerprint spam / no model copy)."""
     a = format_board_line(
-        {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69555},
+        {"pair": "NZDUSD", "signal": "HOLD", "status": "need_train", "last": 0.61},
         active="EURUSD",
     )
     b = format_board_line(
-        {"pair": "AUDUSD", "signal": "\u2014", "status": "need_train", "last": 0.69610},
+        {"pair": "NZDUSD", "signal": "HOLD", "status": "need_train", "last": 0.62},
         active="EURUSD",
     )
-    assert a is not None and b is not None
-    assert a["id"] == b["id"]
-    assert "0.69555" in a["text"]
-    assert "0.69610" in b["text"]
+    assert a is None and b is None
+
 
 
 def test_need_train_without_price_asks_fetch_then_train():
+    """Untrained without price is also omitted — Fetch/Train UX lives outside chat."""
     line = format_board_line(
-        {"pair": "USDJPY", "signal": "\u2014", "status": "need_train"},
+        {"pair": "AUDUSD", "signal": "HOLD", "status": "need_train", "last": None},
         active="EURUSD",
     )
-    assert line is not None
-    assert "need Fetch for bars" in line["text"]
-    assert "Train" in line["text"]
+    assert line is None
+
 
 
 def test_weekday_mute_clarity_and_stable_fp():

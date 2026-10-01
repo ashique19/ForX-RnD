@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Mode } from "../types";
 
-const MODES: { id: Mode; label: string }[] = [
-  { id: "decision", label: "Decision" },
-  { id: "calendar", label: "Calendar" },
-  { id: "paper", label: "Portfolio" },
+const MODES: { id: Mode; label: string; short?: string }[] = [
+  { id: "decision", label: "Decision", short: "Dec" },
+  { id: "calendar", label: "Calendar", short: "Cal" },
+  { id: "paper", label: "Portfolio", short: "Port" },
   { id: "lab", label: "Lab" },
-  { id: "awareness", label: "Awareness" },
-  { id: "learnings", label: "Learnings" },
+  { id: "awareness", label: "Awareness", short: "Aware" },
+  { id: "learnings", label: "Learnings", short: "Learn" },
 ];
 
 function formatDhaka(now: Date): string {
@@ -16,7 +16,6 @@ function formatDhaka(now: Date): string {
     weekday: "short",
     day: "2-digit",
     month: "short",
-    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -24,10 +23,19 @@ function formatDhaka(now: Date): string {
   });
   const parts = fmt.formatToParts(now);
   const g = (t: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === t)?.value ?? "";
-  return `${g("weekday")} ${g("day")} ${g("month")} ${g("year")} · ${g("hour")}:${g("minute")}:${g("second")}`;
+  return `${g("weekday")} ${g("day")} ${g("month")} ${g("hour")}:${g("minute")}:${g("second")}`;
 }
 
-export function TopNav({ mode, onMode }: { mode: Mode; onMode: (mode: Mode) => void }) {
+export function TopNav({
+  mode,
+  onMode,
+  status,
+}: {
+  mode: Mode;
+  onMode: (mode: Mode) => void;
+  /** Compact Decision status (pair · live · 5s, optional model age). */
+  status?: ReactNode;
+}) {
   const [clock, setClock] = useState(() => formatDhaka(new Date()));
   useEffect(() => {
     const id = window.setInterval(() => setClock(formatDhaka(new Date())), 1000);
@@ -36,7 +44,14 @@ export function TopNav({ mode, onMode }: { mode: Mode; onMode: (mode: Mode) => v
 
   return (
     <header className="topnav">
-      <a className="brand" href="#decision" onClick={(e) => { e.preventDefault(); onMode("decision"); }}>
+      <a
+        className="brand"
+        href="#decision"
+        onClick={(e) => {
+          e.preventDefault();
+          onMode("decision");
+        }}
+      >
         <span className="brand-mark">FX</span>
         ForX
       </a>
@@ -46,21 +61,29 @@ export function TopNav({ mode, onMode }: { mode: Mode; onMode: (mode: Mode) => v
             key={item.id}
             className={item.id === mode ? "mode active" : "mode"}
             type="button"
+            title={item.label}
+            aria-label={item.label}
             onClick={() => onMode(item.id)}
           >
-            {item.label}
+            <span className="mode-full">{item.label}</span>
+            <span className="mode-short">{item.short || item.label}</span>
           </button>
         ))}
       </nav>
+      {status ? (
+        <div className="nav-status" aria-label="Active data status">
+          {status}
+        </div>
+      ) : null}
       <div className="nav-right">
         <div className="clock" title="Asia/Dhaka">
           <span className="dot" aria-hidden="true" />
           <span>{clock}</span>
           <span className="tz">Dhaka</span>
         </div>
-        <div className="user-chip">
+        <div className="user-chip" title="Ashiqul Islam">
           <span className="avatar">AI</span>
-          <span>Ashiqul Islam</span>
+          <span className="user-name">Ashiqul Islam</span>
         </div>
       </div>
     </header>

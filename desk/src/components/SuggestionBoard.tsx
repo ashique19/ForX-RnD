@@ -55,6 +55,7 @@ export function SuggestionBoard({
   idleTrainLabel,
   onPaperOrder,
   paperBusy = false,
+  onOpenPair,
 }: {
   board: Board | null;
   brief: Brief | null;
@@ -69,6 +70,8 @@ export function SuggestionBoard({
   /** Paper journal only — never live. */
   onPaperOrder?: (pair: string, side: string, positionId?: string | null) => Promise<void> | void;
   paperBusy?: boolean;
+  /** Click a board line / desk_call to set Active + show that pair's 1h chart. */
+  onOpenPair?: (pair: string) => void;
 }) {
   const [lines, setLines] = useState<SuggestionChatLine[]>([]);
   const [deskCall, setDeskCall] = useState<DeskCall | null>(null);
@@ -186,6 +189,29 @@ export function SuggestionBoard({
     el.scrollTop = el.scrollHeight;
   }, [lines]);
 
+  // Soft-fail mirror: if suggestions API never delivered desk_call, surface strongest client flash.
+  useEffect(() => {
+    if (deskCall) return;
+    const prefer = snapshot.lines.find(
+      (l) => l.kind === "open_window" || l.kind === "close_hint",
+    );
+    if (!prefer) return;
+    setDeskCall({
+      id: `client-mirror:${prefer.id}`,
+      kind: "desk_call",
+      pair: prefer.pair,
+      source_kind: String(prefer.kind),
+      headline:
+        prefer.kind === "close_hint"
+          ? `${prefer.pair}: close hint (client mirror)`
+          : `${prefer.pair}: open window (client mirror)`,
+      text: prefer.text,
+      actionable: prefer.kind === "open_window" || prefer.kind === "close_hint",
+      paper_action: (prefer as SuggestionChatLine & { paper_action?: PaperAction }).paper_action ?? null,
+      honesty: prefer.honesty || SUGGESTION_HONESTY,
+    });
+  }, [snapshot, deskCall]);
+
   const runPaper = async (action?: PaperAction | null) => {
     if (!action || !onPaperOrder || actionBusy || paperBusy) return;
     const side = String(action.side || "").toUpperCase();
@@ -196,6 +222,15 @@ export function SuggestionBoard({
     } finally {
       setActionBusy(false);
     }
+  };
+
+  const openPair = (raw?: string | null) => {
+    if (!onOpenPair) return;
+    const pair = String(raw || "")
+      .trim()
+      .toUpperCase();
+    if (!pair) return;
+    onOpenPair(pair);
   };
 
   const deskTone =
@@ -245,16 +280,48 @@ export function SuggestionBoard({
       </div>
 
       {deskCall ? (
-        <div className={`sug-desk-call ${deskTone}`} role="status" aria-live="polite">
+        <div
+          className={`sug-desk-call ${deskTone}${deskCall.pair && onOpenPair ? " is-clickable" : ""}${
+            deskCall.pair && String(deskCall.pair).toUpperCase() === String(active || "").toUpperCase()
+              ? " is-active-pair"
+              : ""
+          }`}
+          role={deskCall.pair && onOpenPair ? "button" : "status"}
+          tabIndex={deskCall.pair && onOpenPair ? 0 : undefined}
+          aria-live="polite"
+          title={
+            deskCall.pair && onOpenPair
+              ? `Open ${String(deskCall.pair).toUpperCase()} 1h chart (set Active)`
+              : undefined
+          }
+          onClick={() => {
+            if (deskCall.pair) openPair(deskCall.pair);
+          }}
+          onKeyDown={(ev) => {
+            if (!deskCall.pair || !onOpenPair) return;
+            if (ev.key === "Enter" || ev.key === " ") {
+              ev.preventDefault();
+              openPair(deskCall.pair);
+            }
+          }}
+        >
           <div className="sug-desk-call-hd">
-            <strong>{deskCall.headline}</strong>
+            <strong>
+              {deskCall.pair ? (
+                <span className="sug-pair-chip">{String(deskCall.pair).toUpperCase()}</span>
+              ) : null}
+              {deskCall.headline}
+            </strong>
             {deskCall.paper_action && onPaperOrder && deskCall.actionable ? (
               <button
                 className="btn sm sug-paper-btn"
                 type="button"
                 disabled={actionBusy || paperBusy}
                 title="Paper journal only — never a live order."
-                onClick={() => void runPaper(deskCall.paper_action)}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  void runPaper(deskCall.paper_action);
+                }}
               >
                 {actionBusy || paperBusy
                   ? "Working…"
@@ -277,20 +344,46 @@ export function SuggestionBoard({
               action &&
               (action.can_paper_open || action.can_paper_close) &&
               (line.kind === "open_window" || line.kind === "close_hint");
+            const pair = String(line.pair || "").toUpperCase();
+            const canOpen = Boolean(onOpenPair && pair);
+            const isActivePair = Boolean(pair) && pair === String(active || "").toUpperCase();
             return (
               <div
                 key={line.id + String(line.atMs || "")}
-                className={`suggestion-line ${toneClass(String(line.kind))} ${line.weight}`}
+                className={`suggestion-line ${toneClass(String(line.kind))} ${line.weight}${
+                  canOpen ? " is-clickable" : ""
+                }${isActivePair ? " is-active-pair" : ""}`}
+                role={canOpen ? "button" : undefined}
+                tabIndex={canOpen ? 0 : undefined}
+                title={canOpen ? `Open ${pair} 1h chart (set Active)` : undefined}
+                onClick={() => {
+                  if (canOpen) openPair(pair);
+                }}
+                onKeyDown={(ev) => {
+                  if (!canOpen) return;
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    openPair(pair);
+                  }
+                }}
               >
                 <span className="suggestion-time">{formatClock(line.atMs)}</span>
-                <span className="suggestion-text">{line.text}</span>
+                <span className="suggestion-text">
+                  {pair && !String(line.text || "").toUpperCase().startsWith(pair) ? (
+                    <span className="sug-pair-chip">{pair}</span>
+                  ) : null}
+                  {line.text}
+                </span>
                 {showBtn ? (
                   <button
                     className="btn sm sug-paper-btn"
                     type="button"
                     disabled={actionBusy || paperBusy}
                     title="Paper journal only — never a live order."
-                    onClick={() => void runPaper(action)}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      void runPaper(action);
+                    }}
                   >
                     {action?.label || `Paper ${action?.side}`}
                   </button>
@@ -302,7 +395,7 @@ export function SuggestionBoard({
       </div>
       <div
         className="suggestion-foot"
-        title={`${SUGGESTION_HONESTY} Refresh = watchlist 1h OHLCV only (no 1d). Train idle = cheap joblib (no Active steal / no promote). Paper buttons = journal only.`}
+        title={`${SUGGESTION_HONESTY} Click a line to open that pair 1h chart (sets Active). Refresh = watchlist 1h OHLCV only (no 1d). Train idle = cheap joblib (no Active steal / no promote). Paper buttons = journal only.`}
       >
         {SUGGESTION_HONESTY} · Decision 1h only · Refresh = watchlist 1h · Paper buttons = journal only.
       </div>

@@ -1,6 +1,7 @@
 """Friendly suggestion-board chat lines from desk snapshots (decision aid only)."""
 
 from __future__ import annotations
+import re
 
 import json
 from pathlib import Path
@@ -219,6 +220,10 @@ def format_board_line(
     raw = _norm_side(row.get("raw_signal"))
     gate = humanize_gate(str(row.get("gate_reason") or "").strip())
     status = str(row.get("status") or "").strip().lower()
+    # Model / joblib / retrain / challenger copy belongs in ModelBuildStrip — not suggestion chat.
+    # Keep BTCUSD pin-skip honesty (research skip), which is not a retrain banner.
+    if status in {"need_train", "untrained"} and pair not in PIN_SKIP_PAIRS:
+        return None
     last = _last_num(row)
     last_txt = _px(pair, last) if last is not None else None
     target = row.get("target")
@@ -321,18 +326,6 @@ def format_board_line(
             body = f"{pair}: watching @ {last_txt} - {why}"
         else:
             body = f"{pair}: {why}"
-    elif status in {"need_train", "untrained"}:
-        kind = "status"
-        if last_txt:
-            body = (
-                f"{pair}: watching @ {last_txt} - prices live; Train idle pair "
-                f"(or Lab) for a flash (no model yet)."
-            )
-        else:
-            body = (
-                f"{pair}: quiet - need Fetch for bars, then Train idle pair "
-                f"(or Lab) for a flash."
-            )
     elif status in {"need_fetch", "missing"}:
         kind = "status"
         body = f"{pair}: quiet - need Fetch for fresh bars (OHLCV only; no Train)."
@@ -340,9 +333,14 @@ def format_board_line(
         kind = "status"
         detail = str(row.get("details") or row.get("validity_reason") or "").strip()
         detail = _clean_gate(detail)
-        body = f"{pair}: data/model issue - check Fetch."
-        if detail and len(detail) < 80:
-            body = f"{pair}: data/model issue - {detail}."
+        # Keep fetch/data failures trade-adjacent; never inject retrain/joblib/challenger copy.
+        body = f"{pair}: data issue - check Fetch."
+        if detail and len(detail) < 80 and not re.search(
+            r"challenger|joblib|retrain|model.?age|champion", detail, re.I
+        ):
+            body = f"{pair}: data issue - {detail}."
+        elif detail and re.search(r"challenger|joblib|retrain|model.?age|champion", detail, re.I):
+            return None
     else:
         kind = "status"
         if last_txt:

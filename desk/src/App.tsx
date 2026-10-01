@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type UnreachableKind } from "./api";
 import { FreshnessStrip } from "./components/FreshnessStrip";
+import { CompactModelAge } from "./components/CompactModelAge";
 import { ModelBuildStrip } from "./components/ModelBuildStrip";
 import {
   AUTO_REFRESH_FUDGE_MS,
@@ -104,6 +105,22 @@ export function App() {
   const [dismissedAlertKey, setDismissedAlertKey] = useState<string | null>(null);
   const [modelStripDismissed, setModelStripDismissed] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const RAIL_KEY = "forx.decision.assistantRailWidth";
+  const RAIL_MIN = 280;
+  const RAIL_MAX = 560;
+  const RAIL_DEFAULT = 360;
+  const [assistantRailW, setAssistantRailW] = useState(() => {
+    try {
+      const raw = localStorage.getItem(RAIL_KEY);
+      const n = raw ? Number(raw) : RAIL_DEFAULT;
+      if (!Number.isFinite(n)) return RAIL_DEFAULT;
+      return Math.min(RAIL_MAX, Math.max(RAIL_MIN, Math.round(n)));
+    } catch {
+      return RAIL_DEFAULT;
+    }
+  });
+  const railDrag = useRef<{ startX: number; startW: number } | null>(null);
+
   const [retrainBusy, setRetrainBusy] = useState(false);
   const [gateNote, setGateNote] = useState<string | null>(null);
   const watchlistButtonRef = useRef<HTMLButtonElement>(null);
@@ -470,9 +487,90 @@ export function App() {
       });
   }, [retrainBusy]);
 
+
+
+  const onRailPointerDown = useCallback((ev: ReactPointerEvent<HTMLDivElement>) => {
+    ev.preventDefault();
+    const el = ev.currentTarget;
+    el.setPointerCapture(ev.pointerId);
+    railDrag.current = { startX: ev.clientX, startW: assistantRailW };
+  }, [assistantRailW]);
+
+  const onRailPointerMove = useCallback((ev: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = railDrag.current;
+    if (!drag) return;
+    const next = Math.min(RAIL_MAX, Math.max(RAIL_MIN, Math.round(drag.startW + (ev.clientX - drag.startX))));
+    setAssistantRailW(next);
+  }, []);
+
+  const onRailPointerUp = useCallback((ev: ReactPointerEvent<HTMLDivElement>) => {
+    if (!railDrag.current) return;
+    railDrag.current = null;
+    try {
+      ev.currentTarget.releasePointerCapture(ev.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setAssistantRailW((w) => {
+      try {
+        localStorage.setItem(RAIL_KEY, String(w));
+      } catch {
+        /* ignore */
+      }
+      return w;
+    });
+  }, []);
+
+  const openPairFromBoard = useCallback(
+    async (pairRaw: string) => {
+      const pair = String(pairRaw || "")
+        .trim()
+        .toUpperCase();
+      if (!pair) return;
+      // Decision stays 1h-only regardless of source row interval.
+      const iv = coerceChartInterval("1h");
+      if (pair === selectedRef.current) {
+        setRowTf(iv);
+        setChartTf(iv);
+        return;
+      }
+      try {
+        await api.setActivePair(pair);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not set the active pair.");
+        return;
+      }
+      setSelected(pair);
+      setRowTf(iv);
+      setChartTf(iv);
+    },
+    [],
+  );
+
   return (
     <>
-      <TopNav mode={mode} onMode={setMode} />
+      <TopNav
+        mode={mode}
+        onMode={setMode}
+        status={
+          mode === "decision" ? (
+            <>
+              <FreshnessStrip
+                pair={selected}
+                lastAgo={lastAgo}
+                nextIn={nextIn}
+                updating={refreshing}
+                problem={stripProblem}
+                auto={realtime}
+                lastFetchDhaka={newest?.text ?? null}
+                source={newest?.source ?? rows.find((r) => r.pair === selected)?.data_source ?? null}
+                onUpdate={() => void refreshData(true)}
+              />
+              <CompactModelAge pair={selected} build={modelBuild} />
+            </>
+          ) : null
+        }
+      />
       <main className={deskClass}>
         {mode === "learnings" ? (
           <>
@@ -498,18 +596,9 @@ export function App() {
                 aria-label={selected ? `Open watchlist. Active pair is ${selected}` : "Open watchlist"}
                 onClick={() => setWatchlistOpen(true)}
               >
-                {selected ? `Active ${selected}` : "Watchlist"}
+                {selected ? selected : "Pairs"}
               </button>
-              <FreshnessStrip
-                lastAgo={lastAgo}
-                nextIn={nextIn}
-                updating={refreshing}
-                problem={stripProblem}
-                auto={realtime}
-                lastFetchDhaka={newest?.text ?? null}
-                source={newest?.source ?? rows.find((r) => r.pair === selected)?.data_source ?? null}
-                onUpdate={() => void refreshData(true)}
-              />
+
               <ReplayProvider pair={selected} interval={rowTf}>
                 <ReplayTrainButton />
                 {modelStripDismissed ? null : (
@@ -551,71 +640,108 @@ export function App() {
                 </button>
               </div>
             ) : null}
-            <div className="right-col">
-              <SuggestionBoard
-                board={board}
-                brief={brief}
-                active={selected}
-                onRefreshWatchlist={() => void refreshWatchlistLight(true)}
-                refreshingWatchlist={wlRefreshing}
-                onTrainIdle={() => void trainIdlePair()}
-                trainingIdle={idleTrainBusy}
-                idleTrainLabel={idleTrainTarget}
-                paperBusy={manualBusy}
-                onPaperOrder={async (pair, side, positionId) => {
-                  const result = await api.paperOrder(
-                    pair,
-                    side,
-                    undefined,
-                    rowTf,
-                    positionId || undefined,
-                  );
-                  setPaperToast(result.message);
-                  setTick((n) => n + 1);
+            <div className="right-col decision-split">
+              <aside
+                className="assistant-rail"
+                style={{ width: assistantRailW }}
+                aria-label="Suggestion assistant"
+              >
+                <SuggestionBoard
+                  board={board}
+                  brief={brief}
+                  active={selected}
+                  onOpenPair={(pair) => void openPairFromBoard(pair)}
+                  onRefreshWatchlist={() => void refreshWatchlistLight(true)}
+                  refreshingWatchlist={wlRefreshing}
+                  onTrainIdle={() => void trainIdlePair()}
+                  trainingIdle={idleTrainBusy}
+                  idleTrainLabel={idleTrainTarget}
+                  paperBusy={manualBusy}
+                  onPaperOrder={async (pair, side, positionId) => {
+                    const result = await api.paperOrder(
+                      pair,
+                      side,
+                      undefined,
+                      rowTf,
+                      positionId || undefined,
+                    );
+                    setPaperToast(result.message);
+                    setTick((n) => n + 1);
+                  }}
+                />
+                <SignalBrief
+                  pair={brief?.pair ?? selected}
+                  bias={brief?.bias ?? "—"}
+                  confidence={brief?.confidence ?? null}
+                  rawSignal={brief?.raw_signal ?? null}
+                  biasTone={brief?.bias_tone ?? "flat"}
+                  headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
+                  sub={brief?.sub ?? "Asia/Dhaka · research desk"}
+                  hourly={brief?.hourly ?? null}
+                  daily={brief?.daily ?? null}
+                  consensus={brief?.consensus ?? null}
+                  paper={brief?.paper ?? null}
+                  toast={paperToast}
+                  chartInterval={chartTf}
+                  nextEvent={brief?.next_event ?? null}
+                  calendarNote={brief?.calendar_note ?? null}
+                  calendarStale={Boolean(brief?.calendar_stale)}
+                  advice={brief?.advice ?? []}
+                  briefReady={brief != null}
+                  onRefresh={() => void refreshData(true)}
+                  onOrder={async (side, size) => {
+                    const result = await api.paperOrder(selected, side, size, rowTf);
+                    setPaperToast(result.message);
+                    setTick((n) => n + 1);
+                  }}
+                  busy={manualBusy}
+                />
+              </aside>
+              <div
+                className="assistant-resizer"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize suggestion panel"
+                aria-valuenow={assistantRailW}
+                aria-valuemin={RAIL_MIN}
+                aria-valuemax={RAIL_MAX}
+                tabIndex={0}
+                onPointerDown={onRailPointerDown}
+                onPointerMove={onRailPointerMove}
+                onPointerUp={onRailPointerUp}
+                onPointerCancel={onRailPointerUp}
+                onKeyDown={(ev) => {
+                  if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+                  ev.preventDefault();
+                  const delta = ev.key === "ArrowRight" ? 16 : -16;
+                  setAssistantRailW((w) => {
+                    const next = Math.min(RAIL_MAX, Math.max(RAIL_MIN, w + delta));
+                    try {
+                      localStorage.setItem(RAIL_KEY, String(next));
+                    } catch {
+                      /* ignore */
+                    }
+                    return next;
+                  });
                 }}
               />
-              <SignalBrief
-                pair={brief?.pair ?? selected}
-                bias={brief?.bias ?? "—"}
-                confidence={brief?.confidence ?? null}
-                rawSignal={brief?.raw_signal ?? null}
-                biasTone={brief?.bias_tone ?? "flat"}
-                headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
-                sub={brief?.sub ?? "Asia/Dhaka · research desk"}
-                hourly={brief?.hourly ?? null}
-                daily={brief?.daily ?? null}
-                consensus={brief?.consensus ?? null}
-                paper={brief?.paper ?? null}
-                toast={paperToast}
-                chartInterval={chartTf}
-                nextEvent={brief?.next_event ?? null}
-                calendarNote={brief?.calendar_note ?? null}
-                calendarStale={Boolean(brief?.calendar_stale)}
-                advice={brief?.advice ?? []}
-                briefReady={brief != null}
-                onRefresh={() => void refreshData(true)}
-                onOrder={async (side, size) => {
-                  const result = await api.paperOrder(selected, side, size, rowTf);
-                  setPaperToast(result.message);
-                  setTick((n) => n + 1);
-                }}
-                busy={manualBusy}
-              />
-              <ChartPanel
-                pair={selected}
-                interval={chartTf}
-                onInterval={setChartTf}
-                realtime={realtime}
-                onRealtime={setRealtime}
-                onReload={() => void refreshData(true)}
-                data={ohlcv}
-                stop={levels?.stop ?? null}
-                target={levels?.target ?? null}
-                busy={refreshing}
-                closeInterval={rowTf}
-                refreshKey={tick}
-                onPositionsChanged={() => setTick((n) => n + 1)}
-              />
+              <div className="chart-main">
+                <ChartPanel
+                  pair={selected}
+                  interval={chartTf}
+                  onInterval={setChartTf}
+                  realtime={realtime}
+                  onRealtime={setRealtime}
+                  onReload={() => void refreshData(true)}
+                  data={ohlcv}
+                  stop={levels?.stop ?? null}
+                  target={levels?.target ?? null}
+                  busy={refreshing}
+                  closeInterval={rowTf}
+                  refreshKey={tick}
+                  onPositionsChanged={() => setTick((n) => n + 1)}
+                />
+              </div>
             </div>
             <WatchlistModal
               open={watchlistOpen}

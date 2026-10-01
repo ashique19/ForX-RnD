@@ -1,7 +1,17 @@
 import type { StripProblem } from "../freshness";
 import { problemText } from "../freshness";
 
+function liveWord(problem: StripProblem, updating: boolean, lastAgo: number | null): string {
+  if (updating) return "upd";
+  if (problem) return "issue";
+  if (lastAgo == null) return "-";
+  if (lastAgo <= 90) return "live";
+  if (lastAgo <= 300) return "ok";
+  return "stale";
+}
+
 export function FreshnessStrip({
+  pair,
   lastAgo,
   nextIn,
   updating,
@@ -11,6 +21,8 @@ export function FreshnessStrip({
   source,
   onUpdate,
 }: {
+  /** Active pair shown compactly in the strip (replaces long Data/Last-fetch copy). */
+  pair?: string | null;
   lastAgo: number | null;
   nextIn: number | null;
   updating: boolean;
@@ -22,29 +34,54 @@ export function FreshnessStrip({
   onUpdate: () => void;
 }) {
   const reason = problemText(problem);
-  const countdown = nextIn == null ? null : `Updating in ${nextIn}s`;
-  const cadence = auto ? countdown : "Auto off";
-  const nextLabel = updating ? "Updating…" : [reason, cadence].filter(Boolean).join(" · ");
-  const src = source ? ` via ${source}` : "";
-  const lastLabel = lastAgo == null ? `Last fetch —${src}` : `Last fetch ${lastAgo}s ago${src}`;
-  const buttonLabel = updating ? "Updating…" : reason ? "Retry" : "Update now";
-  const title = lastFetchDhaka ? `Last successful fetch ${lastFetchDhaka}` : "Asia/Dhaka";
+  const pairLabel = String(pair || "").trim().toUpperCase() || "—";
+  const live = liveWord(problem, updating, lastAgo);
+  const age = lastAgo == null ? "—" : `${lastAgo}s`;
+  const compact = `${pairLabel} · ${live} · ${age}`;
+
+  const srcFull = String(source || "").trim();
+  const nextBit = updating
+    ? "Updating…"
+    : reason
+      ? reason
+      : auto
+        ? nextIn == null
+          ? "auto"
+          : `next ${nextIn}s`
+        : "auto off";
+  const titleParts = [
+    pairLabel !== "—" ? `Active ${pairLabel}` : null,
+    lastFetchDhaka ? `Last fetch ${lastFetchDhaka}` : null,
+    lastAgo != null ? `${lastAgo}s ago` : null,
+    srcFull ? `via ${srcFull}` : null, // full provider on hover
+    nextBit,
+  ].filter(Boolean);
+  const title = titleParts.join(" · ") || "Asia/Dhaka";
+
+  const buttonLabel = updating ? "…" : reason ? "Retry" : "↻";
+  const buttonTitle = updating ? "Updating…" : reason ? "Retry fetch" : "Update now";
 
   return (
     <div
-      className={problem && !updating ? "freshness bad" : updating ? "freshness updating" : "freshness"}
+      className={
+        problem && !updating ? "freshness compact bad" : updating ? "freshness compact updating" : "freshness compact"
+      }
       role="status"
       aria-live="polite"
       title={title}
     >
-      <span className="tag">Data</span>
-      <span className="fresh-last">{lastLabel}</span>
-      <span className="sep" aria-hidden="true">
-        ·
+      <span className="fresh-compact" aria-label={title}>
+        {compact}
       </span>
-      <span className="fresh-next">{nextLabel}</span>
-      <span className="spacer" />
-      <button className="btn sm" type="button" onClick={onUpdate} disabled={updating} aria-busy={updating}>
+      <button
+        className="btn sm icon fresh-upd"
+        type="button"
+        onClick={onUpdate}
+        disabled={updating}
+        aria-busy={updating}
+        title={buttonTitle}
+        aria-label={buttonTitle}
+      >
         {buttonLabel}
       </button>
     </div>

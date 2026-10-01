@@ -155,6 +155,8 @@ export function formatBoardChatLine(
   const status = String(row.status || "")
     .trim()
     .toLowerCase();
+  // Model / joblib / retrain / challenger copy belongs in ModelBuildStrip — not suggestion chat.
+  if ((status === "need_train" || status === "untrained") && !PIN_SKIP_PAIRS.has(pair)) return null;
   const last = hourly?.now ?? row.last;
   const target = hourly?.target ?? row.target;
   const stop = hourly?.stop ?? null;
@@ -219,12 +221,6 @@ export function formatBoardChatLine(
     const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
     const why = PIN_SKIP_REASON[pair] || "research pin-skip (not a Train candidate).";
     body = lastTxt ? `${pair}: watching @ ${lastTxt} - ${why}` : `${pair}: ${why}`;
-  } else if (status === "need_train" || status === "untrained") {
-    kind = "status";
-    const lastTxt = last != null && Number.isFinite(last) ? px(pair, last) : null;
-    body = lastTxt
-      ? `${pair}: watching @ ${lastTxt} - prices live; Train (Lab/Replay) for a flash (no model yet).`
-      : `${pair}: quiet - need Fetch for bars, then Train (Lab/Replay) for a flash.`;
   } else if (status === "need_fetch" || status === "missing") {
     kind = "status";
     body = `${pair}: quiet - need Fetch for fresh bars (OHLCV only; no Train).`;
@@ -233,8 +229,8 @@ export function formatBoardChatLine(
     const detail = cleanGate(String((row as BoardRow & { details?: string }).details || row.validity_reason || "").trim());
     body =
       detail && detail.length < 80
-        ? `${pair}: data/model issue - ${detail}.`
-        : `${pair}: data/model issue - check Fetch.`;
+        ? `${pair}: data issue - ${detail}.`
+        : `${pair}: data issue - check Fetch.`;
   } else {
     kind = "status";
     body = `${pair}: quiet - waiting on a clean flash.`;

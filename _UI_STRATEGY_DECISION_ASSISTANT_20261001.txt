@@ -1,0 +1,23 @@
+_UI_STRATEGY_DECISION_ASSISTANT_20261001.txt
+ForX Decision desk — assistant-first layout (in progress)
+
+Shipped this pass
+  - Board/desk_call click → set Active + 1h chart (paper buttons stopPropagation).
+  - Decision = resizable assistant side rail (board + compact SignalBrief) | main = Chart.
+    Rail width persisted in localStorage forx.decision.assistantRailWidth.
+  - Top nav: smaller mode buttons; compact status in header: "EURUSD · live · 5s"
+    (+ optional "model 4.2h" chip). Full provider/joblib detail on hover.
+  - Desk-bar freed of long Data strip (Pairs + Replay/Model tools remain).
+  - Board = trade advisories only: need_train / model-joblib-retrain-challenger copy
+    omitted from chat (stays in ModelBuildStrip / header model age).
+  - Decision remains 1h-only. No promote.
+
+Proposed next (incremental)
+  - Soft-collapse ModelBuildStrip further (header age is enough day-to-day).
+  - Keyboard j/k on board; Enter opens pair.
+  - Fri-prep open_window desk_call when weekday mute lifts.
+
+Avoid
+  - Replay roulette / promote from board.
+  - Reintroducing 1d chart chips on Decision.
+  - Injecting retrain/challenger banners into suggestion chat.
