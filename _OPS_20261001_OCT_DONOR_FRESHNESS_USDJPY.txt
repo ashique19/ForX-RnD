@@ -1,0 +1,19 @@
+﻿# Ops QA - October donor availability and FX freshness
+Date: 2026-10-01 23:24 Asia/Dhaka
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d)
+
+## USD-cluster hypothesis disposition
+_HYPOTHESIS_20261001_USD_CLUSTER_CAP_DD.txt is explicitly a paper-only portfolio A/B. It changes neither the single-pair model nor Replay exits, and portfolio_brain.enabled=false with pply_to_replay=false; there is no valid single-pair Replay to launch for this hypothesis. No config/code/live gate was changed.
+
+## October tip-volume donor check
+- Jetta October probe (/v1/candles/trade/hour/<pair>/BID/2026/9, month 9 = October) returned HTTP 400 for EURUSD, USDJPY, GBPUSD, AUDUSD, and USDCAD.
+- Read-only Duka recent-bars probe did not return within ~95 seconds and was stopped; no usable donor bars were written.
+- Result: do not synthesize October Volume and do not run the remaining donor heal until Jetta October or Duka recent data is available.
+
+## Freshness / gap QA
+- All 10 local H1 CSVs are fresh: latest bar 2026-10-01 17:00 UTC (23:00 Asia/Dhaka), age ~0.4h, below the 6h stale threshold.
+- USDJPY: 1,416 rows; latest 17:00 UTC; 7 zero-volume bars in the last 200 and 4 recent calendar gaps (expected FX closed/roll gaps; no OHLC edits).
+- Other tail zero-volume counts: EURUSD 4, GBPUSD 19, AUDUSD 3, NZDUSD 12, USDCAD 13, EURJPY 12, EURGBP 19, USDCHF 19, GBPJPY 19. Residuals remain held; no forced fills.
+- Local API model-status probe for GBPUSD returned status=OK; no model or paper-floor changes.
+
+No promote, no Replay, no live-gate/session/confidence/weekday/stop/news changes. Data CSVs remain untouched and uncommitted.
