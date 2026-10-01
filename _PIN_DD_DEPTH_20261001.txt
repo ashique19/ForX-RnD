@@ -1,0 +1,14 @@
+# Equity DD depth stats (champion) - 2026-10-01 Asia/Dhaka
+
+| pair | min_dd | pct_bars_dd_lt_-2pct | pct_lt_-5pct |
+|---|---:|---:|---:|
+| EURUSD | nan | nan% | nan% |
+| USDJPY | nan | nan% | nan% |
+| GBPUSD | nan | nan% | nan% |
+| AUDUSD | nan | nan% | nan% |
+| NZDUSD | nan | nan% | nan% |
+| USDCAD | nan | nan% | nan% |
+| EURJPY | nan | nan% | nan% |
+| EURGBP | nan | nan% | nan% |
+| USDCHF | nan | nan% | nan% |
+| GBPJPY | nan | nan% | nan% |

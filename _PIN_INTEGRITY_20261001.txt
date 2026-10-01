@@ -1,0 +1,14 @@
+# Pin job integrity check - 2026-10-01 Asia/Dhaka
+
+EURUSD job=2cee7e71 missing=none status=done pf_job=1.988673516691955 pf_desk=1.989 match=True
+USDJPY job=ef6fe062 missing=none status=done pf_job=3.0366605650219216 pf_desk=3.037 match=True
+GBPUSD job=d6a6f7a6 missing=none status=done pf_job=2.6011330936834547 pf_desk=2.601 match=True
+AUDUSD job=6a5653c8 missing=none status=done pf_job=2.979579948434618 pf_desk=2.98 match=True
+NZDUSD job=83c2715d missing=none status=done pf_job=2.851185692393331 pf_desk=2.851 match=True
+USDCAD job=a9b26129 missing=none status=done pf_job=2.7351699934639453 pf_desk=2.735 match=True
+EURJPY job=a4258785 missing=none status=done pf_job=3.036505017143486 pf_desk=3.037 match=True
+EURGBP job=1bece8f2 missing=none status=done pf_job=2.382208655527614 pf_desk=2.382 match=True
+USDCHF job=d9f72604 missing=none status=done pf_job=2.6009926372811223 pf_desk=2.601 match=True
+GBPJPY job=1b8485ec missing=none status=done pf_job=2.779650345998296 pf_desk=2.78 match=True
+
+OVERALL PASS
