@@ -314,7 +314,7 @@ function BriefMetrics({
         <span className="lbl" title={research ? "Research target" : "Target"}>{labels.target}</span>
         <span className={suggestion?.target != null ? "val tgt" : "val"} title={suggestion?.target == null ? reason || undefined : research ? "Research barrier only — not an order" : undefined}>{shownText(suggestion?.target_text)}</span>
       </span>
-      <span className="brief-metric">
+      <span className="brief-metric brief-metric-duration">
         <span className="lbl" title="Duration">{labels.duration}</span>
         <span className="val" title={reason || undefined}>{shownText(suggestion?.duration)}</span>
       </span>

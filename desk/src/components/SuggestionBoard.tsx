@@ -48,14 +48,14 @@ function formatClock(ms?: number): string {
 
 function confChip(call: DeskCall): string | null {
   if (typeof call.conf_pct === "number" && Number.isFinite(call.conf_pct)) {
-    return ${Math.round(call.conf_pct)}%;
+    return `${Math.round(call.conf_pct)}%`;
   }
   const raw = call.confidence;
   if (raw == null || !Number.isFinite(raw)) return null;
   let v = Number(raw);
   if (v > 1) v = v / 100;
   if (v < 0) return null;
-  return ${Math.round(v * 100)}%;
+  return `${Math.round(v * 100)}%`;
 }
 
 export function SuggestionBoard({

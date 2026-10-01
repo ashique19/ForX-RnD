@@ -2711,6 +2711,8 @@
       align-items: center;
       flex: 1 1 360px;
       min-width: 0;
+      container-type: inline-size;
+      container-name: brief-strip;
     }
     .chart-toolbar-brief > .brief {
       width: auto;
@@ -2755,6 +2757,26 @@
       gap: 6px;
       flex: 0 0 auto;
     }
+    /* Keep the collapsed brief readable when the chart toolbar gets tight.
+       The duration is the least actionable level, so it yields before price levels. */
+    @container brief-strip (max-width: 470px) {
+      .brief-toolbar .brief-metrics { gap: 6px; }
+      .brief-toolbar .brief-metric { gap: 2px; min-width: 0; }
+      .brief-toolbar .brief-metric .lbl {
+        font-size: 9px;
+        letter-spacing: 0;
+      }
+      .brief-toolbar .brief-metric .val {
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+    @container brief-strip (max-width: 380px) {
+      .brief-toolbar .brief-metric-duration { display: none; }
+      .brief-toolbar .brief-metrics { gap: 5px; }
+    }
+
     @media (max-width: 720px) {
       .chart-toolbar {
         flex-wrap: wrap;
