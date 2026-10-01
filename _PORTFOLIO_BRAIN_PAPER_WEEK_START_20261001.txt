@@ -18,3 +18,9 @@ Monitor via GET /portfolio/brain (status only) and paper closed-trade count.
 
 ## Exit / review
 After >=30 closed paper trades OR 7 calendar days: write paper-week review; only then consider enable A/B hyp.
+## Checkpoint 2026-10-01 ~12:20 Asia/Dhaka
+- Desk healthy; Active EURUSD; auto_enabled=true; portfolio_brain.enabled=false
+- Paper closed still 10; open 0; Thu weekday_gate blocks new opens (expected)
+- Tip: EURUSD forming Vol=0 OK (prev 1747); refreshed other watchlist pairs via /refresh
+- tip_vol_heal hist-only: healed EURJPY/EURGBP/USDCHF/GBPJPY donor gaps (4531 bars)
+- Serial Replay 76c3d050 session-overlap ENFORCED in flight — no portfolio enable

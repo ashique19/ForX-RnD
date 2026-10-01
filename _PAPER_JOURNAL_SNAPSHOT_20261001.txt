@@ -1,0 +1,21 @@
+﻿# Paper journal usefulness snapshot - 2026-10-01 ~12:20 Asia/Dhaka
+Source: GET /portfolio (desk live). No gate changes.
+
+## Counts
+- closed=10, open=0, auto_enabled=true, Active=EURUSD
+- block: weekday_gate Mon/Thu UTC (today=Thu) + often conf < 0.60
+
+## By strategy (pnl_r)
+- brief: n=5 sumR=+1.84 PF~1.32 WR=0.40
+- consensus: n=3 sumR=+0.32 PF~inf (no losses in tiny sample) WR=0.67
+- mtf: n=2 sumR=-10.96 PF=0 WR=0.00  << drag; research only
+
+## By exit
+- sl=5, tp=2, duration=2, opposite=1
+- outcome RIGHT=4 WRONG=5 FLAT=1
+
+## Ops notes
+- Sample too small for promote talk; paper-week target >=30 closed or 7d.
+- Thu gate is working as designed (tighten_L KEEP ON).
+- mtf drag visible even at n=2 — candidate for paper-champion compare UX later
+  (surface strategy PF on board without enabling portfolio_brain).
