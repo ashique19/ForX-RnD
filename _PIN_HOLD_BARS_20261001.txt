@@ -1,0 +1,9 @@
+# Hold bars stats (champion) - 2026-10-01 Asia/Dhaka
+
+| pair | mean_h | med_h | p90_h |
+|---|---:|---:|---:|
+| EURUSD | 3.89 | 3.00 | 7.00 |
+| USDJPY | 4.22 | 2.00 | 7.00 |
+| EURJPY | 3.70 | 2.00 | 7.00 |
+| EURGBP | 3.63 | 2.00 | 7.00 |
+| GBPJPY | 3.85 | 2.00 | 7.00 |
