@@ -1,0 +1,30 @@
+﻿# Watchlist tip residual scan - 2026-10-01 22:02 Asia/Dhaka
+
+Cheap quiet-path QA only; no Replay, no costs-on pin, no promote, and no overlay changes.
+Source: `_TIP_VOL_WATCHLIST_FINAL_20261001.json` (21:57:53 +06:00), cross-checked against `_TIP_VOL_JETTA_SEP_REMAINING_20261001.json`.
+
+| pair | tip200 zero before | tip200 zero after | disposition |
+|---|---:|---:|---|
+| EURUSD | 128 | 2 | healed; monitor only |
+| AUDUSD | 129 | 10 | healed; monitor only |
+| USDJPY | 152 | 10 | healed; monitor only |
+| NZDUSD | 129 | 10 | healed; monitor only |
+| USDCAD | 132 | 11 | healed; monitor only |
+| EURJPY | 130 | 10 | healed; monitor only |
+| GBPUSD | 200 | 17 | below action threshold; hold |
+| EURGBP | 195 | 17 | below action threshold; hold |
+| USDCHF | 17 | 17 | already below action threshold; hold |
+| GBPJPY | 17 | 17 | already below action threshold; hold |
+| BTCUSD | 86 | 86 | hold; no FX Jetta or positive-history donor |
+
+## Decision
+
+- No pair has a justified October repair from this scan: GBPUSD/EURGBP are already below the 20-bar action threshold, and BTCUSD lacks an approved donor.
+- Remaining zero bars are not evidence for synthetic OHLC or frozen-overlay changes. Keep positive-volume and all-zero fallback behavior unchanged.
+- Do not start a costs-on pin from this tip-health result; no backlog/data-ready candidate was established, and no pin can be promoted unless it beats the current champion on both score and drawdown.
+- Recheck only after Jetta September recovery or a fresh positive-history donor becomes available; otherwise leave the desk quiet.
+
+## Integrity notes
+
+- The three Sep donor repairs report `history_ohlc_unchanged=true` and `live_ohlc_unchanged=true`.
+- The scan is tip-volume health, not a performance comparison and not a promotion gate.
