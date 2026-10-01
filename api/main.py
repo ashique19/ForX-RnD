@@ -34,6 +34,7 @@ from api.deskdata import (
     refresh_active_pair,
     refresh_watchlist,
     run_pipeline_pair,
+    run_train_idle_pair,
     set_active_pair,
     watchlist_json,
 )
@@ -257,6 +258,21 @@ def create_app() -> FastAPI:
         """Core AI joblib status for one pair. Does not train or retrain."""
         try:
             return model_build_status(pair)
+        except WatchlistError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/model/train/{pair}")
+    def post_model_train(
+        pair: str,
+        signals: bool = Query(default=True),
+    ) -> dict:
+        """Cheap idle-pair Train: fit joblib (+ signals). Does not change Active.
+
+        Not the champion/challenger retrain gate. Not Replay. Not a promote.
+        Prefer this for watchlist suggestion flashes on non-Active pairs.
+        """
+        try:
+            return run_train_idle_pair(pair, with_signals=bool(signals))
         except WatchlistError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

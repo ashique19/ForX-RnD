@@ -200,13 +200,13 @@ def format_board_line(
         kind = "status"
         if last_txt:
             body = (
-                f"{pair}: watching @ {last_txt} - prices live; Train "
-                f"(Lab/Replay) for a flash (no model yet)."
+                f"{pair}: watching @ {last_txt} - prices live; Train idle pair "
+                f"(or Lab) for a flash (no model yet)."
             )
         else:
             body = (
-                f"{pair}: quiet - need Fetch for bars, then Train "
-                f"(Lab/Replay) for a flash."
+                f"{pair}: quiet - need Fetch for bars, then Train idle pair "
+                f"(or Lab) for a flash."
             )
     elif status in {"need_fetch", "missing"}:
         kind = "status"

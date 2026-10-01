@@ -110,6 +110,31 @@ export function collectWatchlistLightTargets(
   return out;
 }
 
+
+/** Prefer TRUST pin pairs (USDJPY/GBPUSD) among idle need_train rows. Never Active. */
+export const IDLE_TRAIN_PREFER = ["USDJPY", "GBPUSD"] as const;
+
+export function pickIdleTrainPair(
+  rows: { pair: string; status?: string | null }[],
+  active: string,
+  prefer: readonly string[] = IDLE_TRAIN_PREFER,
+): string | null {
+  const act = String(active || "").trim().toUpperCase();
+  const need = (rows || [])
+    .map((r) => ({
+      pair: String(r?.pair || "").trim().toUpperCase(),
+      status: String(r?.status || "").trim().toLowerCase(),
+    }))
+    .filter((r) => r.pair && r.pair !== act)
+    .filter((r) => r.status === "need_train" || r.status === "untrained");
+  if (!need.length) return null;
+  const preferU = prefer.map((p) => String(p).toUpperCase());
+  for (const p of preferU) {
+    if (need.some((r) => r.pair === p)) return p;
+  }
+  return need[0].pair;
+}
+
 export function newestFetchMs(rows: BoardRow[], nowMs: number): number | null {
   let best: number | null = null;
   for (const row of rows) {

@@ -1540,6 +1540,67 @@ def refresh_active_pair(
     }
 
 
+def run_train_idle_pair(
+    pair: str,
+    *,
+    with_signals: bool = True,
+    cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Cheap Train for one idle/watchlist pair: joblib fit (+ optional signals).
+
+    Does **not** change Active, does not run champion/challenger retrain gate,
+    does not backtest/Replay, and does not promote. Safe for suggestion-board
+    flashes on non-Active pairs.
+    """
+    from forex_lab.ui import pipeline as pl
+    from forex_lab.ui.model_build import model_build_status as _model_build_status
+
+    cfg = cfg if cfg is not None else app_config()
+    symbol = normalize_pair(pair)
+    steps: list[dict[str, Any]] = []
+
+    def _step(name: str, fn) -> tuple[int, str]:
+        rc, log = fn(symbol, cfg=cfg)
+        text_log = str(log or "")
+        if len(text_log) > 4000:
+            text_log = text_log[-4000:]
+        steps.append({"step": name, "ok": rc == 0, "log": text_log})
+        return rc, text_log
+
+    rc, _log = _step("train", pl.run_train)
+    if rc != 0:
+        return {
+            "ok": False,
+            "pair": symbol,
+            "failed": "train",
+            "steps": steps,
+            "active_unchanged": True,
+            "model_build": _model_build_status(symbol, cfg),
+            "note": "Cheap Train only (no Active change, no promote, no Replay gate).",
+        }
+    if with_signals:
+        rc, _log = _step("signals", pl.run_signals)
+        if rc != 0:
+            return {
+                "ok": False,
+                "pair": symbol,
+                "failed": "signals",
+                "steps": steps,
+                "active_unchanged": True,
+                "model_build": _model_build_status(symbol, cfg),
+                "note": "Cheap Train only (no Active change, no promote, no Replay gate).",
+            }
+    return {
+        "ok": True,
+        "pair": symbol,
+        "failed": None,
+        "steps": steps,
+        "active_unchanged": True,
+        "model_build": _model_build_status(symbol, cfg),
+        "note": "Cheap Train only (no Active change, no promote, no Replay gate).",
+    }
+
+
 def run_pipeline_pair(
     pair: str,
     *,

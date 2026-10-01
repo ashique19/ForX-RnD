@@ -28,6 +28,9 @@ export function SuggestionBoard({
   active,
   onRefreshWatchlist,
   refreshingWatchlist = false,
+  onTrainIdle,
+  trainingIdle = false,
+  idleTrainLabel,
 }: {
   board: Board | null;
   brief: Brief | null;
@@ -35,6 +38,10 @@ export function SuggestionBoard({
   /** Light OHLCV refresh for idle watchlist pairs (no Train / pipeline). */
   onRefreshWatchlist?: () => void;
   refreshingWatchlist?: boolean;
+  /** Cheap Train for one idle need_train pair (no Active change / no promote). */
+  onTrainIdle?: () => void;
+  trainingIdle?: boolean;
+  idleTrainLabel?: string | null;
 }) {
   const [lines, setLines] = useState<SuggestionChatLine[]>([]);
   const [openPositions, setOpenPositions] = useState<PortfolioRow[]>([]);
@@ -156,11 +163,30 @@ export function SuggestionBoard({
             <button
               className="btn sm"
               type="button"
-              disabled={refreshingWatchlist}
+              disabled={refreshingWatchlist || trainingIdle}
               title="Refresh idle watchlist prices (1h OHLCV only). Does not Train, Replay, or touch Active heavy compute."
               onClick={() => onRefreshWatchlist()}
             >
               {refreshingWatchlist ? "Refreshing…" : "Refresh prices"}
+            </button>
+          ) : null}
+          {onTrainIdle ? (
+            <button
+              className="btn sm"
+              type="button"
+              disabled={trainingIdle || refreshingWatchlist || !idleTrainLabel}
+              title={
+                idleTrainLabel
+                  ? `Cheap Train for idle ${idleTrainLabel}: fit joblib + signals. Does not change Active, Replay gate, or promote.`
+                  : "No idle pair needs Train right now."
+              }
+              onClick={() => onTrainIdle()}
+            >
+              {trainingIdle
+                ? "Training…"
+                : idleTrainLabel
+                  ? `Train idle ${idleTrainLabel}`
+                  : "Train idle pair"}
             </button>
           ) : null}
         </div>
@@ -179,9 +205,9 @@ export function SuggestionBoard({
       </div>
       <div
         className="suggestion-foot"
-        title={`${SUGGESTION_HONESTY} Refresh prices = idle watchlist OHLCV only (no Train). Active still uses Update now / auto-refresh.`}
+        title={`${SUGGESTION_HONESTY} Refresh prices = OHLCV only. Train idle = cheap joblib for one need_train pair (no Active steal / no promote).`}
       >
-        {SUGGESTION_HONESTY} · Refresh prices = OHLCV only (no Train).
+        {SUGGESTION_HONESTY} · Refresh prices = OHLCV only. Train idle = cheap joblib (no Active steal / no promote).
       </div>
     </section>
   );

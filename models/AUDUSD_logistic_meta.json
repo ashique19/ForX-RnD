@@ -1,0 +1,103 @@
+{
+  "pair": "AUDUSD",
+  "interval": "1h",
+  "model_type": "logistic",
+  "features": [
+    "ret_1",
+    "ret_3",
+    "ret_6",
+    "ret_12",
+    "ret_24",
+    "sma_10_ratio",
+    "sma_20_ratio",
+    "sma_50_ratio",
+    "ema_12_ratio",
+    "ema_26_ratio",
+    "macd_norm",
+    "rsi",
+    "atr_pct",
+    "volatility",
+    "vol_regime",
+    "ret_1_atr",
+    "ret_6_atr",
+    "ret_12_atr",
+    "range_pct",
+    "range_pct_z",
+    "body_pct",
+    "dist_high_20",
+    "dist_low_20",
+    "range_pos_20",
+    "dist_high_50",
+    "dist_low_50",
+    "range_pos_50",
+    "sma20_slope",
+    "mom_mr",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "sess_asia",
+    "sess_london",
+    "sess_ny",
+    "vol_z"
+  ],
+  "val_accuracy": 0.4303030303030303,
+  "classification_report": {
+    "SELL": {
+      "precision": 0.34782608695652173,
+      "recall": 0.37209302325581395,
+      "f1-score": 0.3595505617977528,
+      "support": 43.0
+    },
+    "HOLD": {
+      "precision": 0.6545454545454545,
+      "recall": 0.4444444444444444,
+      "f1-score": 0.5294117647058824,
+      "support": 81.0
+    },
+    "BUY": {
+      "precision": 0.296875,
+      "recall": 0.4634146341463415,
+      "f1-score": 0.3619047619047619,
+      "support": 41.0
+    },
+    "accuracy": 0.4303030303030303,
+    "macro avg": {
+      "precision": 0.4330821805006588,
+      "recall": 0.4266507006155333,
+      "f1-score": 0.4169556961361323,
+      "support": 165.0
+    },
+    "weighted avg": {
+      "precision": 0.4857368397412864,
+      "recall": 0.4303030303030303,
+      "f1-score": 0.44352195355500046,
+      "support": 165.0
+    }
+  },
+  "label_map": {
+    "0": "SELL",
+    "1": "HOLD",
+    "2": "BUY"
+  },
+  "label_scheme": "triple_barrier",
+  "horizon": 8,
+  "label_threshold": 0.0005,
+  "barrier": {
+    "tp_atr": 2.0,
+    "sl_atr": 2.0,
+    "path": "high_low",
+    "timeout_label": "hold",
+    "cost_aware": false
+  },
+  "entry_timing": "next_open",
+  "label_distribution": {
+    "sell": 0.2615571776155718,
+    "hold": 0.42700729927007297,
+    "buy": 0.31143552311435524,
+    "n": 822
+  },
+  "feature_importance": [],
+  "calibrate": null,
+  "prune_bottom_frac": 0.0
+}

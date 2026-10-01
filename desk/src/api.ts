@@ -269,6 +269,17 @@ export const api = {
       { method: "POST" },
     ),
   modelStatus: (pair: string) => request<ModelBuild>(`/model/status/${encodeURIComponent(pair)}`),
+  /** Cheap idle-pair Train (joblib + signals). Does not change Active or promote. */
+  trainIdle: (pair: string, withSignals = true) =>
+    request<{
+      ok: boolean;
+      pair: string;
+      failed: string | null;
+      active_unchanged?: boolean;
+      note?: string;
+      steps: { step: string; ok: boolean; log: string }[];
+      model_build?: ModelBuild;
+    }>(`/model/train/${encodeURIComponent(pair)}?signals=${withSignals ? "true" : "false"}`, { method: "POST" }),
   /** Explicit walk-forward gate. The desk must not call this on a timer. */
   retrainGate: (pair: string) =>
     request<{ ok: boolean; pair: string; dry_run: boolean; log: string; model_build: ModelBuild }>(

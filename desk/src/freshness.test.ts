@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { coerceChartInterval, collectTargets, collectWatchlistLightTargets } from "./freshness.ts";
+import { coerceChartInterval, collectTargets, collectWatchlistLightTargets, pickIdleTrainPair } from "./freshness.ts";
 
 test("active pair refresh is only that pair, with 1h before 1d", () => {
   const targets = collectTargets("EURUSD", "1h", "1h");
@@ -49,3 +49,27 @@ test("collectWatchlistLightTargets empty when only Active", () => {
   assert.deepEqual(collectWatchlistLightTargets([{ pair: "EURUSD" }], "EURUSD"), []);
 });
 
+
+test("pickIdleTrainPair prefers USDJPY/GBPUSD among idle need_train", () => {
+  const pair = pickIdleTrainPair(
+    [
+      { pair: "EURUSD", status: "ready" },
+      { pair: "AUDUSD", status: "need_train" },
+      { pair: "USDJPY", status: "need_train" },
+      { pair: "GBPUSD", status: "need_train" },
+    ],
+    "EURUSD",
+  );
+  assert.equal(pair, "USDJPY");
+});
+
+test("pickIdleTrainPair skips Active even if need_train", () => {
+  assert.equal(
+    pickIdleTrainPair([{ pair: "EURUSD", status: "need_train" }, { pair: "AUDUSD", status: "need_train" }], "EURUSD"),
+    "AUDUSD",
+  );
+});
+
+test("pickIdleTrainPair null when none need train", () => {
+  assert.equal(pickIdleTrainPair([{ pair: "USDJPY", status: "ready" }], "EURUSD"), null);
+});

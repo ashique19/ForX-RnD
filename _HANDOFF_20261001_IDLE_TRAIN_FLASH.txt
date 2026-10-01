@@ -1,0 +1,38 @@
+﻿# HANDOFF 2026-10-01 ~13:25 Asia/Dhaka - Cheap idle Train + USDJPY/GBPUSD flashes
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK; Vite :5173 OK
+- Active **EURUSD** unchanged; min_conf 0.60; frozen overlays OFF; no promote
+- tip_vol_heal ran on Force attempt (4 tip bars); Force Start-Process line-cont fixed
+
+## Shipped this slice (no promote)
+1) **Cheap Train for idle watchlist pairs** (not Active EURUSD retrain roulette)
+   - CLI: `python -m forex_lab train --pair USDJPY` (+ GBPUSD) then `signals`
+   - Models: `models/USDJPY_*.joblib`, `models/GBPUSD_*.joblib` (+ AUDUSD via endpoint smoke)
+   - `POST /model/train/{pair}?signals=true` -> `run_train_idle_pair` (train + signals only)
+   - Does **not** change Active, champion/challenger gate, Replay, or promote
+2) **Suggestion board flashes**
+   - USDJPY: HOLD @ 158.298 conf ~66% (ready)
+   - GBPUSD: added to watchlist; model SELL gated by weekday_gate (window_gone copy)
+3) **One-click "Train idle PAIR"** on suggestion board
+   - Prefers USDJPY/GBPUSD among idle `need_train` rows (`pickIdleTrainPair`)
+   - Never trains Active; skips while light refresh / Active refresh inflight
+4) **START_DESK -Force** Start-Process backtick/blank-line break fixed (API + Vite)
+
+## Explicitly skipped
+- Promote / live-gate / min_conf / frozen overlay changes
+- Champion/challenger retrain gate for idle pairs
+- Full pipeline backtest for idle pairs
+- SSE/websocket; portfolio_brain enable
+
+## Tests
+- pytest test_train_idle + test_suggestion_chat + test_model_build: 25 passed
+- node --test freshness.test.ts: 9 passed (incl. pickIdleTrainPair)
+- desk tsc --noEmit clean; vitest suggestionChat: 6 passed
+- Manual: POST /model/train/AUDUSD?signals=false ok; Active still EURUSD
+
+## Next practical
+1) Light Fetch GBPUSD (STALE bars) so gated SELL can become a clean flash when weekday allows
+2) Optional: Train remaining need_train idle pairs via board button (AUDUSD already has joblib)
+3) Portfolio-paper journal UX while portfolio_brain enabled:false

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_RETRY_SECONDS, api, isUnreachable, subscribeApiReachability, type UnreachableKind } from "./api";
 import { FreshnessStrip } from "./components/FreshnessStrip";
 import { ModelBuildStrip } from "./components/ModelBuildStrip";
@@ -9,6 +9,7 @@ import {
   coerceChartInterval,
   collectTargets,
   collectWatchlistLightTargets,
+  pickIdleTrainPair,
   newestFetchMs,
   refreshIntervalSeconds,
   secondsAgo,
@@ -96,6 +97,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [wlRefreshing, setWlRefreshing] = useState(false);
+  const [idleTrainBusy, setIdleTrainBusy] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [paperToast, setPaperToast] = useState<string | null>(null);
@@ -113,6 +115,7 @@ export function App() {
   const boardReady = useRef(false);
   const inflight = useRef(false);
   const wlInflight = useRef(false);
+  const idleTrainInflight = useRef(false);
   const retryLock = useRef(false);
   const attempt = useRef(0);
   const selectedRef = useRef(selected);
@@ -338,6 +341,37 @@ export function App() {
     }
   }, []);
 
+  const idleTrainTarget = useMemo(
+    () => pickIdleTrainPair(rowsOf(board), selected),
+    [board, selected],
+  );
+
+  /** Cheap Train for one idle need_train pair. Never changes Active / promote. */
+  const trainIdlePair = useCallback(async () => {
+    if (idleTrainInflight.current || wlInflight.current || inflight.current) return;
+    const pair = pickIdleTrainPair(rowsRef.current, selectedRef.current);
+    if (!pair) {
+      setError("No idle watchlist pair needs Train right now.");
+      return;
+    }
+    idleTrainInflight.current = true;
+    setIdleTrainBusy(true);
+    setError(null);
+    try {
+      const result = await api.trainIdle(pair, true);
+      if (!result?.ok) {
+        const failed = result?.failed || "train";
+        throw new Error(`Idle Train failed at ${failed} for ${pair}`);
+      }
+      setTick((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Idle Train failed for ${pair}`);
+    } finally {
+      idleTrainInflight.current = false;
+      setIdleTrainBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (mode !== "decision" || !realtime || offline) return;
     if (nextAt == null) {
@@ -523,6 +557,9 @@ export function App() {
                 active={selected}
                 onRefreshWatchlist={() => void refreshWatchlistLight(true)}
                 refreshingWatchlist={wlRefreshing}
+                onTrainIdle={() => void trainIdlePair()}
+                trainingIdle={idleTrainBusy}
+                idleTrainLabel={idleTrainTarget}
               />
               <SignalBrief
                 pair={brief?.pair ?? selected}
