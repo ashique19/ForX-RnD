@@ -1,0 +1,15 @@
+# Tip health audit - 2026-10-01 06:16 Asia/Dhaka
+
+| pair | rows | end | source | tip_note | hl_bad | neg_spread | vol0 |
+|---|---:|---|---|---|---:|---:|---:|
+| EURUSD | 71935 | 2026-09-30 20:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 639 |
+| USDJPY | 73223 | 2026-09-30 20:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 519 |
+| GBPUSD | 73223 | 2026-09-30 20:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 522 |
+| AUDUSD | 73225 | 2026-09-30 20:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 521 |
+| NZDUSD | 73216 | 2026-09-30 20:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 524 |
+| USDCAD | 73226 | 2026-09-30 22:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 524 |
+| EURJPY | 73225 | 2026-09-30 23:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 521 |
+| EURGBP | 73224 | 2026-09-30 23:00:00 | jetta | Jetta /2026/9 HTTP 400; tip after 2026-08-31 23:00:00 = live | 0 | 0 | 521 |
+| USDCHF | 73226 | 2026-09-30 22:00:00 | jetta | Jetta /2026/9 HTTP 200 for USDCHF (true BA Sep tip; n_sep=52 | 0 | 0 | 1 |
+| GBPJPY | 73231 | 2026-09-30 23:00:00 | jetta | Jetta /2026/9 HTTP 200 for GBPJPY (true BA Sep); no synth re | 0 | 0 | 0 |
+| BTCUSD | 15275 | 2026-09-30 19:00:00 | yfinance |  | 0 | -1 | 7715 |
