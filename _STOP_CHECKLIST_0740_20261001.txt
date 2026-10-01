@@ -5,4 +5,4 @@
 - [x] Multi-pair pins TRUST + desk JSON refreshed
 - [x] Tip densify3 done (Replay SKIP)
 - [x] Retrain handoff written
-- [ ] At 07:40: stop starting new Replays/fetches; leave CPU for weekly retrain
+- [x] At 07:40: stop starting new Replays/fetches; leave CPU for weekly retrain

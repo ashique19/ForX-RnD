@@ -1,20 +1,30 @@
-﻿# FINAL autonomy scoreboard - 2026-10-01 (pre-stop draft; stop at 07:40)
-Standing ForX. **No promote.** Live Active=EURUSD min_confidence=0.60.
+﻿# FINAL autonomy scoreboard - stop for weekly retrain
+Wall-clock stop: **07:40 Asia/Dhaka** (2026-10-01). Started ~05:33. **No promote.** Live Active=EURUSD min_confidence=0.60.
 
-## Ordered work completed
-1. Meta-label strike 3/3 asia_loud_weak `c2f9814b` FAIL → **FREEZE meta family**
-2. cross_pair_veto wired into paperdesk behind enabled:false + tests
-3. Multi-pair hole-fill + costs-on pins: EURJPY, EURGBP, USDCHF, GBPJPY (all TRUST)
-4. Desk pin_scoreboard.json refreshed (10 rows); tip densify3; research tables
+## 1) Meta-label strike 3/3 — FREEZE
+- Hyp: asia_loud_weak (Asia + ATR>=0.60 + conf<0.70); conf_atr rejected offline
+- Job `c2f9814b` vs pin `2cee7e71`: PF 1.972 / ret 10.62 / DD -10.75% / n 3745 — FAIL
+- **FREEZE meta-label family 3/3**; enabled=false. See `_META_LABEL_FREEZE_20261001.txt`
 
-## Meta-label FREEZE 3/3
-quiet_weak / asia_quiet / asia_loud_weak all FAIL vs pin 2cee7e71. conf_atr rejected offline. enabled=false.
+## 2) Cross-pair veto paperdesk wire
+- Wired behind enabled:false + tests (14 unit tests green: meta+cross+paperdesk)
+- Co-occur research: veto>=2 would fire ~4.5% of EURUSD pin entries
 
-## Pin rank (research PF)
-USDJPY 3.037 ≈ EURJPY 3.037 > AUDUSD 2.980 > NZDUSD 2.851 > GBPJPY 2.780 > USDCAD 2.735 > GBPUSD 2.601 ≈ USDCHF 2.601 > EURGBP 2.382 > EURUSD 1.989 Active
+## 3-4) Multi-pair hole-fill + costs-on pins (TRUST)
+| pair | job | PF | WR | DD | QA |
+|---|---|---:|---:|---:|---|
+| EURJPY | a42587855 | 3.037 | 72.3% | -2.35% | TRUST |
+| EURGBP | 1bece8f2 | 2.382 | 68.7% | -4.10% | TRUST |
+| USDCHF | d9f72604 | 2.601 | 70.2% | -2.42% | TRUST |
+| GBPJPY | 1b8485ec | 2.780 | 71.1% | -2.09% | TRUST |
 
-## FREEZEs
-measured-intel 3/3; purge/size 3/3; meta-label 3/3
+Plus prior pins still on desk JSON (10 total). XAU/XAG SKIP (Jetta 429).
 
-## Stop
-Hard stop **07:40 Asia/Dhaka** for weekly retrain. See `_WEEKLY_RETRAIN_HANDOFF_20261001.txt`.
+## Research dumps (no gates)
+Session/hour/conf/weekday/yearly PF, streaks, DD depth, exit mix, daily PnL corr, tip health, freeze registry, retrain handoff.
+
+## Safety flags at stop
+meta_label=false; cross_pair=false; purge=0; size_by_conf=false; portfolio=false; min_conf=0.60; active=EURUSD
+
+## CPU
+Hard stop — leave machine for weekly retrain. Do not start new Replays/fetches.
