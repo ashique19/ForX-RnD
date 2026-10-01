@@ -21,3 +21,9 @@ Avoid
   - Replay roulette / promote from board.
   - Reintroducing 1d chart chips on Decision.
   - Injecting retrain/challenger banners into suggestion chat.
+
+Shipped follow-up 2026-10-01 ~14:31 Asia/Dhaka
+  - Chart restore: realtime:true after Auto-refresh removal (tsc/HMR break cause).
+  - Soft-collapse ModelBuildStrip; Replay compact in chart toolbar; SignalBrief hourly-only.
+  - Auto-refresh toggle removed (permanent). Board j/k. Fri-prep test (no gate flip).
+  - CSS min-height harden on chart-main / chart-area.

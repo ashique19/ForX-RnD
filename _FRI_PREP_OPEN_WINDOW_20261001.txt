@@ -1,0 +1,15 @@
+ForX Fri-prep — open_window desk_call when weekday mute lifts
+When: 2026-10-01 Asia/Dhaka
+Machine: DESKTOP-GK9IH4N C:\AI\forex-lab
+
+Gates: DO NOT FLIP. weekday_gate still blocks Mon,Thu UTC (today Thu = muted expected).
+
+Code path ready:
+- format_board_line BUY/SELL without weekday mute -> kind open_window (+ paper_action)
+- pick_desk_call ranks open_window actionable with Paper BUY/SELL
+- UI desk_call sticky + board click sets Active 1h
+- Test: test_desk_call_open_window_when_mute_lifts (mute absent fixture)
+
+When Fri UTC arrives: re-check live /suggestions/board for EURUSD (or strongest) open_window
+desk_call + Paper button. If still muted copy, inspect gate_reason / UTC day — do not
+disable weekday_gate without explicit user promote.

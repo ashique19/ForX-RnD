@@ -89,7 +89,7 @@ export function App() {
   const [selected, setSelected] = useState("");
   const [rowTf, setRowTf] = useState("1h");
   const [chartTf, setChartTf] = useState("1h");
-  const [realtime, setRealtime] = useState(true);
+  const realtime = true; // Decision: auto-refresh permanent (toggle removed)
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState<string | null>(null);
   const [offlineKind, setOfflineKind] = useState<UnreachableKind>("api");
@@ -585,7 +585,8 @@ export function App() {
           <Placeholder mode={mode} pair={selected} />
         ) : (
           <>
-            <div className="desk-bar">
+            <ReplayProvider pair={selected} interval={rowTf}>
+            <div className="desk-bar desk-bar-slim">
               <button
                 ref={watchlistButtonRef}
                 className={selected ? "btn watchlist-launch is-active" : "btn watchlist-launch"}
@@ -598,21 +599,17 @@ export function App() {
               >
                 {selected ? selected : "Pairs"}
               </button>
-
-              <ReplayProvider pair={selected} interval={rowTf}>
-                <ReplayTrainButton />
-                {modelStripDismissed ? null : (
-                  <ModelBuildStrip
-                    pair={selected}
-                    build={modelBuild}
-                    busy={retrainBusy}
-                    gateNote={gateNote}
-                    onRetrain={runRetrainGate}
-                    onDismiss={() => setModelStripDismissed(true)}
-                  />
-                )}
-                <LastReplayStrip />
-              </ReplayProvider>
+              {modelStripDismissed ? null : (
+                <ModelBuildStrip
+                  pair={selected}
+                  build={modelBuild}
+                  busy={retrainBusy}
+                  gateNote={gateNote}
+                  onRetrain={runRetrainGate}
+                  onDismiss={() => setModelStripDismissed(true)}
+                />
+              )}
+              <LastReplayStrip compact />
             </div>
             {offline ? (
               <div className="alerts bad api-down">
@@ -730,8 +727,6 @@ export function App() {
                   pair={selected}
                   interval={chartTf}
                   onInterval={setChartTf}
-                  realtime={realtime}
-                  onRealtime={setRealtime}
                   onReload={() => void refreshData(true)}
                   data={ohlcv}
                   stop={levels?.stop ?? null}
@@ -740,9 +735,11 @@ export function App() {
                   closeInterval={rowTf}
                   refreshKey={tick}
                   onPositionsChanged={() => setTick((n) => n + 1)}
+                  toolbarExtra={<ReplayTrainButton compact />}
                 />
               </div>
             </div>
+            </ReplayProvider>
             <WatchlistModal
               open={watchlistOpen}
               onClose={() => setWatchlistOpen(false)}

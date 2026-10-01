@@ -1,0 +1,37 @@
+﻿ForX agent: Decision UI polish + chart restore
+When: 2026-10-01 ~14:31 Asia/Dhaka
+Machine: DESKTOP-GK9IH4N C:\AI\forex-lab
+Base: 3933875 Decision assistant side rail
+
+## Cause of chart-gone (critical)
+Removing Auto-refresh toggle also stripped `realtime` from `engine.update(...)` in ChartPanel.
+ChartUpdate requires `realtime` -> tsc failed -> Vite HMR broke -> Decision chart blank.
+Fix: pass `realtime: true` (auto-refresh permanent). Parent + agent confirmed.
+
+## Shipped (no promote; Decision 1h-only)
+1) Chart restore + harden
+   - engine.update({ ..., realtime: true })
+   - CSS: .chart-main / .chart / .chart-area min-heights so side rail cannot collapse chart
+2) Soft-collapse ModelBuildStrip (default collapsed; localStorage forx.decision.modelStripCollapsed)
+   Header CompactModelAge is enough day-to-day; expand for Retrain gate
+3) Replay train relocated off full desk-bar row
+   - Compact "Replay" in chart toolbar (toolbarExtra); pair not echoed (Active already shown)
+   - LastReplayStrip compact on slim desk-bar (empty essay suppressed)
+4) SignalBrief: Daily card removed; Hourly (1h) only
+5) Auto-refresh toggle removed; realtime always on; quiet live stays in header FreshnessStrip
+6) Board j/k keyboard nav (Enter opens pair 1h); focus ring is-kbd-focus
+7) Fri-prep: test_desk_call_open_window_when_mute_lifts + _FRI_PREP_OPEN_WINDOW_20261001.txt
+   Gates NOT flipped (Thu mute still expected)
+
+## Verify
+- tsc --noEmit clean
+- pytest tests/test_suggestion_chat.py: 24 passed
+- vitest suggestionChat.test.ts: 9 passed
+- API /health ok; Vite :5173 200; ChartPanel served with realtime:true
+
+## Do next
+- Visual confirm 1h chart + slim Replay in toolbar on DESKTOP
+- Fri UTC: live desk_call open_window when mute lifts (do not flip weekday_gate)
+- Avoid Replay roulette / promote / reintroducing Daily or Auto-refresh toggle
+
+Desk: http://127.0.0.1:5173/  API :8000

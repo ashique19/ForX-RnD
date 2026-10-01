@@ -24,14 +24,13 @@ function failureReason(suggestion: Suggestion | null | undefined): string {
   return "";
 }
 
-/** Levels that match the chart's 1h/1d lines. Other chart TFs fall back to hourly. */
+/** Decision desk is 1h-only — prefer hourly levels; ignore daily. */
 function focusSuggestion(
   hourly: Suggestion | null,
-  daily: Suggestion | null,
-  chartInterval: string,
+  _daily: Suggestion | null,
+  _chartInterval: string,
 ): Suggestion | null {
-  if (chartInterval === "1d") return daily ?? hourly;
-  return hourly ?? daily;
+  return hourly;
 }
 
 function RefreshIcon() {
@@ -510,10 +509,9 @@ export function SignalBrief({
           )}
         </div>
       </div>
-      {hourly && daily && consensus ? (
-        <div className="tf-cards">
-          <Card title="Hourly" suggestion={hourly} consensus={consensus.hourly} pair={pair} />
-          <Card title="Daily" suggestion={daily} consensus={consensus.daily} pair={pair} />
+      {hourly && consensus ? (
+        <div className="tf-cards tf-cards-hourly-only">
+          <Card title="Hourly (1h)" suggestion={hourly} consensus={consensus.hourly} pair={pair} />
         </div>
       ) : (
         <div className="bias-sub">Loading brief…</div>

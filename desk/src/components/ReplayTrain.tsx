@@ -157,16 +157,24 @@ export function ReplayProvider({
   return <ReplayContext.Provider value={value}>{children}</ReplayContext.Provider>;
 }
 
-export function ReplayTrainButton() {
+export function ReplayTrainButton({ compact = false }: { compact?: boolean } = {}) {
   const { pair, open, setOpen, failure, latest, buttonRef } = useReplay();
   const storedFail = latest?.recent_error ? failureText(latest.recent_error) : null;
   const failed = Boolean(failure || storedFail);
+  const cls = [
+    "btn",
+    "replay-launch",
+    compact ? "sm compact" : "",
+    failed ? "has-fail" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <>
       <button
         ref={buttonRef}
-        className={failed ? "btn replay-launch has-fail" : "btn replay-launch"}
+        className={cls}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -176,19 +184,21 @@ export function ReplayTrainButton() {
         title={
           failure ||
           storedFail ||
-          (pair ? `Active ${pair}. Advisory scoreboard — does not replace the live champion.` : "Choose one Active pair")
+          (pair
+            ? `Active ${pair}. Advisory scoreboard - does not replace the live champion.`
+            : "Choose one Active pair")
         }
         onClick={() => setOpen(true)}
       >
-        Replay train
-        {pair ? <span className="replay-active">{pair}</span> : null}
+        {compact ? "Replay" : "Replay train"}
+        {!compact && pair ? <span className="replay-active">{pair}</span> : null}
       </button>
       <ReplayModal />
     </>
   );
 }
 
-export function LastReplayStrip() {
+export function LastReplayStrip({ compact = false }: { compact?: boolean } = {}) {
   const { pair, interval, open, setOpen, failure, latest, ready, loadFailed } = useReplay();
   const [scoreboardDismissed, setScoreboardDismissed] = useState(false);
   const storedFail = latest?.recent_error ? failureText(latest.recent_error) : null;
@@ -230,7 +240,7 @@ export function LastReplayStrip() {
           collapsible
           onDismiss={() => setScoreboardDismissed(true)}
         />
-      ) : ready && !loadFailed && pair && !running && !failLine && !job ? (
+      ) : !compact && ready && !loadFailed && pair && !running && !failLine && !job ? (
         <p className="replay-empty">
           No scoreboard yet for {pair}. Replay train compares champion, challenger, and SMA. {latest?.advisory || REPLAY_ADVISORY}
         </p>

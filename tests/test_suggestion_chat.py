@@ -422,3 +422,39 @@ def test_open_pos_richer_narrative():
     assert "held 2h" in line["text"]
     assert "sl 1.13000" in line["text"]
 
+
+
+def test_desk_call_open_window_when_mute_lifts():
+    """Fri-prep: when weekday mute is absent, BUY surfaces actionable open_window desk_call.
+
+    Does not flip weekday_gate config — only asserts the path after mute lifts (e.g. Fri UTC).
+    """
+    from forex_lab.suggestion_chat import build_suggestion_feed
+
+    feed = build_suggestion_feed(
+        [
+            {
+                "pair": "EURUSD",
+                "signal": "BUY",
+                "last": 1.13276,
+                "target": 1.13454,
+                "stop": 1.13098,
+                "confidence": 0.72,
+                # no weekday_gate / muted — simulates Fri UTC after mute lifts
+            },
+            {
+                "pair": "AUDUSD",
+                "signal": "HOLD",
+                "last": 0.69,
+                "confidence": 0.4,
+            },
+        ],
+        active="EURUSD",
+    )
+    call = feed.get("desk_call")
+    assert call is not None
+    assert call["actionable"] is True
+    assert call["source_kind"] == "open_window"
+    assert call["pair"] == "EURUSD"
+    assert call.get("paper_action", {}).get("side") == "BUY"
+    assert "open window" in call["headline"].lower() or "window" in call["headline"].lower()

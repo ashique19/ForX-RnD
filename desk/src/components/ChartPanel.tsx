@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "../api";
 import type { Bar, IndicatorSeries, Ohlcv, PortfolioRow } from "../types";
 import {
@@ -78,8 +78,8 @@ export function ChartPanel({
   pair,
   interval,
   onInterval,
-  realtime,
-  onRealtime,
+  // realtime always on (Decision)
+
   onReload,
   data,
   stop,
@@ -88,12 +88,12 @@ export function ChartPanel({
   closeInterval,
   refreshKey = 0,
   onPositionsChanged,
+  toolbarExtra,
 }: {
   pair: string;
   interval: string;
   onInterval: (interval: string) => void;
-  realtime: boolean;
-  onRealtime: (on: boolean) => void;
+
   onReload: () => void;
   data: Ohlcv | null;
   stop: number | null;
@@ -103,6 +103,8 @@ export function ChartPanel({
   closeInterval?: string;
   refreshKey?: number;
   onPositionsChanged?: () => void;
+  /** Slim tools (e.g. Replay) live in chart toolbar, not a full desk-bar row. */
+  toolbarExtra?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const area = useRef<HTMLDivElement | null>(null);
@@ -209,12 +211,12 @@ export function ChartPanel({
       toggles,
       stop,
       target,
-      realtime,
+      realtime: true,
       precision: data?.digits ?? priceFormatFor(pair).precision,
       patterns: patternHits,
       positions: drawnPositions,
     });
-  }, [data, toggles, stop, target, realtime, pair, interval, patternHits, drawnPositions]);
+  }, [data, toggles, stop, target, pair, interval, patternHits, drawnPositions]);
 
   async function closePicked() {
     if (!picked || closing) return;
@@ -251,16 +253,8 @@ export function ChartPanel({
             </button>
           ))}
         </div>
-        <button
-          className="switch"
-          type="button"
-          title="Auto-refresh Active-pair market data on the top strip (about every 18s). Dukascopy ticks when available, else yfinance. Not a broker stream."
-          onClick={() => onRealtime(!realtime)}
-          aria-pressed={realtime}
-        >
-          <span className={realtime ? "track" : "track off"}><span className="thumb" /></span>
-          Auto-refresh
-        </button>
+        {toolbarExtra ? <div className="chart-toolbar-extra">{toolbarExtra}</div> : null}
+
         <button className={`btn icon ${busy ? "spin" : ""}`} type="button" title="Update watchlist data now" aria-label="Update now" aria-busy={busy} onClick={onReload}>
           <RefreshIcon />
         </button>

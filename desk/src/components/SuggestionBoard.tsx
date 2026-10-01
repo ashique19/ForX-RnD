@@ -77,6 +77,7 @@ export function SuggestionBoard({
   const [deskCall, setDeskCall] = useState<DeskCall | null>(null);
   const [openPositions, setOpenPositions] = useState<PortfolioRow[]>([]);
   const [actionBusy, setActionBusy] = useState(false);
+  const [kbdIdx, setKbdIdx] = useState(-1);
   const scroller = useRef<HTMLDivElement>(null);
   const seen = useRef<Set<string>>(new Set());
   const prevKinds = useRef<Record<string, string>>({});
@@ -233,6 +234,45 @@ export function SuggestionBoard({
     onOpenPair(pair);
   };
 
+  const navPairs = useMemo(() => {
+    const out: string[] = [];
+    const seenP = new Set<string>();
+    const push = (raw?: string | null) => {
+      const p = String(raw || "").trim().toUpperCase();
+      if (!p || seenP.has(p) || !onOpenPair) return;
+      seenP.add(p);
+      out.push(p);
+    };
+    if (deskCall?.pair) push(deskCall.pair);
+    for (const line of lines) push(line.pair);
+    return out;
+  }, [deskCall, lines, onOpenPair]);
+
+  useEffect(() => {
+    if (kbdIdx < 0) return;
+    if (!navPairs.length) {
+      setKbdIdx(-1);
+      return;
+    }
+    if (kbdIdx >= navPairs.length) setKbdIdx(navPairs.length - 1);
+  }, [navPairs, kbdIdx]);
+
+  const onBoardKeyDown = (ev: { key: string; preventDefault: () => void; target: EventTarget | null }) => {
+    const t = ev.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (!onOpenPair || !navPairs.length) return;
+    if (ev.key === "j" || ev.key === "J") {
+      ev.preventDefault();
+      setKbdIdx((i) => (i < 0 ? 0 : Math.min(navPairs.length - 1, i + 1)));
+    } else if (ev.key === "k" || ev.key === "K") {
+      ev.preventDefault();
+      setKbdIdx((i) => (i < 0 ? navPairs.length - 1 : Math.max(0, i - 1)));
+    } else if (ev.key === "Enter" && kbdIdx >= 0 && kbdIdx < navPairs.length) {
+      ev.preventDefault();
+      openPair(navPairs[kbdIdx]);
+    }
+  };
+
   const deskTone =
     deskCall?.actionable && deskCall?.source_kind === "close_hint"
       ? "sug-warn"
@@ -241,7 +281,13 @@ export function SuggestionBoard({
         : "sug-hold";
 
   return (
-    <section className="panel suggestion-board" aria-label="Suggestion board">
+    <section
+      className="panel suggestion-board"
+      aria-label="Suggestion board"
+      tabIndex={0}
+      onKeyDown={onBoardKeyDown}
+      title="j/k move between pairs, Enter opens 1h chart"
+    >
       <div className="panel-hd">
         <h2>Suggestion board</h2>
         <div className="sug-hd-actions">
@@ -284,6 +330,10 @@ export function SuggestionBoard({
           className={`sug-desk-call ${deskTone}${deskCall.pair && onOpenPair ? " is-clickable" : ""}${
             deskCall.pair && String(deskCall.pair).toUpperCase() === String(active || "").toUpperCase()
               ? " is-active-pair"
+              : ""
+          }${
+            kbdIdx >= 0 && navPairs[kbdIdx] === String(deskCall.pair || "").toUpperCase()
+              ? " is-kbd-focus"
               : ""
           }`}
           role={deskCall.pair && onOpenPair ? "button" : "status"}
@@ -351,8 +401,9 @@ export function SuggestionBoard({
               <div
                 key={line.id + String(line.atMs || "")}
                 className={`suggestion-line ${toneClass(String(line.kind))} ${line.weight}${
-                  canOpen ? " is-clickable" : ""
-                }${isActivePair ? " is-active-pair" : ""}`}
+                  canOpen ? " is-clickable" : ""}${isActivePair ? " is-active-pair" : ""}${
+                  kbdIdx >= 0 && navPairs[kbdIdx] === pair ? " is-kbd-focus" : ""
+                }`}
                 role={canOpen ? "button" : undefined}
                 tabIndex={canOpen ? 0 : undefined}
                 title={canOpen ? `Open ${pair} 1h chart (set Active)` : undefined}
@@ -395,7 +446,7 @@ export function SuggestionBoard({
       </div>
       <div
         className="suggestion-foot"
-        title={`${SUGGESTION_HONESTY} Click a line to open that pair 1h chart (sets Active). Refresh = watchlist 1h OHLCV only (no 1d). Train idle = cheap joblib (no Active steal / no promote). Paper buttons = journal only.`}
+        title={`${SUGGESTION_HONESTY} Click a line to open that pair 1h chart (sets Active). Refresh = watchlist 1h OHLCV only (no 1d). Train idle = cheap joblib (no Active steal / no promote). j/k navigate · Enter opens · Paper buttons = journal only.`}
       >
         {SUGGESTION_HONESTY} · Decision 1h only · Refresh = watchlist 1h · Paper buttons = journal only.
       </div>
