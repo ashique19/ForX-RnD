@@ -1,0 +1,29 @@
+﻿# HANDOFF 2026-10-01 ~12:26 Asia/Dhaka (executor)
+PC DESKTOP-GK9IH4N / C:\AI\forex-lab. Desk UP (API 8000, Vite 5173). tip_vol_heal intact.
+
+## Done this stretch
+1) Desk healthy: Active EURUSD; tip Vol=0 forming OK (prev 1747); brain enabled=false; no promote.
+2) Serial Replay 76c3d050 session-overlap ENFORCED (hyp written first):
+   - champion PF 2.556 / DD -2.25% / n 670 vs pin 2cee7e71 PF 1.989 / DD -10% / n 3791
+   - Research PASS vs pin on PF+DD; internal promote=null; live signals.sessions=[] unchanged
+   - Parent: interesting research; NOT auto live-promote (regime/n-trade change — human review)
+3) Suggestion Board (product ask) shipped + pushed ffe4900:
+   - Design: _SUGGESTION_BOARD_DESIGN_20261001.txt
+   - API: GET http://127.0.0.1:8000/suggestions/board
+   - Desk: Decision mode panel "Suggestion board" above Signal Brief (auto-scroll chat)
+   - Open: http://127.0.0.1:5173 → Decision mode (default)
+4) Jetta Sep probe: HTTP 400 on /2026/{7,8,9} — remesh blocked (_JETTA_SEP_PROBE_20261001.txt)
+5) Queued next hyp: _HYP_VOL_SCALED_CONF_QUEUED_20261001.txt (serial after this Replay)
+
+## Honesty limits (Suggestion Board)
+- Decision aid only; not broker quotes; not auto-trade; not promote
+- Lines reuse board/brief/paper; Active-heavy, watchlist-light
+- No live-gate / min_conf / portfolio_brain flips from this panel
+
+## Frozen (unchanged)
+meta_label, trend_regime, purge, size_by_conf, portfolio_brain, cross_pair_veto
+
+## Next
+- Keep paper-week growing (Thu gate blocks opens — expected)
+- Optional: wire api.suggestionsBoard client poll; richer BTCUSD lines; SSE later
+- Do NOT start vol_scaled Replay until human ok if wanting to inspect session result first (hyp already queued)
