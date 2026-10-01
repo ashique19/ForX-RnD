@@ -126,13 +126,13 @@ describe("suggestionChat", () => {
 
   it("below min confidence keeps a directional lean", () => {
     const line = formatBoardChatLine(
-      base({ signal: "HOLD", raw_signal: "SELL", gate_reason: "conf=0.55 < min 0.60", stop: 0.698, target: 0.692 }),
+      base({ pair: "AUDUSD", signal: "HOLD", raw_signal: "SELL", gate_reason: "conf=0.55 < min 0.60", last: 0.69555, stop: 0.698, target: 0.692 }),
       { active: "EURUSD" },
     );
     expect(line?.kind).toBe("open_window");
     expect(line?.text).toContain("lean");
     expect(line?.text.toLowerCase()).toContain("below min_conf");
-    expect(line?.text).toContain("Sell and hold @ 1.13276");
+    expect(line?.text).toContain("Sell and hold @ 0.69555");
   });
 
   it("BTCUSD pin-skip honesty not Train", () => {
