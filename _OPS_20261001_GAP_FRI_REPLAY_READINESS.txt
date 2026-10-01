@@ -6,7 +6,7 @@ PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d)
 Path B selected. No clean new Replay-able lever was launched: prior high_vol and min_tp_8pips screens are not clean after-cost full-history evidence, ADX/trend is frozen after strikes, and the local data/history Replay cache currently has no usable files. Launching would violate the full-history comparison rule. No new hypothesis or config change was made.
 
 ## Gap / Friday QA
-- Watchlist H1 scan: EURUSD 114 gaps (longer history); each current 1h watchlist cache has 12 gaps except USDCHF 12 as well, with gaps concentrated at Friday/weekend boundaries.
+- Watchlist H1 scan: EURUSD 114 gaps (longer history); each current 1h watchlist cache has 12 gaps, with gaps concentrated at Friday/weekend boundaries.
 - Current common boundary is Friday 15:00 UTC -> Sunday 17:00 UTC (~50h), consistent with FX closure plus provider/session coverage; no synthetic bars or CSV edits were made.
 - USDCHF last boundary is Friday 14:00 UTC -> Sunday 17:00 UTC (~51h), retained as a provider/session gap, not patched.
 - x_session_open boundary check passed: Friday 20:00 UTC open; Friday 21:00 closed; Saturday closed; Sunday 20:00 closed; Sunday 21:00 open; Monday open.
@@ -14,3 +14,4 @@ Path B selected. No clean new Replay-able lever was launched: prior high_vol and
 ## Regression QA
 - pytest -q tests/test_freshness.py tests/test_weekday_gate.py: **21 passed**, one existing XGBoost serialization warning.
 - No Replay, no donor probe, no live/config/gate changes. Data CSVs remain untouched and dirty per standing pattern.
+
