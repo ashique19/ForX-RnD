@@ -1,0 +1,40 @@
+﻿HYPOTHESIS 2026-10-02: TIME-STOP DD CONTROL (HORIZON 6)
+
+Mechanism
+---------
+Reduce the maximum holding horizon from 8 to 6 one-hour bars. This is a
+trade-lifetime cap, not a tighter stop: TP/SL distances, entry filters,
+cost model, sizing, sessions, weekday gate, and confidence remain unchanged.
+A shorter maximum exposure should cut prolonged adverse excursions and cap
+loss clustering from stale positions, explicitly targeting lower max DD.
+
+Knob and scope
+--------------
+The existing `horizon` knob in config/default.yaml is changed 8 -> 6. The
+same setting is used causally for triple-barrier labels and Replay timeout;
+no new feature or look-ahead is introduced. This is a single EURUSD 1h,
+2015-01-01-to-history-end, costs-on full-history Replay using bid/ask data and
+0.2 pip adverse slippage per fill with exit slippage enabled.
+
+Frozen / not touched
+--------------------
+No promote, live-gate, sessions, min_confidence, weekday_gate, portfolio_brain,
+measured-intel, or failed-family retuning. In particular, news-blackout-
+expanded, tight-stop 1.75, min_tp_pips=16, min_vol_regime=0.8,
+size-by-confidence, purge+embargo, vol_scaled_conf, and ADX/trend 3/3 remain
+frozen/off as currently configured.
+
+Decision rule
+-------------
+Compare the after-cost full-history Replay champion book against its challenger.
+A pass requires challenger PF > current champion PF, challenger max DD not
+worse (must be >= champion DD), and total return > champion return, with the
+existing retrain/promotion result remaining null because promotion is disabled
+for this research run. Any fail, error, or non-beat reverts default.yaml to
+config/default.yaml.bak_pre_horizon6_20261002 and records a strike.
+
+Baseline reference
+------------------
+Current weekly champion pointer a0d93fc6df364c2a869b5f3a69eef206 reports
+after-cost champion PF 1.474545, return 0.055068, max DD -0.011813.
+This experiment is research-only; no live or promotion action is authorized.
