@@ -1,0 +1,3 @@
+# Negative-PF years count (PF<1) by pair - 2026-10-01 Asia/Dhaka
+
+- EURUSD: 4 years PF<1
