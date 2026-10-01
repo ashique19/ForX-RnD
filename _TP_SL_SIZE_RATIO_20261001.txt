@@ -1,0 +1,7 @@
+# TP vs SL size ratio - 2026-10-01 Asia/Dhaka
+
+| pair | avg_tp | avg_sl | ratio |
+|---|---:|---:|---:|
+| EURUSD | 0.002234 | -0.002190 | 1.020 |
+| EURJPY | 0.002622 | -0.002471 | 1.061 |
+| USDJPY | 0.002496 | -0.002336 | 1.068 |
