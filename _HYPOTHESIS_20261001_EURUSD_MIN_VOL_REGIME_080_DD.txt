@@ -18,3 +18,10 @@ Require the causal short/long volatility ratio to be at least 0.80 (`signals.min
 ## Acceptance / kill
 - Useful only if after-cost PF and total return are not degraded and max DD improves materially with a sensible trade count; PF/DD alone is insufficient.
 - Any failed improve criterion -> record FAIL, keep default `min_vol_regime: 0.0`, no threshold sweep, and no live-gate change.
+
+## Outcome - Replay 954723e6754f4771abcd095c5c3ded56 (2026-10-01 23:46 Asia/Dhaka)
+- Cached Jetta bid/ask rows: 71,939; `signals.min_vol_regime=0.8`; costs and all existing overlays unchanged.
+- In-job champion: PF 2.7774, DD -2.02%, return +53.02%, n=411.
+- Challenger: PF 2.8264, DD -4.15%, return +61.39%, n=444.
+- Verdict: **FAIL**; PF/return improved but max DD worsened by 2.13 percentage points, so promotion is null and champion is kept.
+- Temporary research YAML was removed; `config/default.yaml` remains `signals.min_vol_regime: 0.0`. No second volatility-floor threshold sweep.

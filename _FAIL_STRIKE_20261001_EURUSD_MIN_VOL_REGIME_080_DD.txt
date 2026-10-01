@@ -1,0 +1,11 @@
+﻿# FAIL strike - EURUSD minimum volatility-regime floor family
+Date: 2026-10-01 Asia/Dhaka
+
+Replay `954723e6754f4771abcd095c5c3ded56` tested `signals.min_vol_regime=0.8` on 71,939 cached Jetta bid/ask H1 rows with costs on and all frozen gates unchanged.
+
+- In-job champion: PF 2.7774 | DD -2.02% | return +53.02% | n 411
+- Challenger: PF 2.8264 | DD -4.15% | return +61.39% | n 444
+- Verdict: **FAIL**; PF and return rose, but DD worsened by 2.13pp. Promotion null; champion kept.
+- Auto-revert confirmed: temporary research YAML removed and default `signals.min_vol_regime` is 0.0.
+
+Strike 1 for the minimum volatility-regime floor family. No second threshold sweep without a new distinct written hypothesis; no live-gate or promote change.
