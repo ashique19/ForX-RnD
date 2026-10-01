@@ -6,10 +6,18 @@ from __future__ import annotations
 
 import json
 import time
-import traceback\nimport uuid\nimport sys
+import traceback
+import uuid
+import sys
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo\n\nROOT = Path(__file__).resolve().parents[1]\nif str(ROOT) not in sys.path:\n    sys.path.insert(0, str(ROOT))\n\nfrom forex_lab.config_loader import load_config
+from zoneinfo import ZoneInfo
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from forex_lab.config_loader import load_config
 from forex_lab.history import load_history, load_meta, replay_store_dir
 from forex_lab.replay import run_replay
 
@@ -147,4 +155,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
