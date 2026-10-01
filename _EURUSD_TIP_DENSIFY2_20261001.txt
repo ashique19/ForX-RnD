@@ -1,0 +1,4 @@
+﻿# EURUSD tip densify2 - 2026-10-01 06:19 Asia/Dhaka
+Live mid tip was 4 bars ahead of history mesh (Sep 30 21:00 -> Oct 1 00:00).
+Appended synth BA tip using Aug half-spread. H1 71935 -> **71939**.
+**Replay SKIP** (tip-only; pin 2cee7e71 stands). No promote.

@@ -111,3 +111,9 @@ def test_asia_loud_weak_vetoes_asia_high_atr_low_conf():
     assert int(out.iloc[0]["pred"]) == 1  # HOLD
     assert int(out.iloc[1]["pred"]) == 2
     assert int(out.iloc[2]["pred"]) == 0
+
+def test_asia_loud_weak_failsoft_without_atr():
+    cfg = _cfg("asia_loud_weak", atr_min=0.60, conf_max=0.70)
+    pred = pd.DataFrame({"pred": [2], "confidence": [0.5]})  # no atr_pctile, no ohlcv
+    out = apply_meta_label_to_pred(pred, cfg)
+    assert int(out.iloc[0]["pred"]) == 2  # fail-soft keep
