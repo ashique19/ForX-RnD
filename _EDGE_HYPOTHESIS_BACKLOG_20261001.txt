@@ -52,3 +52,10 @@ Leave CPU/IO free for weekly retrain ~08:04 Asia/Dhaka.
 - API/desk stay up; Active EURUSD; watchlist includes NZDUSD for research board only.
 - Next human/agent touch: weekly retrain window ~08:04 Asia/Dhaka, then optional morning QA on rich-PF pins.
 
+
+## Update 2026-10-01 ~06:16 Asia/Dhaka (this autonomy stretch)
+- **meta-label family FREEZE 3/3** (asia_loud_weak `c2f9814b` FAIL). Do not reopen without NEW family mechanism.
+- cross_pair_veto now wired into `api/paperdesk.py` behind enabled=false (+ tests).
+- New after-cost TRUST pins: EURJPY 3.037, GBPJPY 2.780, USDCHF 2.601, EURGBP 2.382.
+- XAU/XAG SKIP (Jetta 429 + pip audit needed).
+- Still no promote. Live Active=EURUSD conf 0.60.

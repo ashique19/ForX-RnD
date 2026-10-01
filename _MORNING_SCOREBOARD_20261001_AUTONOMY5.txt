@@ -1,0 +1,31 @@
+﻿# Morning autonomy blunt scoreboard FINAL - 2026-10-01 Asia/Dhaka
+Work window until **07:40** then stop for weekly retrain. **No promote.** Live min_confidence=0.60.
+
+## Meta-label family — FREEZE 3/3 CLOSED
+| # | rule | job | vs pin 2cee7e71 | verdict |
+|---|---|---|---|---|
+| 1 | quiet_weak | d5908db6 | PF flat / DD worse | FAIL |
+| 2 | asia_quiet | df06b935 | ret -2.98 | FAIL |
+| 3 | asia_loud_weak | c2f9814b | PF/ret/DD all miss | FAIL FREEZE |
+
+conf_atr rejected offline (return collapse). enabled=false. Module kept.
+
+## Multi-pair pins landed this stretch
+| pair | job | PF | WR | DD | QA |
+|---|---|---:|---:|---:|---|
+| EURJPY | a42587855 | 3.037 | 72.3% | -2.35% | TRUST |
+| EURGBP | 1bece8f2 | 2.382 | 68.7% | -4.10% | TRUST |
+| USDCHF | d9f72604 | 2.601 | 70.2% | -2.42% | TRUST |
+| GBPJPY | 1b8485ec | 2.780 | 71.1% | -2.09% | TRUST |
+
+## Also
+- cross_pair_veto paperdesk wire OFF + tests
+- paper journal stats conf/exit bins
+- desk `data/pin_scoreboard.json` refreshed (10 rows)
+- XAU/XAG SKIP (429)
+
+## FREEZEs
+measured-intel 3/3; purge/size 3/3; **meta-label 3/3**
+
+## Non-actions
+No promote. No live-gate change. All overlays enabled=false.

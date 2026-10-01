@@ -1,5 +1,5 @@
 {
-  "as_of_dhaka": "2026-10-01 05:33 Asia/Dhaka",
+  "as_of_dhaka": "2026-10-01 06:16 Asia/Dhaka",
   "disclaimer": "Research after-cost pins only. Promote=null everywhere. Not a live deploy rank. Active live pair remains EURUSD min_confidence=0.60.",
   "pin_ref_eurusd": "2cee7e7163134266ad8c2b39234442d8",
   "rows": [
@@ -18,6 +18,19 @@
     },
     {
       "rank": 2,
+      "pair": "EURJPY",
+      "job_id": "a425878558e4453f832e5c6fa112c510",
+      "pf": 3.037,
+      "wr": 0.723,
+      "n": 5934,
+      "dd": -0.0235,
+      "total_return": 1198.89,
+      "sma_pf": 0.862,
+      "qa": "TRUST",
+      "promote": null
+    },
+    {
+      "rank": 3,
       "pair": "AUDUSD",
       "job_id": "6a5653c8d5fc4f43aa896ca8c26a6150",
       "pf": 2.98,
@@ -30,7 +43,7 @@
       "promote": null
     },
     {
-      "rank": 3,
+      "rank": 4,
       "pair": "NZDUSD",
       "job_id": "83c2715df9104a099056b96812141c42",
       "pf": 2.851,
@@ -43,7 +56,20 @@
       "promote": null
     },
     {
-      "rank": 4,
+      "rank": 5,
+      "pair": "GBPJPY",
+      "job_id": "1b8485ecd70c4f7e82b17bc25548c117",
+      "pf": 2.78,
+      "wr": 0.711,
+      "n": 5904,
+      "dd": -0.0209,
+      "total_return": 2216.14,
+      "sma_pf": 0.856,
+      "qa": "TRUST",
+      "promote": null
+    },
+    {
+      "rank": 6,
       "pair": "USDCAD",
       "job_id": "a9b26129d9a44f86b2f89646d4698ff3",
       "pf": 2.735,
@@ -56,7 +82,7 @@
       "promote": null
     },
     {
-      "rank": 5,
+      "rank": 7,
       "pair": "GBPUSD",
       "job_id": "d6a6f7a60036404aabb1e57dd1da8725",
       "pf": 2.601,
@@ -69,7 +95,33 @@
       "promote": null
     },
     {
-      "rank": 6,
+      "rank": 8,
+      "pair": "USDCHF",
+      "job_id": "d9f7260455da471791ff88d6044bd107",
+      "pf": 2.601,
+      "wr": 0.702,
+      "n": 6211,
+      "dd": -0.0242,
+      "total_return": 377.53,
+      "sma_pf": 0.785,
+      "qa": "TRUST",
+      "promote": null
+    },
+    {
+      "rank": 9,
+      "pair": "EURGBP",
+      "job_id": "1bece8f2ecd14e7180eb920d413dc470",
+      "pf": 2.382,
+      "wr": 0.687,
+      "n": 6255,
+      "dd": -0.041,
+      "total_return": 142.84,
+      "sma_pf": 0.755,
+      "qa": "TRUST",
+      "promote": null
+    },
+    {
+      "rank": 10,
       "pair": "EURUSD",
       "job_id": "2cee7e7163134266ad8c2b39234442d8",
       "pf": 1.989,
@@ -86,8 +138,8 @@
   "freezes": {
     "measured_intel": "3/3 FAIL CLOSED",
     "new_track_purge_size": "3/3 FAIL CLOSED",
-    "meta_label": "2/3 FAIL (quiet_weak d5908db6; asia_quiet df06b935) - enabled=false",
-    "cross_pair_veto": "code stub OFF (tests only; no Replay)"
+    "meta_label": "3/3 FAIL CLOSED FREEZE (quiet_weak d5908db6; asia_quiet df06b935; asia_loud_weak c2f9814b) - enabled=false",
+    "cross_pair_veto": "wired paperdesk OFF (enabled=false; tests green; no Replay)"
   },
   "source_note": "_PIN_SCOREBOARD_20261001.txt"
 }
