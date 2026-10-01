@@ -51,18 +51,36 @@ class TipVolHealResult:
 
 
 def _watchlist_pairs(cfg: dict[str, Any]) -> list[str]:
-    wl = cfg.get("watchlist") or {}
+    """Resolve Active + watched pairs from config/watchlist.yaml (desk source of truth)."""
     pairs: list[str] = []
-    active = str(wl.get("active") or "").upper().replace("/", "")
-    if active:
-        pairs.append(active)
-    for p in wl.get("pairs") or []:
-        if isinstance(p, dict):
-            name = str(p.get("pair") or "").upper().replace("/", "")
-        else:
-            name = str(p).upper().replace("/", "")
-        if name and name not in pairs:
-            pairs.append(name)
+    try:
+        from forex_lab.ui.watchlist import active_pair, load_watchlist
+
+        wl = load_watchlist()
+        focus = str(active_pair(wl) or "").upper().replace("/", "")
+        if focus:
+            pairs.append(focus)
+        for item in wl.pairs or []:
+            name = str(getattr(item, "pair", "") or "").upper().replace("/", "")
+            if name and name not in pairs:
+                pairs.append(name)
+    except Exception:
+        pass
+    # Fallback: cfg.watchlist block or hard Active EURUSD so heal never no-ops empty.
+    if not pairs:
+        wl = cfg.get("watchlist") or {}
+        active = str(wl.get("active") or "EURUSD").upper().replace("/", "")
+        if active:
+            pairs.append(active)
+        for raw in wl.get("pairs") or []:
+            if isinstance(raw, dict):
+                name = str(raw.get("pair") or "").upper().replace("/", "")
+            else:
+                name = str(raw).upper().replace("/", "")
+            if name and name not in pairs:
+                pairs.append(name)
+    if not pairs:
+        pairs = ["EURUSD"]
     return pairs
 
 
