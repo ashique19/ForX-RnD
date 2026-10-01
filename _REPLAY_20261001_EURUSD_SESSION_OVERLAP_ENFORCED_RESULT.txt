@@ -1,0 +1,22 @@
+﻿# RESULT: session_gate overlap ENFORCED - 2026-10-01 12:22 Asia/Dhaka
+Job: 76c3d05094c0476eab3c1c42d350f481
+Hyp: _HYP_SESSION_GATE_OVERLAP_ENFORCED_20261001.txt
+Report: session_gate: overlap | sessions=['ldn_ny']  (ENFORCED)
+
+## After-cost scoreboard (this job)
+- champion (xgboost): n=670  PF=2.556  DD=-2.25%  ret=0.839  WR=70.3%
+- challenger (logistic): n=682 PF=2.773 DD=-3.34% ret=0.993 WR=72.6%  → internal promote=null (DD worse)
+- sma baseline: PF=0.883
+
+## Vs pin 2cee7e71 (pre-enforce, silent skip)
+- pin champion: n=3791 PF=1.9887 DD=-10.00% ret=11.17
+- enforced champion: n=670 PF=2.556 DD=-2.25% ret=0.84
+- Research verdict vs pin: PASS on PF + DD (fewer trades; overlap-only book)
+- Live gate: UNCHANGED (signals.sessions=[] still). replay.session_gate already overlap.
+- Promote: null. Do NOT flip live sessions / promote without user ask.
+- Parent note: research-interesting; NOT auto promote-ready for live Active switch
+  (trade count regime change; need human review before any live session filter).
+
+## Follow-ups
+- vol_scaled_conf hyp remains QUEUED (_HYP_VOL_SCALED_CONF_QUEUED_20261001.txt)
+- Suggestion board UI shipped client-side; API /suggestions/board after desk restart

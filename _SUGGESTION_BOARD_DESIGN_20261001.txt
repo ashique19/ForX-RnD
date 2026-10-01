@@ -1,0 +1,32 @@
+﻿# Suggestion Board (chat) - design 2026-10-01 Asia/Dhaka
+Decision aid only. No auto live orders. No promote / live-gate change.
+
+## Goal
+Friendly realtime chat window on Decision desk. ForX "speaks" in plain trader voice
+as conditions change across the watchlist (Active pair heavy; others light).
+
+## Example lines
+- "EURUSD: open BUY window now @ 1.13276 — sell target @ 1.13454, stop/limit @ 1.13098 (research, not an order)."
+- "EURUSD: open window gone. Don't buy now — conf 0.46 < min 0.60; weekday_gate blocks Thu (UTC)."
+- "EURUSD: consider closing paper BUY opened @ 1.13392 — flash flipped / pattern or gate changed."
+- "BTCUSD: HOLD — no directional flash (research desk)."
+
+## Architecture (incremental)
+1) Formatter layer (`forex_lab/suggestion_chat.py` + `desk/src/suggestionChat.ts`)
+   - Pure functions: board row + optional brief suggestion + optional open paper -> chat lines
+   - Honesty footer on every payload: decision aid / not broker quotes / not auto-trade
+2) API poll: GET `/suggestions/board?since_id=` (optional SSE later)
+   - Active pair: full brief-backed line; other watched pairs: board-row light lines
+   - Dedup by fingerprint; return only new lines when since_id set
+3) Desk UI: `SuggestionBoard` panel under Decision right column — auto-scroll chat
+4) Wire EURUSD/Active first; expand to full watchlist light poll
+
+## Mid-Replay ship note
+Replay 76c3d050 must not be cancelled. UI ships with client-side formatter from
+existing `/board` + `/brief` + `/portfolio` so no API restart is required until Replay ends.
+API stub lands in tree; activate on next desk/API boot after Replay.
+
+## Non-goals
+- No live broker placement from chat lines
+- No flipping min_confidence / weekday_gate / portfolio_brain from this panel
+- No silent promote

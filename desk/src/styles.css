@@ -2271,3 +2271,99 @@
 .pin-rank .tag.active {
   outline: 1px solid rgba(80, 160, 255, 0.5);
 }
+
+    /* ---- Suggestion board chat ---- */
+    .suggestion-board {
+      display: flex;
+      flex-direction: column;
+      min-height: 140px;
+      max-height: 220px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .suggestion-board .panel-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .suggestion-board .panel-hd h2 {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .sug-hd-note {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .suggestion-scroll {
+      flex: 1 1 auto;
+      overflow: auto;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: #fbfcfe;
+    }
+    .suggestion-empty {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 8px 2px;
+    }
+    .suggestion-line {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.35;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+    .suggestion-line.active { font-weight: 560; }
+    .suggestion-line.light { opacity: 0.92; }
+    .suggestion-time {
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 11px;
+      padding-top: 1px;
+    }
+    .suggestion-text { color: var(--text-2); word-break: break-word; }
+    .suggestion-line.sug-buy {
+      background: var(--green-bg);
+      border-color: var(--green-border);
+    }
+    .suggestion-line.sug-buy .suggestion-text { color: #027a48; }
+    .suggestion-line.sug-warn {
+      background: var(--amber-bg);
+      border-color: #fedf89;
+    }
+    .suggestion-line.sug-warn .suggestion-text { color: #93370d; }
+    .suggestion-line.sug-hold {
+      background: var(--blue-bg);
+      border-color: #b2ddff;
+    }
+    .suggestion-line.sug-muted {
+      background: var(--surface-2);
+      border-color: var(--border);
+    }
+    .suggestion-foot {
+      border-top: 1px solid var(--border);
+      padding: 4px 10px;
+      font-size: 10px;
+      color: var(--faint);
+      background: var(--surface);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .right-col > .suggestion-board {
+      flex: 0 0 auto;
+    }

@@ -28,3 +28,7 @@ Enforcing London∩NY entry filter on after-cost full-history Replay will cut As
 - Outside overlap: 3136 (82.7%) — matches hyp root-cause (filter silently skipped)
 - London|NY union 07-21 UTC: 2462 (64.9%)
 - Replay job 76c3d050 started 2026-10-01 ~12:16 Asia/Dhaka (pull=false, min_conf=0.60)
+
+## RESULT 2026-10-01 12:22 Asia/Dhaka — research PASS vs pin (promote=null)
+Job 76c3d050: champion PF 2.556 / DD -2.25% / n 670 vs pin PF 1.989 / DD -10.0% / n 3791.
+Live sessions unchanged. No promote.

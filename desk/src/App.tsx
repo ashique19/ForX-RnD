@@ -26,6 +26,7 @@ import { SignalBrief } from "./components/SignalBrief";
 import { TopNav } from "./components/TopNav";
 import { LastReplayStrip, ReplayProvider, ReplayTrainButton } from "./components/ReplayTrain";
 import { WatchlistModal } from "./components/Watchlist";
+import { SuggestionBoard } from "./components/SuggestionBoard";
 
 function sameBrief(cur: Brief | null, pair: string, tf: string): boolean {
   if (!cur) return false;
@@ -467,6 +468,7 @@ export function App() {
               </div>
             ) : null}
             <div className="right-col">
+              <SuggestionBoard board={board} brief={brief} active={selected} />
               <SignalBrief
                 pair={brief?.pair ?? selected}
                 bias={brief?.bias ?? "—"}

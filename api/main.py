@@ -1,4 +1,4 @@
-"""ForX Decision API.
+﻿"""ForX Decision API.
 
     python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
@@ -158,7 +158,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="ForX Decision API",
         version=api_version,
-        description="JSON for the Decision desk. Research only — no live orders.",
+        description="JSON for the Decision desk. Research only â€” no live orders.",
         lifespan=_lifespan,
     )
     app.add_middleware(
@@ -264,7 +264,7 @@ def create_app() -> FastAPI:
     def post_model_retrain(pair: str, dry_run: bool = Query(default=False)) -> dict:
         """Explicit champion/challenger gate. Not called on a timer.
 
-        Walk-forward can take several minutes. Research only â€” not a live edge.
+        Walk-forward can take several minutes. Research only Ã¢â‚¬â€ not a live edge.
         """
         try:
             symbol = normalize_pair(pair)
@@ -415,6 +415,63 @@ def create_app() -> FastAPI:
     def get_history_pull(job_id: str) -> dict:
         return _job_or_404(job_id)
 
+
+    @app.get("/suggestions/board")
+    def get_suggestions_board(
+        since_id: str | None = Query(default=None),
+    ) -> dict:
+        """Friendly chat lines from current board/paper snapshot. Decision aid only."""
+        from forex_lab.suggestion_chat import build_suggestion_feed
+
+        cfg = app_config()
+        board = board_payload(cfg)
+        rows = list(board.get("rows") or [])
+        active = board.get("active") or (cfg.get("watchlist") or {}).get("active")
+        open_positions: list[dict] = []
+        try:
+            from api import paperdesk as paper
+
+            port = paper.portfolio_payload(cfg, sync=False)
+            open_positions = list(port.get("open") or [])
+        except Exception:
+            open_positions = []
+        brief_primary = None
+        try:
+            if active:
+                brief = build_brief(str(active), cfg=cfg)
+                hourly = (brief or {}).get("hourly") or {}
+                brief_primary = {
+                    "signal": hourly.get("signal") or (brief or {}).get("bias"),
+                    "raw_signal": (brief or {}).get("raw_signal") or hourly.get("raw_signal"),
+                    "gate_reason": (brief or {}).get("gate_reason") or hourly.get("gate_reason"),
+                    "confidence": (
+                        (brief or {}).get("confidence")
+                        if (brief or {}).get("confidence") is not None
+                        else hourly.get("confidence")
+                    ),
+                    "now": hourly.get("now"),
+                    "stop": hourly.get("stop"),
+                    "target": hourly.get("target"),
+                    "last": hourly.get("now"),
+                }
+        except Exception:
+            brief_primary = None
+        feed = build_suggestion_feed(
+            rows,
+            active=str(active) if active else None,
+            open_positions=open_positions,
+            brief_primary=brief_primary,
+        )
+        lines = list(feed.get("lines") or [])
+        if since_id:
+            ids = [str(x.get("id") or "") for x in lines]
+            if since_id in ids:
+                idx = ids.index(since_id)
+                lines = lines[idx + 1 :]
+                feed = {**feed, "lines": lines, "count": len(lines), "since_id": since_id}
+        feed["generated_at_dhaka"] = board.get("refreshed_at_dhaka")
+        return feed
+
     @app.post("/replay/train")
     def post_replay_train(body: ReplayTrainBody) -> dict:
         """Walk-forward replay for the one Active pair. Paper books only; live journal untouched."""
@@ -490,4 +547,5 @@ def _job_download(job_id: str, name: str, media: str) -> FileResponse:
 
 
 app = create_app()
+
 
