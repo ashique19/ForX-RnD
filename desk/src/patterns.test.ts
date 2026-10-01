@@ -338,3 +338,68 @@ test("candlestick hits stay markers and are omitted from line segments", () => {
   assert.equal(patternStrokeColor("bear"), "#b42318");
   assert.equal(patternStrokeColor("neutral"), "#5925dc");
 });
+
+test("double top neck uses the true lowest wick between peaks, not the first pivot low", () => {
+  // Two equal tops with TWO lows between: first shallow, second deeper (true neck).
+  const bars = swingBars(50, [
+    { i: 0, price: 1.0 },
+    { i: 8, price: 1.2 },
+    { i: 14, price: 1.08 }, // shallow mid low (would be first pivot)
+    { i: 20, price: 1.12 }, // bounce
+    { i: 26, price: 1.02 }, // deeper true neck
+    { i: 34, price: 1.2 },
+    { i: 49, price: 1.05 },
+  ]);
+  // Exaggerate equal highs and distinct lows so pivots fire cleanly.
+  bars[8] = bar(9, 1.198, 1.205, 1.195, 1.2);
+  bars[14] = bar(15, 1.085, 1.09, 1.08, 1.082);
+  bars[26] = bar(27, 1.03, 1.035, 1.02, 1.022);
+  bars[34] = bar(35, 1.198, 1.204, 1.195, 1.2);
+
+  const hit = detectPatterns(bars, {
+    ...allOn,
+    triangle: false,
+    head_shoulders: false,
+    inv_head_shoulders: false,
+    double_bottom: false,
+  }).find((item) => item.id === "double_top");
+  assert.ok(hit, "double top");
+  const solid = hit.strokes?.find((stroke) => stroke.style === "solid");
+  assert.ok(solid);
+  const neck = solid.points.find((point) => point.role === "neck");
+  assert.ok(neck);
+  assert.equal(neck.price, bars[26].low);
+  assert.equal(neck.time, bars[26].time);
+  // Must not latch onto the shallow first mid-low.
+  assert.notEqual(neck.price, bars[14].low);
+});
+
+test("double bottom neck uses the true highest wick between troughs", () => {
+  const bars = swingBars(50, [
+    { i: 0, price: 1.2 },
+    { i: 8, price: 1.0 },
+    { i: 14, price: 1.12 }, // shallow mid high
+    { i: 20, price: 1.08 },
+    { i: 26, price: 1.18 }, // higher true neck
+    { i: 34, price: 1.0 },
+    { i: 49, price: 1.1 },
+  ]);
+  bars[8] = bar(9, 1.002, 1.005, 0.995, 1.0);
+  bars[14] = bar(15, 1.115, 1.12, 1.11, 1.118);
+  bars[26] = bar(27, 1.175, 1.18, 1.17, 1.178);
+  bars[34] = bar(35, 1.002, 1.005, 0.995, 1.0);
+
+  const hit = detectPatterns(bars, {
+    ...allOn,
+    triangle: false,
+    head_shoulders: false,
+    inv_head_shoulders: false,
+    double_top: false,
+  }).find((item) => item.id === "double_bottom");
+  assert.ok(hit, "double bottom");
+  const solid = hit.strokes?.find((stroke) => stroke.style === "solid");
+  const neck = solid?.points.find((point) => point.role === "neck");
+  assert.ok(neck);
+  assert.equal(neck.price, bars[26].high);
+  assert.notEqual(neck.price, bars[14].high);
+});

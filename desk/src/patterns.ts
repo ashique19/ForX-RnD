@@ -398,7 +398,8 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
         const p2 = highs[b];
         if (p2.i - p1.i < 5) continue;
         if (!near(p1.price, p2.price, tol)) continue;
-        const midLow = lows.find((l) => l.i > p1.i && l.i < p2.i);
+        // Neck = true lowest wick between peaks (not the first local-low pivot).
+        const midLow = extremeBetween(bars, p1.i, p2.i, "low");
         if (!midLow || midLow.price >= Math.min(p1.price, p2.price) - tol * 0.2) continue;
         last = {
           time: p2.time,
@@ -420,7 +421,8 @@ function detectStructures(bars: Bar[], filters: PatternFilters, out: PatternHit[
         const p2 = lows[b];
         if (p2.i - p1.i < 5) continue;
         if (!near(p1.price, p2.price, tol)) continue;
-        const midHigh = highs.find((h) => h.i > p1.i && h.i < p2.i);
+        // Neck = true highest wick between troughs (not the first local-high pivot).
+        const midHigh = extremeBetween(bars, p1.i, p2.i, "high");
         if (!midHigh || midHigh.price <= Math.max(p1.price, p2.price) + tol * 0.2) continue;
         last = {
           time: p2.time,
