@@ -1,0 +1,38 @@
+﻿# HANDOFF 2026-10-01 ~13:35 Asia/Dhaka - START_DESK -Force fix + idle watchlist trains
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d) C:\AI\forex-lab
+
+## Desk health
+- API http://127.0.0.1:8000/health OK; Vite :5173 OK
+- Active **EURUSD** unchanged; min_conf 0.60; frozen overlays OFF; no promote
+- portfolio_brain remains enabled:false (paper UX already present; left alone)
+
+## Shipped this slice (no promote)
+1) **START_DESK.ps1 real -Force fix**
+   - File had been committed with `\r\r\n` + blank line after every line (since 5882347)
+   - Broke Start-Process backtick continuations for API + Vite (` `\r\r\n\r\r\n    -Redirect...`)
+   - De-doubled lines; UTF-8 BOM + CRLF; PARSE_OK
+   - Smoke: `-Force -NoBrowser` -> tip_vol_heal -> Healthy after 2s; lock released
+   - Smoke: already-healthy (no -Force) -> skip restart + release lock (twice)
+2) **Light Fetch GBPUSD** (was STALE ~7.5h)
+   - POST /refresh pairs=[GBPUSD@1h] active=null -> Live; last bar 13:00 Asia/Dhaka
+3) **Train idle need_train FX via POST /model/train/{pair}?signals=true**
+   - EURGBP, EURJPY, GBPJPY, NZDUSD, USDCAD, USDCHF (joblib + signals)
+   - Skipped Active EURUSD; skipped BTCUSD (pin-skip)
+   - Board now shows HOLD/window_gone flashes instead of need_train for those pairs
+   - Prior joblibs kept: USDJPY, GBPUSD, AUDUSD
+
+## Explicitly skipped
+- Promote / live-gate / min_conf / frozen overlays
+- portfolio_brain enable; new Replay hyp
+- BTCUSD train
+- Extra paper-journal UX (Portfolio.tsx + board paper_closed already cover diary)
+
+## Tests / smoke
+- START_DESK parse OK; -Force healthy 2s; already-healthy x2
+- Manual train batch: 6/6 ok; active_unchanged EURUSD
+- Desk health after trains OK
+
+## Next practical
+1) When weekday_gate lifts (not Thu/Mon UTC), re-check idle flashes for clean BUY/SELL
+2) Optional BTCUSD train only if pin policy changes
+3) Only deepen portfolio-paper if user asks; brain stays off

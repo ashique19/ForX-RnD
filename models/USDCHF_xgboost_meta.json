@@ -1,0 +1,152 @@
+{
+  "pair": "USDCHF",
+  "interval": "1h",
+  "model_type": "xgboost",
+  "features": [
+    "ret_1",
+    "ret_3",
+    "ret_6",
+    "ret_12",
+    "ret_24",
+    "sma_10_ratio",
+    "sma_20_ratio",
+    "sma_50_ratio",
+    "ema_12_ratio",
+    "ema_26_ratio",
+    "macd_norm",
+    "rsi",
+    "atr_pct",
+    "volatility",
+    "vol_regime",
+    "ret_1_atr",
+    "ret_6_atr",
+    "ret_12_atr",
+    "range_pct",
+    "range_pct_z",
+    "body_pct",
+    "dist_high_20",
+    "dist_low_20",
+    "range_pos_20",
+    "dist_high_50",
+    "dist_low_50",
+    "range_pos_50",
+    "sma20_slope",
+    "mom_mr",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "sess_asia",
+    "sess_london",
+    "sess_ny",
+    "vol_z"
+  ],
+  "val_accuracy": 0.5192307692307693,
+  "classification_report": {
+    "SELL": {
+      "precision": 0.23809523809523808,
+      "recall": 0.2702702702702703,
+      "f1-score": 0.25316455696202533,
+      "support": 37.0
+    },
+    "HOLD": {
+      "precision": 0.8211382113821138,
+      "recall": 0.5976331360946746,
+      "f1-score": 0.6917808219178082,
+      "support": 169.0
+    },
+    "BUY": {
+      "precision": 0.25263157894736843,
+      "recall": 0.4444444444444444,
+      "f1-score": 0.3221476510067114,
+      "support": 54.0
+    },
+    "accuracy": 0.5192307692307693,
+    "macro avg": {
+      "precision": 0.43728834280824014,
+      "recall": 0.4374492836031298,
+      "f1-score": 0.4223643432955149,
+      "support": 260.0
+    },
+    "weighted avg": {
+      "precision": 0.6200922569086882,
+      "recall": 0.5192307692307693,
+      "f1-score": 0.5525923871771806,
+      "support": 260.0
+    }
+  },
+  "label_map": {
+    "0": "SELL",
+    "1": "HOLD",
+    "2": "BUY"
+  },
+  "label_scheme": "triple_barrier",
+  "horizon": 8,
+  "label_threshold": 0.0005,
+  "barrier": {
+    "tp_atr": 2.0,
+    "sl_atr": 2.0,
+    "path": "high_low",
+    "timeout_label": "hold",
+    "cost_aware": false
+  },
+  "entry_timing": "next_open",
+  "label_distribution": {
+    "sell": 0.20601851851851852,
+    "hold": 0.5632716049382716,
+    "buy": 0.23070987654320987,
+    "n": 1296
+  },
+  "feature_importance": [
+    {
+      "feature": "sess_ny",
+      "importance": 0.08039688318967819
+    },
+    {
+      "feature": "hour_sin",
+      "importance": 0.06148996949195862
+    },
+    {
+      "feature": "atr_pct",
+      "importance": 0.03497985005378723
+    },
+    {
+      "feature": "dow_sin",
+      "importance": 0.03332125023007393
+    },
+    {
+      "feature": "hour_cos",
+      "importance": 0.03214256092905998
+    },
+    {
+      "feature": "sma_20_ratio",
+      "importance": 0.029242757707834244
+    },
+    {
+      "feature": "sma_50_ratio",
+      "importance": 0.02919199876487255
+    },
+    {
+      "feature": "sess_asia",
+      "importance": 0.028664546087384224
+    },
+    {
+      "feature": "vol_regime",
+      "importance": 0.027517162263393402
+    },
+    {
+      "feature": "range_pos_50",
+      "importance": 0.02717139944434166
+    },
+    {
+      "feature": "rsi",
+      "importance": 0.02708137221634388
+    },
+    {
+      "feature": "dow_cos",
+      "importance": 0.027078816667199135
+    }
+  ],
+  "calibrate": null,
+  "prune_bottom_frac": 0.0
+}

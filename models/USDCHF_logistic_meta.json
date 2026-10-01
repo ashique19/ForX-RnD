@@ -1,0 +1,103 @@
+{
+  "pair": "USDCHF",
+  "interval": "1h",
+  "model_type": "logistic",
+  "features": [
+    "ret_1",
+    "ret_3",
+    "ret_6",
+    "ret_12",
+    "ret_24",
+    "sma_10_ratio",
+    "sma_20_ratio",
+    "sma_50_ratio",
+    "ema_12_ratio",
+    "ema_26_ratio",
+    "macd_norm",
+    "rsi",
+    "atr_pct",
+    "volatility",
+    "vol_regime",
+    "ret_1_atr",
+    "ret_6_atr",
+    "ret_12_atr",
+    "range_pct",
+    "range_pct_z",
+    "body_pct",
+    "dist_high_20",
+    "dist_low_20",
+    "range_pos_20",
+    "dist_high_50",
+    "dist_low_50",
+    "range_pos_50",
+    "sma20_slope",
+    "mom_mr",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "sess_asia",
+    "sess_london",
+    "sess_ny",
+    "vol_z"
+  ],
+  "val_accuracy": 0.5461538461538461,
+  "classification_report": {
+    "SELL": {
+      "precision": 0.24675324675324675,
+      "recall": 0.5135135135135135,
+      "f1-score": 0.3333333333333333,
+      "support": 37.0
+    },
+    "HOLD": {
+      "precision": 0.8347107438016529,
+      "recall": 0.5976331360946746,
+      "f1-score": 0.696551724137931,
+      "support": 169.0
+    },
+    "BUY": {
+      "precision": 0.3548387096774194,
+      "recall": 0.4074074074074074,
+      "f1-score": 0.3793103448275862,
+      "support": 54.0
+    },
+    "accuracy": 0.5461538461538461,
+    "macro avg": {
+      "precision": 0.4787675667441064,
+      "recall": 0.5061846856718651,
+      "f1-score": 0.46973180076628357,
+      "support": 260.0
+    },
+    "weighted avg": {
+      "precision": 0.6513741390574236,
+      "recall": 0.5461538461538461,
+      "f1-score": 0.578974358974359,
+      "support": 260.0
+    }
+  },
+  "label_map": {
+    "0": "SELL",
+    "1": "HOLD",
+    "2": "BUY"
+  },
+  "label_scheme": "triple_barrier",
+  "horizon": 8,
+  "label_threshold": 0.0005,
+  "barrier": {
+    "tp_atr": 2.0,
+    "sl_atr": 2.0,
+    "path": "high_low",
+    "timeout_label": "hold",
+    "cost_aware": false
+  },
+  "entry_timing": "next_open",
+  "label_distribution": {
+    "sell": 0.20601851851851852,
+    "hold": 0.5632716049382716,
+    "buy": 0.23070987654320987,
+    "n": 1296
+  },
+  "feature_importance": [],
+  "calibrate": null,
+  "prune_bottom_frac": 0.0
+}
