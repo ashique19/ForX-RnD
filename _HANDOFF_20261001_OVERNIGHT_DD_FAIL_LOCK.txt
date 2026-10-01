@@ -1,0 +1,17 @@
+﻿# HANDOFF 2026-10-01 23:47 Asia/Dhaka - overnight idle lock after DD FAIL chain
+PC: DESKTOP-GK9IH4N (7e587e4b-532e-420e-863a-f817a584547d)  C:\AI\forex-lab
+
+## Research stop
+- **No further model Replay or YAML challenger sweep before/through the overnight batch.** Resume only after the batch and a NEW written hypothesis whose mechanism explicitly targets drawdown control, not merely PF uplift.
+- Tonight's DD-fail chain: expanded news blackout, tight stop 1.75 ATR, `min_tp_pips=16`, and `min_vol_regime=0.8`. Each showed a PF/return bump but worsened max DD; all were reverted/kept null.
+- Serial challenger gate remains active. Do not retune any failed family or reopen measured-intel FREEZE. Do not enable `portfolio_brain` or change live gates.
+
+## Overnight desk posture
+- Leave API/UI and the 1h Decision desk up for the idle batch.
+- Jetta tip-volume heal may run only if donors genuinely appear; do not thrash blocked October Jetta/Duka endpoints or synthesize Volume.
+- Gap/freshness self-heal may run fail-soft; preserve OHLC and leave data CSVs dirty/uncommitted per standing pattern.
+- No Replay PID should be present at handoff; no YAML challenger should remain sticky. Default min-TP/min-vol are both 0.0.
+
+## Provenance
+- Warm EURUSD full-history cache and path diagnosis: `f83c8ef`.
+- min-TP FAIL/revert: `734304e`; min-vol FAIL/revert: `78ce631`.
