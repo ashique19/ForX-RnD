@@ -14,6 +14,7 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 | USDCAD | `a9b26129d9a44f86b2f89646d4698ff3` | 2026-10-01 04:55 | jetta / true | 73226 | **2.735** | 70.5% | 6164 | -2.46% | 238.13 | 0.798 | null | Hole-fill Jetta+synth tip. Light QA **TRUST** (`_QA_USDCAD_PIN_20261001.txt`). Research only. |
 | EURJPY | 425878558e4453f832e5c6fa112c510 | 2026-10-01 05:52 | jetta / true | 73225 | **3.037** | 72.3% | 5934 | -2.35% | 1198.89 | 0.862 | null | Hole-fill Jetta+synth tip. QA **TRUST** (_QA_EURJPY_PIN_20261001.txt). Research only. |
 | EURGBP | 1bece8f2ecd14e7180eb920d413dc470 | 2026-10-01 05:59 | jetta / true | 73224 | **2.382** | 68.7% | 6255 | -4.10% | 142.84 | 0.755 | null | Hole-fill Jetta+synth tip. QA **TRUST**. Research only. |
+| USDCHF | d9f7260455da471791ff88d6044bd107 | 2026-10-01 06:11 | jetta / true | 73226 | **2.601** | 70.2% | 6211 | -2.42% | 377.53 | 0.785 | null | True Jetta Sep BA. QA **TRUST**. Research only. |
 
 ## Challenger (same jobs; all fail improve gate)
 
@@ -27,6 +28,7 @@ Measured-intel FREEZE (no feature/regime/conf challengers).
 | USDCAD | 2.702 | 70.9% | 5956 | -1.96% | 200.44 | PF/return worse |
 | EURJPY | 425878558e4453f832e5c6fa112c510 | 2026-10-01 05:52 | jetta / true | 73225 | **3.037** | 72.3% | 5934 | -2.35% | 1198.89 | 0.862 | null | Hole-fill Jetta+synth tip. QA **TRUST** (_QA_EURJPY_PIN_20261001.txt). Research only. |
 | EURGBP | 1bece8f2ecd14e7180eb920d413dc470 | 2026-10-01 05:59 | jetta / true | 73224 | **2.382** | 68.7% | 6255 | -4.10% | 142.84 | 0.755 | null | Hole-fill Jetta+synth tip. QA **TRUST**. Research only. |
+| USDCHF | d9f7260455da471791ff88d6044bd107 | 2026-10-01 06:11 | jetta / true | 73226 | **2.601** | 70.2% | 6211 | -2.42% | 377.53 | 0.785 | null | True Jetta Sep BA. QA **TRUST**. Research only. |
 
 ## Tip refresh state (EURUSD)
 

@@ -1,0 +1,2 @@
+﻿# GBPJPY H1 hole fill via Jetta - 2026-10-01 Asia/Dhaka
+Jetta 2015-01 .. **2026-09 OK** -> **73231** bars ending 2026-09-30 23:00. True BA Sep (no synth). Daily remesh. Active=EURUSD.
