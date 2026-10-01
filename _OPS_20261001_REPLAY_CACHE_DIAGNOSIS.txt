@@ -1,0 +1,7 @@
+﻿# Replay cache diagnosis - 2026-10-01 Asia/Dhaka
+
+- Resolved config path: `C:\AI\forex-lab\data\history` (`FORX_HISTORY_DIR` unset; no path drift).
+- EURUSD cache is present and readable at `data/history/EURUSD_1h.csv`: 71,939 rows, 2015-01-01 22:00 through 2026-10-01 00:00 UTC, source `jetta`, bid/ask true.
+- `history_status(..., start=2015-01-01)` reports `stale=false`; `load_history` succeeds. Matching `EURUSD_1h.meta.json` records the Jetta pull and Volume-only tip repair.
+- No restore or long cache rebuild was needed; the earlier “cache unavailable” diagnosis was an inspection/visibility false negative, not a power-outage loss.
+- Current single research run: min-TP 16 pips, job `5cfd0a27abd747cda14af02c65981002`; temporary research YAML only, default.yaml unchanged.
