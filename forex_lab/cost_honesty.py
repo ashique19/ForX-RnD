@@ -1,4 +1,4 @@
-﻿"""Stage-3 cost honesty helpers (assumed vs tip/history bid-ask).
+"""Stage-3 cost honesty helpers (assumed vs tip/history bid-ask).
 
 No YAML cost flip. No Replay. No Jetta remesh.
 Samples tip OHLCV (usually mid-only) and data/history Dukascopy BA when present.
