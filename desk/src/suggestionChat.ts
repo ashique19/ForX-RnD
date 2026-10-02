@@ -17,6 +17,7 @@ export interface SuggestionChatLine {
   transition?: string;
   confidence?: number | null;
   muted_advisory?: boolean;
+  below_min_conf?: boolean;
 }
 
 const PLACEHOLDER = new Set([
@@ -347,6 +348,17 @@ export function formatBoardChatLine(
   } else if (kind === "window_gone" || kind === "open_window") {
     fpBody = fingerprintStableBody(kind, body, gate);
   }
+  const bodyL = body.toLowerCase();
+  const weekdayMuted =
+    kind === "open_window" &&
+    (bodyL.includes("weekday mute on") ||
+      bodyL.includes("live gate still muted") ||
+      (bodyL.includes("not opening") && bodyL.includes("weekday")));
+  const belowMin =
+    kind === "open_window" && bodyL.includes("below min_conf");
+  const confRaw =
+    opts?.confidence ?? hourly?.confidence ?? (row as BoardRow & { confidence?: number }).confidence ?? null;
+
   return {
     id: fingerprintLine(pair, kind, fpBody),
     pair,
@@ -354,6 +366,9 @@ export function formatBoardChatLine(
     weight,
     text: body,
     honesty: SUGGESTION_HONESTY,
+    confidence: typeof confRaw === "number" && Number.isFinite(confRaw) ? confRaw : null,
+    muted_advisory: weekdayMuted || undefined,
+    below_min_conf: belowMin || undefined,
   };
 }
 
@@ -440,13 +455,22 @@ export function buildClientSuggestionFeed(args: {
   filtered.sort((a, b) => {
     const d = rank(a.kind) - rank(b.kind);
     if (d !== 0) return d;
-    const aMute =
-      a.kind === "open_window" &&
-      (a.muted_advisory === true || /muted|not opening|below min_conf/i.test(a.text || ""));
-    const bMute =
-      b.kind === "open_window" &&
-      (b.muted_advisory === true || /muted|not opening|below min_conf/i.test(b.text || ""));
-    if (aMute !== bMute) return aMute ? 1 : -1;
+    const gateTier = (ln: SuggestionChatLine): number => {
+      if (ln.kind !== "open_window") return 0;
+      const text = ln.text || "";
+      const weekday =
+        ln.muted_advisory === true ||
+        /weekday mute on|live gate still muted/i.test(text) ||
+        (/not opening/i.test(text) && /weekday/i.test(text));
+      const below =
+        ln.below_min_conf === true || /below min_conf/i.test(text);
+      if (weekday) return 2;
+      if (below) return 1;
+      return 0;
+    };
+    const ta = gateTier(a);
+    const tb = gateTier(b);
+    if (ta !== tb) return ta - tb;
     const aw = a.weight === "active" ? 0 : 1;
     const bw = b.weight === "active" ? 0 : 1;
     if (aw !== bw) return aw - bw;

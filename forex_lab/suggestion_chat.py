@@ -499,19 +499,29 @@ def format_board_line(
     }
     side_for_paper = signal if signal in {"BUY", "SELL"} else (raw if raw in {"BUY", "SELL"} else None)
     if kind == "open_window" and side_for_paper in {"BUY", "SELL"}:
-        muted_open = (
-            "not opening" in body.lower()
-            or "live gate still muted" in body.lower()
-            or "below min_conf" in body.lower()
+        body_l = body.lower()
+        # Fri clarity: weekday mute chip != below-min chip (both can soft-close live).
+        weekday_muted = (
+            "weekday mute on" in body_l
+            or "live gate still muted" in body_l
+            or ("not opening" in body_l and "weekday" in body_l)
         )
+        below_min = "below min_conf" in body_l or _below_min_conf(gate)
+        if weekday_muted:
+            paper_suffix = " (weekday mute)"
+        elif below_min:
+            paper_suffix = " (below min)"
+        else:
+            paper_suffix = ""
         out["paper_action"] = {
             "pair": pair,
             "side": side_for_paper,
             "can_paper_open": True,
-            "label": f"Paper {side_for_paper}" + (" (muted)" if muted_open else ""),
+            "label": f"Paper {side_for_paper}{paper_suffix}",
         }
         out["signal"] = side_for_paper
-        out["muted_advisory"] = bool(muted_open)
+        out["muted_advisory"] = bool(weekday_muted)
+        out["below_min_conf"] = bool(below_min)
     if kind == "close_hint" and open_position:
         pos_id = str(open_position.get("id") or "").strip() or None
         close_side = _norm_side(
@@ -713,9 +723,13 @@ def pick_desk_call(
         kind = str(ln.get("kind") or "")
         weight_bonus = 1 if str(ln.get("weight") or "") == "active" else 0
         pair_bonus = 1 if str(ln.get("pair") or "").upper() == active_u else 0
-        # Unmuted open_window (live path ready) outranks muted advisory even at lower conf.
+        # Fully open live path outranks below-min lean and weekday-mute advisory.
         unmuted_bonus = 0
-        if kind == "open_window" and not ln.get("muted_advisory"):
+        if (
+            kind == "open_window"
+            and not ln.get("muted_advisory")
+            and not ln.get("below_min_conf")
+        ):
             unmuted_bonus = 1
         # Among same kind/mute tier: higher conf wins; active pair is only a tie-break.
         return (
@@ -733,7 +747,13 @@ def pick_desk_call(
         side = _norm_side(best.get("signal") or best.get("raw_signal"))
         if kind == "open_window":
             if best.get("muted_advisory"):
-                note = "below min_conf" if "below min_conf" in str(best.get("text") or "").lower() else "muted weekday"
+                note = "muted weekday"
+                headline = (
+                    f"Desk call: {pair} advisory {side or 'window'} - "
+                    f"{note} (not opening; paper journal ok)."
+                )
+            elif best.get("below_min_conf"):
+                note = "below min_conf"
                 headline = (
                     f"Desk call: {pair} advisory {side or 'window'} - "
                     f"{note} (not opening; paper journal ok)."
@@ -753,6 +773,7 @@ def pick_desk_call(
         conf_v = _conf_rank(best.get("confidence"))
         conf_pct = int(round(conf_v * 100)) if conf_v >= 0 else None
         muted_adv = bool(best.get("muted_advisory")) if kind == "open_window" else False
+        below_min = bool(best.get("below_min_conf")) if kind == "open_window" else False
         return {
             "id": f"desk_call|{best.get('id')}",
             "kind": "desk_call",
@@ -766,6 +787,7 @@ def pick_desk_call(
             "confidence": best.get("confidence"),
             "conf_pct": conf_pct,
             "muted_advisory": muted_adv,
+            "below_min_conf": below_min,
             "honesty": HONESTY,
             "actionable": True,
             "paper_action": best.get("paper_action"),
@@ -928,8 +950,14 @@ def build_suggestion_feed(
     lines.sort(
         key=lambda ln: (
             _board_rank.get(str(ln.get("kind") or ""), 6),
-            # Unmuted open_window before muted advisory (same kind bucket).
-            1 if (str(ln.get("kind") or "") == "open_window" and ln.get("muted_advisory")) else 0,
+            # Fully open first, then below-min lean, then weekday-mute advisory.
+            (
+                2
+                if str(ln.get("kind") or "") == "open_window" and ln.get("muted_advisory")
+                else 1
+                if str(ln.get("kind") or "") == "open_window" and ln.get("below_min_conf")
+                else 0
+            ),
             # Higher conf before active-weight tie-break (active still highlighted in UI).
             -_conf_rank(ln.get("confidence")),
             0 if str(ln.get("weight") or "") == "active" else 1,

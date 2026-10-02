@@ -303,6 +303,8 @@ def test_weekday_mute_clarity_and_stable_fp():
     assert "Buy and hold" in a["text"] or "buy and hold" in a["text"].lower()
     assert a["kind"] == "open_window"
     assert a.get("muted_advisory") is True
+    assert a.get("below_min_conf") is True  # conf also below on this fixture
+    assert "weekday mute" in str((a.get("paper_action") or {}).get("label") or "").lower()
     assert "not opening" in a["text"].lower()
     assert "Stoploss" in a["text"] or "stoploss" in a["text"].lower() or "levels not set" in a["text"].lower()
     assert a["id"] == b["id"]  # conf ticks must not spam
@@ -371,6 +373,10 @@ def test_below_min_conf_keeps_directional_lean():
     assert "below min_conf" in line["text"].lower()
     assert "Stoploss at 0.69800" in line["text"]
     assert "close at 0.69200" in line["text"]
+    # Fri clarity: below-min is NOT weekday mute.
+    assert line.get("muted_advisory") in (None, False)
+    assert line.get("below_min_conf") is True
+    assert "below min" in str((line.get("paper_action") or {}).get("label") or "").lower()
 
 
 def test_desk_call_prefers_open_window():
@@ -583,3 +589,31 @@ def test_mtf_conflict_is_window_gone_not_buy_advisory():
     assert "MTF conflict" in line["text"]
     assert "Buy and hold" not in line["text"]
     assert line.get("muted_advisory") in (None, False)
+
+
+def test_desk_call_below_min_not_weekday_mute_chip():
+    """Fri path: below min_conf must not look like weekday mute still on."""
+    from forex_lab.suggestion_chat import build_suggestion_feed
+
+    feed = build_suggestion_feed(
+        [
+            {
+                "pair": "USDCAD",
+                "signal": "HOLD",
+                "raw_signal": "SELL",
+                "gate_reason": "conf=0.58 < min 0.60",
+                "confidence": 0.58,
+                "last": 1.42433,
+            },
+        ],
+        active="EURJPY",
+    )
+    call = feed.get("desk_call")
+    assert call is not None
+    assert call["pair"] == "USDCAD"
+    assert call.get("muted_advisory") in (None, False)
+    assert call.get("below_min_conf") is True
+    assert "below min_conf" in call["headline"].lower()
+    assert "weekday" not in call["headline"].lower()
+    assert "below min" in str((call.get("paper_action") or {}).get("label") or "").lower()
+

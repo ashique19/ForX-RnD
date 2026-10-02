@@ -250,9 +250,11 @@ export const api = {
         confidence?: number | null;
         conf_pct?: number | null;
         muted_advisory?: boolean;
+        below_min_conf?: boolean;
       } | null;
       kinds?: Record<string, string>;
       honesty?: string;
+      generated_at_dhaka?: string;
     }>("/suggestions/board", { cache: "no-store" }),
   brief: (pair: string, tf?: string) =>
     request<Brief>(`/brief/${encodeURIComponent(pair)}${tf ? `?tf=${encodeURIComponent(tf)}` : ""}`),

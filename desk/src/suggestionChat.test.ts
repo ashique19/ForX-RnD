@@ -132,6 +132,8 @@ describe("suggestionChat", () => {
     expect(line?.kind).toBe("open_window");
     expect(line?.text).toContain("lean");
     expect(line?.text.toLowerCase()).toContain("below min_conf");
+    expect(line?.muted_advisory).toBeFalsy();
+    expect(line?.below_min_conf).toBe(true);
     expect(line?.text).toContain("Sell and hold @ 0.69555");
   });
 

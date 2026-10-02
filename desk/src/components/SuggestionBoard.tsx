@@ -27,7 +27,28 @@ type DeskCall = {
   confidence?: number | null;
   conf_pct?: number | null;
   muted_advisory?: boolean;
+  below_min_conf?: boolean;
 };
+
+function boardAgeLabel(generatedAtDhaka?: string | null, polledAtMs?: number): string {
+  if (!generatedAtDhaka) return "";
+  const raw = String(generatedAtDhaka).replace(/\s+Asia\/Dhaka$/i, "").trim();
+  // Board stamps are Asia/Dhaka wall clock (+06:00).
+  const ms = Date.parse(raw.includes("T") ? raw : raw.replace(" ", "T") + "+06:00");
+  if (!Number.isFinite(ms)) return String(generatedAtDhaka);
+  const ageS = Math.max(0, Math.round(((polledAtMs ?? Date.now()) - ms) / 1000));
+  if (ageS < 60) return `board ${ageS}s ago`;
+  if (ageS < 3600) return `board ${Math.round(ageS / 60)}m ago`;
+  return `board ${Math.round(ageS / 3600)}h ago`;
+}
+
+function boardAgeStale(generatedAtDhaka?: string | null, polledAtMs?: number): boolean {
+  if (!generatedAtDhaka) return false;
+  const raw = String(generatedAtDhaka).replace(/\s+Asia\/Dhaka$/i, "").trim();
+  const ms = Date.parse(raw.includes("T") ? raw : raw.replace(" ", "T") + "+06:00");
+  if (!Number.isFinite(ms)) return false;
+  return ((polledAtMs ?? Date.now()) - ms) > 15 * 60 * 1000;
+}
 
 function toneClass(kind: string): string {
   if (kind === "open_window" || kind === "desk_call") return "sug-buy";
@@ -89,6 +110,8 @@ export function SuggestionBoard({
 }) {
   const [lines, setLines] = useState<SuggestionChatLine[]>([]);
   const [deskCall, setDeskCall] = useState<DeskCall | null>(null);
+  const [boardGeneratedAt, setBoardGeneratedAt] = useState<string | null>(null);
+  const [boardPolledAtMs, setBoardPolledAtMs] = useState<number>(() => Date.now());
   const [openPositions, setOpenPositions] = useState<PortfolioRow[]>([]);
   const [actionBusy, setActionBusy] = useState(false);
   const [kbdIdx, setKbdIdx] = useState(-1);
@@ -125,8 +148,18 @@ export function SuggestionBoard({
         .suggestionsBoard()
         .then((feed) => {
           if (cancel || !feed?.ok) return;
+          const stamp =
+            typeof (feed as { generated_at_dhaka?: string }).generated_at_dhaka === "string"
+              ? (feed as { generated_at_dhaka?: string }).generated_at_dhaka || null
+              : null;
+          if (stamp) {
+            setBoardGeneratedAt(stamp);
+            setBoardPolledAtMs(Date.now());
+          }
           if (feed.desk_call && feed.desk_call.headline) {
             setDeskCall(feed.desk_call as DeskCall);
+          } else if (!feed.desk_call) {
+            /* keep last desk_call; soft poll */
           }
           const incoming = Array.isArray(feed.lines) ? feed.lines : [];
           const nowMs = Date.now();
@@ -304,7 +337,13 @@ export function SuggestionBoard({
     >
       <div className="panel-hd">
         <h2>Suggestion board</h2>
-        <div className="sug-hd-actions">
+                <div className="sug-hd-actions">
+          <span
+            className={`sug-hd-age${boardAgeStale(boardGeneratedAt, boardPolledAtMs) ? " is-stale" : ""}`}
+            title={boardGeneratedAt ? `Board snapshot ${boardGeneratedAt}` : "Waiting for board snapshot"}
+          >
+            {boardAgeLabel(boardGeneratedAt, boardPolledAtMs) || "board ..."}
+          </span>
           <span className="sug-hd-note">Realtime chat - research only · Decision 1h</span>
           {onRefreshWatchlist ? (
             <button
@@ -378,8 +417,12 @@ export function SuggestionBoard({
                 <span className="sug-conf-chip" title="Model confidence (research)">{confChip(deskCall)}</span>
               ) : null}
               {deskCall.muted_advisory ? (
-                <span className="sug-mute-chip" title="Weekday mute still on - lifts Fri UTC; paper journal only">
-                  muted
+                <span className="sug-mute-chip" title="UTC weekday mute still on (Mon/Thu) - lifts Fri UTC; paper journal only">
+                  weekday mute
+                </span>
+              ) : deskCall.below_min_conf ? (
+                <span className="sug-belowmin-chip" title="Confidence below min_conf - live gate closed; paper journal ok (weekday mute already lifted if Fri UTC)">
+                  below min
                 </span>
               ) : null}
               {deskCall.headline}
@@ -407,7 +450,12 @@ export function SuggestionBoard({
 
       <div className="suggestion-scroll" ref={scroller} role="log" aria-live="polite">
         {lines.length === 0 ? (
-          <div className="suggestion-empty">Waiting for board flashes. ForX will chat here.</div>
+          <div className="suggestion-empty">
+            Waiting for board flashes. ForX will chat here.
+            {boardAgeStale(boardGeneratedAt, boardPolledAtMs)
+              ? " Board snapshot looks stale - try Refresh 1h prices (rate-limit may apply)."
+              : ""}
+          </div>
         ) : (
           lines.map((line) => {
             const action = (line as SuggestionChatLine & { paper_action?: PaperAction }).paper_action;
