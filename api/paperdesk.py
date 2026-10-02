@@ -32,6 +32,12 @@ from forex_lab.ui.board import (
     paper_submit_risk_defaults,
 )
 from forex_lab.ui.watchlist import active_pair
+from forex_lab.paper_shadow import (
+    bid_ask_from_row,
+    flags_from_gate_text,
+    record_close as _shadow_record_close,
+    record_open as _shadow_record_open,
+)
 
 _PAPER_LOCK = threading.RLock()
 _SECONDS_IN_STAMP = re.compile(r"\d{1,2}:\d{2}:\d{2}")
@@ -47,6 +53,44 @@ def _desk():
 class PaperBlocked(RuntimeError):
     """STALE / MISSING / ERROR — open is refused. Close is separate."""
 
+
+
+
+def _shadow_flags_for_row(row: Any, cfg: dict[str, Any] | None = None) -> tuple[bool, bool]:
+    """Best-effort muted / below_min from board row gate text. Fail-soft."""
+    try:
+        gate = str(getattr(row, "gate_reason", "") or "")
+        if not gate and isinstance(getattr(row, "extra", None), dict):
+            gate = str((row.extra or {}).get("gate_reason") or "")
+        note = str(getattr(row, "validity", "") or "")
+        muted, below = flags_from_gate_text(f"{gate} | {note}")
+        if not muted and getattr(row, "gate_blocked", False):
+            by = []
+            extra = getattr(row, "extra", None) or {}
+            if isinstance(extra, dict):
+                by = list(extra.get("gate_blocked_by") or [])
+            joined = " ".join(str(x) for x in by).lower()
+            if "weekday" in joined or "weekday" in gate.lower():
+                muted = True
+            if "min_conf" in joined or "confidence" in joined:
+                below = True
+        return muted, below
+    except Exception:
+        return False, False
+
+
+def _shadow_safe_open(**kwargs: Any) -> None:
+    try:
+        _shadow_record_open(**kwargs)
+    except Exception:
+        pass
+
+
+def _shadow_safe_close(**kwargs: Any) -> None:
+    try:
+        _shadow_record_close(**kwargs)
+    except Exception:
+        pass
 
 
 def _peer_flashes_for_veto(cfg: dict[str, Any], active: str) -> list[dict[str, Any]]:
@@ -298,7 +342,31 @@ def _paper_order_impl(
         price, _bar = _price_from_cache(symbol, cfg, iv, row)
         if price is None:
             raise BrokerError("no cached price — cannot close paper position")
-        broker.close(str(pos["id"]), price=price, reason="manual")
+        fill = broker.close(str(pos["id"]), price=price, reason="manual")
+        # stage2-shadow: manual close
+        try:
+            muted, below = _shadow_flags_for_row(row, cfg)
+            bid, ask = bid_ask_from_row(row)
+            _shadow_safe_close(
+                pair=symbol,
+                side=str(pos.get("side") or "CLOSE"),
+                conf=pos.get("confidence"),
+                muted=muted,
+                below_min=below,
+                entry_mid=pos.get("entry_price"),
+                exit_mid=price,
+                bid=bid,
+                ask=ask,
+                sl=pos.get("sl"),
+                tp=pos.get("tp"),
+                source="board",
+                position_id=str(pos.get("id") or ""),
+                fill_id=str((fill or {}).get("id") or ""),
+                exit_reason="manual",
+                notes="manual/board paper close",
+            )
+        except Exception:
+            pass
         return {
             "ok": True,
             "pair": symbol,
@@ -331,7 +399,7 @@ def _paper_order_impl(
     if sl is None or tp is None:
         raise PaperBlocked("Missing stop/target")
     qty = float(size) if size is not None else float((cfg.get("broker") or {}).get("default_size") or 1.0)
-    broker.submit(
+    fill = broker.submit(
         action,
         symbol,
         size=qty,
@@ -355,6 +423,28 @@ def _paper_order_impl(
         strategy_id=book,
         strategy_name=strategy_name(book),
     )
+    # stage2-shadow: manual open
+    try:
+        muted, below = _shadow_flags_for_row(row, cfg)
+        bid, ask = bid_ask_from_row(row)
+        _shadow_safe_open(
+            pair=symbol,
+            side=action,
+            conf=getattr(row, "confidence", None),
+            muted=muted,
+            below_min=below,
+            entry_mid=price,
+            bid=bid,
+            ask=ask,
+            sl=sl,
+            tp=tp,
+            source="board",
+            position_id=str((fill or {}).get("position_id") or ""),
+            fill_id=str((fill or {}).get("id") or ""),
+            notes="manual/board paper open",
+        )
+    except Exception:
+        pass
     if isinstance(broker, PaperBroker):
         _remember_signal(broker, symbol, action, book)
     snap = paper_snapshot(symbol, cfg, row)
@@ -817,7 +907,31 @@ def _auto_one(
             if reason is None and allowed and side_now and side_now != str(pos.get("side") or "").upper():
                 reason = "opposite"
             if reason:
-                broker.close(str(pos["id"]), price=price, reason=reason, timestamp=when)
+                fill = broker.close(str(pos["id"]), price=price, reason=reason, timestamp=when)
+                # stage2-shadow: auto close
+                try:
+                    muted, below = _shadow_flags_for_row(row, cfg)
+                    bid, ask = bid_ask_from_row(row)
+                    _shadow_safe_close(
+                        pair=symbol,
+                        side=str(pos.get("side") or "CLOSE"),
+                        conf=pos.get("confidence"),
+                        muted=muted,
+                        below_min=below,
+                        entry_mid=pos.get("entry_price"),
+                        exit_mid=price,
+                        bid=bid,
+                        ask=ask,
+                        sl=pos.get("sl"),
+                        tp=pos.get("tp"),
+                        source="desk",
+                        position_id=str(pos.get("id") or ""),
+                        fill_id=str((fill or {}).get("id") or ""),
+                        exit_reason=reason,
+                        notes=f"auto paper close ({sid})",
+                    )
+                except Exception:
+                    pass
                 events.append(_book_event(symbol, f"close {reason}", sid))
                 pos = None
         # A cross is a new eligible side versus that book's last allowed reading.
@@ -870,6 +984,41 @@ def _auto_one(
                             tp=tp,
                             horizon=horizon,
                         )
+                        # stage2-shadow: auto open
+                        try:
+                            muted, below = _shadow_flags_for_row(row, cfg)
+                            bid, ask = bid_ask_from_row(row)
+                            pos_id = ""
+                            fill_id = ""
+                            try:
+                                opened = position_for_pair(broker, symbol, sid)
+                                if opened:
+                                    pos_id = str(opened.get("id") or "")
+                                fills = broker.list_fills() if hasattr(broker, "list_fills") else []
+                                for frow in reversed(list(fills)):
+                                    if str(frow.get("position_id") or "") == pos_id and str(frow.get("kind") or "") == "open":
+                                        fill_id = str(frow.get("id") or "")
+                                        break
+                            except Exception:
+                                pass
+                            _shadow_safe_open(
+                                pair=symbol,
+                                side=eligible,
+                                conf=_f(view["confidence"]),
+                                muted=muted,
+                                below_min=below,
+                                entry_mid=price,
+                                bid=bid,
+                                ask=ask,
+                                sl=sl,
+                                tp=tp,
+                                source="desk",
+                                position_id=pos_id,
+                                fill_id=fill_id,
+                                notes=f"auto paper open ({sid})",
+                            )
+                        except Exception:
+                            pass
                         events.append(_book_event(symbol, f"open {eligible}", sid))
         if allowed and not hold_seen:
             pair_seen[sid] = eligible

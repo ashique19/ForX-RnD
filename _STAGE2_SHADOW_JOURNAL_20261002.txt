@@ -1,0 +1,23 @@
+# Stage-2 shadow journal foundation — 2026-10-02 Asia/Dhaka
+Roadmap: _ROADMAP_LIVE_EDGE_GRADE_20261002.txt Stage 2
+Status: LANDED (schema + fail-soft wire + weekly stub). Not a promote.
+
+## Files
+- data/paper_shadow/SCHEMA.md
+- data/paper_shadow/.gitkeep  (journal.jsonl runtime, gitignored)
+- forex_lab/paper_shadow.py
+- api/paperdesk.py  (hooks on manual+auto open/close; fail-soft)
+- scripts/shadow_weekly_compare.py
+- tests/test_paper_shadow.py
+- _COST_HONESTY_PROBE_20261002.txt  (Stage-3 micro probe note; no Jetta)
+
+## Verify
+1) .venv\Scripts\python.exe -m pytest tests/test_paper_shadow.py -q
+2) Open/close a paper Journal CTA on the board (or wait for auto).
+3) Confirm lines append to data/paper_shadow/journal.jsonl
+   (ts_utc + ts_dhaka, pair, side, conf, muted/below_min, mid, sl/tp, source).
+4) .venv\Scripts\python.exe scripts/shadow_weekly_compare.py
+5) Confirm config exit_hold.min_bars_before_sl still 2; no YAML gate flips.
+
+## Out of scope (honored)
+NO Replay challenger, NO yaml gate/promote/min_conf/sessions/portfolio flips.

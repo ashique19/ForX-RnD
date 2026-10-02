@@ -1,0 +1,27 @@
+# Cost honesty probe (Stage-3 micro-step) — 2026-10-02 Asia/Dhaka
+Status: PROBE NOTE ONLY. No Jetta thrash. No Replay. No YAML cost flip.
+
+## Assumed research costs (config/default.yaml today)
+- spread_pips: 1.0   (round-trip on mid fills via PaperBroker.spread_frac)
+- slippage_pips: 0.2 (adverse per fill side; exit_slippage: true)
+- Effective research assumption often paraphrased as "~0.2 pip/side" plus
+  1.0 pip round-trip mid spread — not a measured live BBO.
+
+## What tip currently gives (no Jetta remesh)
+- yfinance / HistData mid-only paths: Bid/Ask columns usually ABSENT.
+  forex_lab/ui/quote.py intentionally leaves bid=ask=None (never invents).
+- Shadow journal (Stage-2) therefore stores entry_mid/exit_mid and null BA
+  until a tip donor with real Bid/Ask is present for that pair/bar.
+
+## Probe checklist (do later; do not thrash Jetta tonight)
+1) Sample N recent tip bars per Active pair: count how often Bid+Ask exist.
+2) When BA exists: measured_spread_pips = (ask-bid)/pip vs assumed 1.0 RT.
+3) Shadow fills: compare entry_mid to contemporaneous mid; slip proxy =
+   adverse distance vs assumed slippage_pips=0.2.
+4) Write a one-page cost table (assumed vs measured). If champ PF collapses
+   under measured cost, champ is not live-edge grade (roadmap Stage-3 exit).
+
+## Non-goals tonight
+- No Jetta volume remesh / tip-vol heal restart.
+- No slippage_pips / spread_pips YAML edit.
+- No Replay re-pin with new costs.

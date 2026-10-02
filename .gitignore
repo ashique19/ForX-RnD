@@ -18,6 +18,7 @@ data/news_cache.json
 data/calendar_cache.json
 data/fred_cache/
 data/paper_broker.json
+data/paper_shadow/journal.jsonl
 data/paper_broker.json.tmp
 # Dukascopy/HistData cache and replay scoreboards (download; do not commit)
 data/history/
