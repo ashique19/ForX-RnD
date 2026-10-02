@@ -517,7 +517,7 @@ def format_board_line(
             "pair": pair,
             "side": side_for_paper,
             "can_paper_open": True,
-            "label": f"Paper {side_for_paper}{paper_suffix}",
+            "label": f"Journal {side_for_paper}{paper_suffix}",
         }
         out["signal"] = side_for_paper
         out["muted_advisory"] = bool(weekday_muted)
@@ -533,7 +533,7 @@ def format_board_line(
                 "side": "CLOSE",
                 "can_paper_close": True,
                 "position_id": pos_id,
-                "label": "Paper close",
+                "label": "Journal close",
             }
     return out
 

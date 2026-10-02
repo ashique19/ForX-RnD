@@ -50,6 +50,21 @@ function boardAgeStale(generatedAtDhaka?: string | null, polledAtMs?: number): b
   return ((polledAtMs ?? Date.now()) - ms) > 15 * 60 * 1000;
 }
 
+
+const PAPER_CTA_TITLE =
+  "Decision aid: logs a paper journal entry only - never a live/broker order.";
+
+function paperBtnLabel(action?: PaperAction | null, busy = false): string {
+  if (busy) return "Working...";
+  if (!action) return "Journal";
+  const raw = String(action.label || "").trim();
+  if (raw) return raw;
+  const side = String(action.side || "").toUpperCase();
+  if (side === "CLOSE" || action.can_paper_close) return "Journal close";
+  if (side === "BUY" || side === "SELL") return `Journal ${side}`;
+  return "Journal";
+}
+
 function toneClass(kind: string): string {
   if (kind === "open_window" || kind === "desk_call") return "sug-buy";
   if (kind === "window_gone" || kind === "close_hint") return "sug-warn";
@@ -427,21 +442,25 @@ export function SuggestionBoard({
               ) : null}
               {deskCall.headline}
             </strong>
-            {deskCall.paper_action && onPaperOrder && deskCall.actionable ? (
-              <button
-                className="btn sm sug-paper-btn"
-                type="button"
-                disabled={actionBusy || paperBusy}
-                title="Paper journal only — never a live order."
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  void runPaper(deskCall.paper_action);
-                }}
-              >
-                {actionBusy || paperBusy
-                  ? "Working…"
-                  : deskCall.paper_action.label || `Paper ${deskCall.paper_action.side}`}
-              </button>
+                        {deskCall.paper_action && onPaperOrder && deskCall.actionable ? (
+              <div className="sug-paper-cta" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
+                <span className="sug-paper-cta-hint" title={PAPER_CTA_TITLE}>
+                  decision aid - not live
+                </span>
+                <button
+                  className="btn sm sug-paper-btn"
+                  type="button"
+                  disabled={actionBusy || paperBusy}
+                  title={PAPER_CTA_TITLE}
+                  aria-label={`${paperBtnLabel(deskCall.paper_action)} - decision aid paper journal, not live`}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    void runPaper(deskCall.paper_action);
+                  }}
+                >
+                  {paperBtnLabel(deskCall.paper_action, actionBusy || paperBusy)}
+                </button>
+              </div>
             ) : null}
           </div>
           <div className="sug-desk-call-body">{deskCall.text}</div>
@@ -495,19 +514,25 @@ export function SuggestionBoard({
                   ) : null}
                   {line.text}
                 </span>
-                {showBtn ? (
-                  <button
-                    className="btn sm sug-paper-btn"
-                    type="button"
-                    disabled={actionBusy || paperBusy}
-                    title="Paper journal only — never a live order."
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      void runPaper(action);
-                    }}
-                  >
-                    {action?.label || `Paper ${action?.side}`}
-                  </button>
+                                {showBtn ? (
+                  <div className="sug-paper-cta" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
+                    <span className="sug-paper-cta-hint" title={PAPER_CTA_TITLE}>
+                      decision aid - not live
+                    </span>
+                    <button
+                      className="btn sm sug-paper-btn"
+                      type="button"
+                      disabled={actionBusy || paperBusy}
+                      title={PAPER_CTA_TITLE}
+                      aria-label={`${paperBtnLabel(action)} - decision aid paper journal, not live`}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        void runPaper(action);
+                      }}
+                    >
+                      {paperBtnLabel(action, actionBusy || paperBusy)}
+                    </button>
+                  </div>
                 ) : null}
               </div>
             );
@@ -516,9 +541,9 @@ export function SuggestionBoard({
       </div>
       <div
         className="suggestion-foot"
-        title={`${SUGGESTION_HONESTY} Click a line to open that pair 1h chart (sets Active). Refresh = watchlist 1h OHLCV only (no 1d). Train idle = cheap joblib (no Active steal / no promote). j/k navigate · Enter opens · Paper buttons = journal only.`}
+        title={`${SUGGESTION_HONESTY} Click a line to open that pair 1h chart (sets Active). Refresh = watchlist 1h OHLCV only (no 1d). Train idle = cheap joblib (no Active steal / no promote). j/k navigate · Enter opens · Journal buttons = paper diary only (not live).`}
       >
-        {SUGGESTION_HONESTY} · Decision 1h only · Refresh = watchlist 1h · Paper buttons = journal only.
+        {SUGGESTION_HONESTY} · Decision 1h only · Refresh = watchlist 1h · Journal buttons = paper diary only (not live).
       </div>
     </section>
   );

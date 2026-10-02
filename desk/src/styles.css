@@ -2444,7 +2444,34 @@
     .sug-paper-btn {
       flex: 0 0 auto;
       white-space: nowrap;
+      border-color: #b2ddff;
+      background: #eff8ff;
+      color: #175cd3;
+      font-weight: 600;
     }
+    .sug-paper-btn:hover:not(:disabled) {
+      background: #d1e9ff;
+      border-color: #84caff;
+    }
+    .sug-paper-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      margin-left: auto;
+    }
+    .sug-paper-cta-hint {
+      font-size: 10px;
+      font-weight: 560;
+      letter-spacing: 0.01em;
+      color: #475467;
+      white-space: nowrap;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #f2f4f7;
+      border: 1px solid #e4e7ec;
+    }
+
 
     /* Board / desk_call click -> Active pair + 1h chart */
     .sug-desk-call.is-clickable,

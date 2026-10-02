@@ -305,6 +305,7 @@ def test_weekday_mute_clarity_and_stable_fp():
     assert a.get("muted_advisory") is True
     assert a.get("below_min_conf") is True  # conf also below on this fixture
     assert "weekday mute" in str((a.get("paper_action") or {}).get("label") or "").lower()
+    assert str((a.get("paper_action") or {}).get("label") or "").startswith("Journal ")
     assert "not opening" in a["text"].lower()
     assert "Stoploss" in a["text"] or "stoploss" in a["text"].lower() or "levels not set" in a["text"].lower()
     assert a["id"] == b["id"]  # conf ticks must not spam
@@ -377,6 +378,7 @@ def test_below_min_conf_keeps_directional_lean():
     assert line.get("muted_advisory") in (None, False)
     assert line.get("below_min_conf") is True
     assert "below min" in str((line.get("paper_action") or {}).get("label") or "").lower()
+    assert str((line.get("paper_action") or {}).get("label") or "").startswith("Journal ")
 
 
 def test_desk_call_prefers_open_window():
@@ -616,4 +618,31 @@ def test_desk_call_below_min_not_weekday_mute_chip():
     assert "below min_conf" in call["headline"].lower()
     assert "weekday" not in call["headline"].lower()
     assert "below min" in str((call.get("paper_action") or {}).get("label") or "").lower()
+    assert str((call.get("paper_action") or {}).get("label") or "").startswith("Journal ")
 
+
+def test_paper_cta_journal_label_decision_aid():
+    """Paper-from-board CTA must read as journal / decision aid, not a live ticket."""
+    from forex_lab.suggestion_chat import format_board_line, pick_desk_call
+
+    open_line = format_board_line(
+        {"pair": "EURUSD", "signal": "BUY", "confidence": 0.72, "last": 1.13, "target": 1.14, "stop": 1.12},
+        active="EURUSD",
+    )
+    assert open_line is not None
+    label = str((open_line.get("paper_action") or {}).get("label") or "")
+    assert label.startswith("Journal BUY")
+    assert "Paper BUY" not in label
+
+    close_line = format_board_line(
+        {"pair": "EURUSD", "signal": "HOLD", "raw_signal": "SELL", "last": 1.13},
+        active="EURUSD",
+        open_position={"pair": "EURUSD", "side": "BUY", "entry_price": 1.12, "id": "p1"},
+    )
+    assert close_line is not None
+    assert close_line["kind"] == "close_hint"
+    assert str((close_line.get("paper_action") or {}).get("label") or "") == "Journal close"
+
+    call = pick_desk_call([open_line], active="EURUSD")
+    assert call and call.get("actionable")
+    assert str((call.get("paper_action") or {}).get("label") or "").startswith("Journal BUY")
