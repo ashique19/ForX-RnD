@@ -55,3 +55,22 @@ def test_flags_from_gate_text():
     muted, below = ps.flags_from_gate_text("muted Thu (UTC weekday gate) | conf=0.55 < min_conf")
     assert muted is True
     assert below is True
+
+def test_record_desk_call_appends_skip_row_and_creates_parent(tmp_path, monkeypatch):
+    path = tmp_path / "nested" / "journal.jsonl"
+    monkeypatch.setenv("FORX_SHADOW_JOURNAL", str(path))
+    assert ps.record_desk_call(
+        pair="EURUSD",
+        side="BUY",
+        conf=0.70,
+        source="desk",
+        advisory_id="board-123",
+        notes="auto paper skip (brief): Missing stop/target",
+    ) is True
+    row = json.loads(path.read_text(encoding="utf-8").strip())
+    assert row["event"] == "desk_call"
+    assert row["source"] == "desk"
+    assert row["advisory_id"] == "board-123"
+    assert row["entry_mid"] is None
+    assert row["ba_available"] is False
+    assert row["measured_cost_pair"] == 0.8

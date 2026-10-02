@@ -1,6 +1,7 @@
 """Portfolio listing and auto paper. Fills stay on the local PaperBroker."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1035,3 +1036,31 @@ def test_auto_exception_is_an_api_error_reason(tmp_path: Path, monkeypatch: pyte
     book = portfolio_payload(cfg, rows=[_row()], sync=True, now=T0)
     assert book["open"] == []
     assert "EURUSD: API error: journal locked" in book["reasons"]
+
+def test_auto_skip_stamps_shadow_journal_without_live_broker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    store = tmp_path / "paper.json"
+    journal = tmp_path / "shadow" / "journal.jsonl"
+    cfg = _cfg(store)
+    _install(monkeypatch, store, _suggest(stop=None, target=None), 1.10)
+    monkeypatch.setenv("FORX_SHADOW_JOURNAL", str(journal))
+    monkeypatch.setattr("api.paperdesk.paper_submit_risk_defaults", lambda *_a, **_k: (None, None))
+    row = _row("HOLD")
+    row.extra["advisory_id"] = "board-eurusd-1"
+
+    run_auto_paper(cfg, rows=[row], now=T0)
+    signal_row = _row("BUY")
+    signal_row.extra["advisory_id"] = "board-eurusd-1"
+    skipped = run_auto_paper(cfg, rows=[signal_row], now=T0 + timedelta(minutes=1))
+
+    assert skipped["events"] == ["EURUSD skip levels"]
+    rows = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) == 1
+    shadow = rows[0]
+    assert shadow["schema"] == "paper_shadow_v1"
+    assert shadow["event"] == "desk_call"
+    assert shadow["source"] == "desk"
+    assert shadow["pair"] == "EURUSD"
+    assert shadow["side"] == "BUY"
+    assert shadow["advisory_id"] == "board-eurusd-1"
+    assert shadow["notes"] == "auto paper skip (brief): Missing stop/target"
+    assert shadow["ts_utc"] == "2026-09-23T10:01:00Z"

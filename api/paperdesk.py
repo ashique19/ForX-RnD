@@ -36,6 +36,7 @@ from forex_lab.paper_shadow import (
     bid_ask_from_row,
     flags_from_gate_text,
     record_close as _shadow_record_close,
+    record_desk_call as _shadow_record_desk_call,
     record_open as _shadow_record_open,
 )
 
@@ -89,6 +90,66 @@ def _shadow_safe_open(**kwargs: Any) -> None:
 def _shadow_safe_close(**kwargs: Any) -> None:
     try:
         _shadow_record_close(**kwargs)
+    except Exception:
+        pass
+
+
+def _shadow_safe_desk_call(**kwargs: Any) -> None:
+    """Stamp a skipped paper intent without affecting desk control flow."""
+    try:
+        _shadow_record_desk_call(**kwargs)
+    except Exception:
+        pass
+
+
+def _shadow_advisory_id(row: Any) -> str | None:
+    """Read an optional board identifier without inventing one."""
+    for attr in ("advisory_id", "line_id", "signal_id"):
+        value = getattr(row, attr, None)
+        if value:
+            return str(value)
+    extra = getattr(row, "extra", None)
+    if isinstance(extra, dict):
+        for key in ("advisory_id", "line_id", "signal_id"):
+            value = extra.get(key)
+            if value:
+                return str(value)
+    return None
+
+
+def _shadow_flags_and_quote(row: Any, cfg: dict[str, Any]) -> tuple[bool, bool, float | None, float | None]:
+    """Best-effort row metadata for every shadow event."""
+    muted, below = _shadow_flags_for_row(row, cfg)
+    bid, ask = bid_ask_from_row(row)
+    return muted, below, bid, ask
+
+
+def _shadow_safe_skip(
+    row: Any,
+    cfg: dict[str, Any],
+    *,
+    side: str | None,
+    confidence: float | None,
+    strategy_id: str,
+    reason: str,
+    now: datetime | None,
+) -> None:
+    """Journal an auto-paper skip as a schema desk_call, fail-soft."""
+    try:
+        muted, below, bid, ask = _shadow_flags_and_quote(row, cfg)
+        _shadow_safe_desk_call(
+            pair=str(getattr(row, "pair", "") or "").upper(),
+            side=side,
+            conf=confidence,
+            muted=muted,
+            below_min=below,
+            bid=bid,
+            ask=ask,
+            source="desk",
+            advisory_id=_shadow_advisory_id(row),
+            notes=f"auto paper skip ({strategy_id}): {reason}",
+            now=_as_utc(now),
+        )
     except Exception:
         pass
 
@@ -363,6 +424,7 @@ def _paper_order_impl(
                 position_id=str(pos.get("id") or ""),
                 fill_id=str((fill or {}).get("id") or ""),
                 exit_reason="manual",
+                advisory_id=_shadow_advisory_id(row),
                 notes="manual/board paper close",
             )
         except Exception:
@@ -441,6 +503,7 @@ def _paper_order_impl(
             source="board",
             position_id=str((fill or {}).get("position_id") or ""),
             fill_id=str((fill or {}).get("id") or ""),
+            advisory_id=_shadow_advisory_id(row),
             notes="manual/board paper open",
         )
     except Exception:
@@ -928,7 +991,9 @@ def _auto_one(
                         position_id=str(pos.get("id") or ""),
                         fill_id=str((fill or {}).get("id") or ""),
                         exit_reason=reason,
+                        advisory_id=_shadow_advisory_id(row),
                         notes=f"auto paper close ({sid})",
+                        now=_as_utc(now),
                     )
                 except Exception:
                     pass
@@ -946,18 +1011,30 @@ def _auto_one(
         if want_open and price is None:
             hold_seen = True
             events.append(_book_event(symbol, "skip price", sid))
+            _shadow_safe_skip(
+                row, cfg, side=eligible or side_now, confidence=_f(view["confidence"]),
+                strategy_id=sid, reason="No cached price", now=now,
+            )
             notices.append(_skip_notice(symbol, sid, "No cached price"))
         elif want_open:
             cap = int(broker.read_auto()["max_opens_per_hour"])
             if _auto_opens_in_window(broker, clock, sid) >= cap:
                 hold_seen = True
                 events.append(_book_event(symbol, "skip rate", sid))
+                _shadow_safe_skip(
+                    row, cfg, side=eligible, confidence=_f(view["confidence"]),
+                    strategy_id=sid, reason="Hourly cap", now=now,
+                )
                 notices.append(_skip_notice(symbol, sid, "Hourly cap"))
             else:
                 sl, tp, horizon = _brackets(row, cfg, suggestion, side=eligible)
                 if sl is None or tp is None:
                     hold_seen = True
                     events.append(_book_event(symbol, "skip levels", sid))
+                    _shadow_safe_skip(
+                        row, cfg, side=eligible, confidence=_f(view["confidence"]),
+                        strategy_id=sid, reason="Missing stop/target", now=now,
+                    )
                     notices.append(_skip_notice(symbol, sid, "Missing stop/target"))
                 else:
                     brain = _portfolio_open_check(
@@ -967,6 +1044,10 @@ def _auto_one(
                         hold_seen = True
                         tag = brain.blocked_by[0] if brain.blocked_by else "portfolio"
                         events.append(_book_event(symbol, f"skip {tag}", sid))
+                        _shadow_safe_skip(
+                            row, cfg, side=eligible, confidence=_f(view["confidence"]),
+                            strategy_id=sid, reason=tag, now=now,
+                        )
                         notices.append(_skip_notice(symbol, sid, tag))
                     else:
                         _open_auto(
@@ -1015,7 +1096,9 @@ def _auto_one(
                                 source="desk",
                                 position_id=pos_id,
                                 fill_id=fill_id,
+                                advisory_id=_shadow_advisory_id(row),
                                 notes=f"auto paper open ({sid})",
+                                now=_as_utc(now),
                             )
                         except Exception:
                             pass
