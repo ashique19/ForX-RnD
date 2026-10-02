@@ -17,6 +17,12 @@ from forex_lab.ui.board import BoardRow
 T0 = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _sandbox_shadow_journal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Never let paper desk tests append fake rows to the production JSONL."""
+    monkeypatch.setenv("FORX_SHADOW_JOURNAL", str(tmp_path / "shadow-journal.jsonl"))
+
+
 def _cfg(store: Path) -> dict:
     return {
         "broker": {"backend": "paper", "store": str(store), "default_size": 1.0},
