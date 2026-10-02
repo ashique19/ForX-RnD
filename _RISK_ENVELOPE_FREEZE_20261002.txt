@@ -1,0 +1,108 @@
+﻿STAGE-4 RISK ENVELOPE FREEZE - 2026-10-02 Asia/Dhaka
+Repo: C:\AI\forex-lab
+Source of truth: config/default.yaml as read at freeze time
+Status: FROZEN. This is a risk document, not a Replay, promote, or YAML change.
+
+PURPOSE
+-------
+Freeze the live/paper-shadow risk posture. Do not retune live risk knobs to
+chase Replay PF. The desk remains a decision aid until Stages 2-4 are green
+for the agreed N weeks and a human gate is passed.
+
+FROZEN YAML SNAPSHOT (exact current values)
+-------------------------------------------
+Core posture and gates:
+  one_position: true
+  signals.sessions: []
+  signals.min_confidence: 0.60
+  gates.enabled: true
+  gates.apply_to_paper: true
+  gates.min_confidence: null
+  replay.weekday_gate.enabled: true
+  replay.weekday_gate.block: [mon, thu]
+  replay.weekday_gate.tz: UTC
+  replay.session_gate: overlap
+  broker.default_size: 1.0
+
+The live paper path uses signals.sessions: [] (all UTC hours). The replay
+session_gate is research-only; it is quoted here to prevent accidental drift.
+The desk's display/session windows are also frozen as currently defined:
+  board.sessions.asia: [21, 7]
+  board.sessions.london: [7, 16]
+  board.sessions.ny: [13, 21]
+These are UTC, end-exclusive windows. Do not reinterpret them as a new gate.
+
+Size discipline:
+  replay.size_by_conf.enabled: false
+  replay.size_by_conf.default_scale: 1.0
+  replay.size_by_conf.bands:
+    - {max: 0.70, scale: 0.85}
+    - {max: 0.85, scale: 1.0}
+    - {max: 1.01, scale: 1.10}
+  portfolio_brain.enabled: false
+  portfolio_brain.fail_soft: true
+  portfolio_brain.max_concurrent_opens: 2
+  portfolio_brain.max_book_units: 2.0
+  portfolio_brain.min_size: 0.25
+  portfolio_brain.dd_budget_pct: -0.05
+  portfolio_brain.dd_scale: false
+  portfolio_brain.apply_to_paper: true
+  portfolio_brain.apply_to_flash: true
+  portfolio_brain.apply_to_replay: false
+
+The portfolio-brain caps are dormant while enabled=false. They are recorded,
+not enabled or tightened by this freeze. size_by_conf remains disabled.
+
+DD FLOORS AND KILL BEHAVIOR
+---------------------------
+  retrain.mode: improve
+  retrain.promotion.enabled: true
+  retrain.promotion.max_drawdown_floor: -0.15
+    Research promotion gate only: a candidate max DD deeper than -15% fails
+    the promote gate. This is not permission to auto-promote or to alter live.
+
+  portfolio_brain.dd_budget_pct: -0.05
+    Existing 5% book-DD budget, currently dormant because portfolio_brain is
+    disabled. For this Stage-4 envelope, the paper-shadow operational kill
+    threshold is frozen at -5% peak-to-trough using this existing value. This
+    is a written policy freeze; no YAML enablement or auto-rewrite is claimed.
+    Current config has no separate live max_dd_kill key or active auto-kill.
+
+On a paper-shadow DD breach at or below -5%, or any other envelope violation:
+  1. kill/stop new paper-shadow opens for the rest of that journal week;
+  2. close/flatten any open paper position through the normal paper close path;
+  3. stamp/report the breach and mark the entire shadow week FAIL;
+  4. do not repair the week by changing YAML, replaying, promoting, or swapping
+     Active; human review is required before any restart.
+
+A research candidate with max DD below -15% fails the research promote gate.
+A checker drift, one-position violation, size-cap violation, weekday/session
+violation, or DD breach is an envelope violation. Shadow journal weeks that
+violate the envelope = FAIL week, without exception.
+
+NO YAML ROULETTE / NON-GOALS
+----------------------------
+- Current exit hold remains replay.exit_hold.min_bars_before_sl: 2.
+- No cost, gate, min_confidence, session, exit_hold, portfolio_brain,
+  size_by_conf, SL, or TP roulette to improve Replay PF.
+- No Replay, challenger, promote, or Active swap is attached to this freeze.
+- Stage-5 micro size is BLOCKED until Stages 2-4 are green for N weeks
+  (default roadmap N=4) and the human gate is passed.
+- No automatic YAML rewrite is allowed from the checker.
+
+STAGE-3b COST POINTER
+---------------------
+Stage-3b measured costs are in data/paper_shadow/measured_costs_20261002.json
+and data/paper_shadow/measured_costs.csv, with the written fill in
+_STAGE3B_MEASURED_COSTS_FILL_20261002.txt. The measured table is a separate
+research estimate; crosses remain assumed/optimistic in places. Costs have NOT
+been flipped into YAML. Do not use this risk freeze as approval for a cost flip.
+
+SHADOW JOURNAL SCHEMA
+---------------------
+Existing data/paper_shadow/SCHEMA.md remains backward-compatible. An
+optional envelope_ok enrichment can be added later; it is intentionally not
+required for this freeze. Until then, this document and the weekly review
+rule above govern envelope compliance.
+
+\n

@@ -1,0 +1,47 @@
+﻿{
+  "schema": "risk_envelope_freeze_v1",
+  "freeze_date": "2026-10-02",
+  "source": "config/default.yaml",
+  "yaml": {
+    "one_position": true,
+    "signals.sessions": [],
+    "signals.min_confidence": 0.6,
+    "gates.enabled": true,
+    "gates.apply_to_paper": true,
+    "gates.min_confidence": null,
+    "replay.weekday_gate.enabled": true,
+    "replay.weekday_gate.block": ["mon", "thu"],
+    "replay.weekday_gate.tz": "UTC",
+    "replay.session_gate": "overlap",
+    "broker.default_size": 1.0,
+    "board.sessions.asia": [21, 7],
+    "board.sessions.london": [7, 16],
+    "board.sessions.ny": [13, 21],
+    "replay.size_by_conf.enabled": false,
+    "replay.size_by_conf.default_scale": 1.0,
+    "replay.size_by_conf.bands": [
+      {"max": 0.7, "scale": 0.85},
+      {"max": 0.85, "scale": 1.0},
+      {"max": 1.01, "scale": 1.1}
+    ],
+    "portfolio_brain.enabled": false,
+    "portfolio_brain.fail_soft": true,
+    "portfolio_brain.max_concurrent_opens": 2,
+    "portfolio_brain.max_book_units": 2.0,
+    "portfolio_brain.min_size": 0.25,
+    "portfolio_brain.dd_budget_pct": -0.05,
+    "portfolio_brain.dd_scale": false,
+    "portfolio_brain.apply_to_paper": true,
+    "portfolio_brain.apply_to_flash": true,
+    "portfolio_brain.apply_to_replay": false,
+    "retrain.mode": "improve",
+    "retrain.promotion.enabled": true,
+    "retrain.promotion.max_drawdown_floor": -0.15
+  },
+  "policy": {
+    "paper_shadow_max_drawdown_kill": -0.05,
+    "on_breach": "stop new opens, close/flatten via normal paper path, mark journal week FAIL, require human review"
+  }
+}
+
+\n

@@ -121,3 +121,10 @@ NEXT 1–2 CONCRETE ACTIONS FROM TONIGHT
 
 Standing reminder: until Stages 2–4 clear, the desk remains a decision aid.
 That is not failure; pretending otherwise is.
+
+Progress 2026-10-02 late
+------------------------
+Stages 2 foundation and 3/3b are done; Stage 4 risk envelope freeze landed in
+_RISK_ENVELOPE_FREEZE_20261002.txt (with a read-only drift checker). Stage 2
+still needs N weeks of journaled fills and weekly compares; Stage 5 remains
+locked until Stages 2-4 are green for the agreed N weeks plus the human gate.
