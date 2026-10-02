@@ -1,0 +1,38 @@
+﻿HYPOTHESIS 2026-10-02: EURUSD EXIT_HOLD MIN_BARS_BEFORE_SL = 3 (DD-TARGETED)
+
+Mechanism
+---------
+Raise replay.exit_hold.min_bars_before_sl from the SERIAL-N champion sticky
+value 2 to 3. Defer stop-loss until bars_seen >= 3 (entry bar counts as 1) so
+early stop-noise that seeds drawdown cascades is cut. Take-profit and timeout
+exits are unchanged. Barrier tp_atr/sl_atr stay 2.0; horizon stays 8. No new
+features, no look-ahead, no live gate flips.
+
+Knob and scope
+--------------
+Only `replay.exit_hold.min_bars_before_sl: 3` in config/default.yaml.
+Single EURUSD 1h full-history Replay from 2015-01-01, costs-on
+(slippage_pips=0.2, exit_slippage=true, use_bid_ask=true), signals.sessions=[],
+portfolio_brain.enabled=false. Research-only; promote always null.
+
+Improve-gate (acceptance)
+-------------------------
+Challenger must beat champion on profit_factor AND total_return, and must not
+worsen max_drawdown (challenger max_drawdown not more negative than champion).
+Reference sticky book from tight-stop FAIL / session-overlap costs-on:
+PF 2.7602 | total return +92.25% | max DD -2.27% | n ~687.
+In-run scoreboard champion/challenger improve-gate is authoritative for KEEP.
+Promote remains null even on PASS.
+
+Kill / FAIL
+-----------
+Any error, exception, or improve-gate miss reverts config/default.yaml from
+config/default.yaml.bak_pre_exit_hold3_20261002 and writes
+_FAIL_STRIKE_20261002_EURUSD_EXIT_HOLD_3_DD.txt. YAML KEEP only on clear PASS.
+
+Banned / do NOT retune
+----------------------
+news-blackout-expanded, tight-stop/sl_atr≠2.0, min_tp_pips, min_vol_regime,
+horizon≠8, purge/embargo, size_by_conf, meta_label, ADX/trend_regime,
+vol_scaled_conf, portfolio_brain enable, measured-intel conf0.65, USD-cluster
+(not Replay-wired). No live-gate / weekday / min_conf / sessions flip.
