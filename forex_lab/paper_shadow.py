@@ -99,20 +99,23 @@ def build_event(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     ts_utc, ts_dhaka = _ts_pair(now)
-    return {
+    pair_u = str(pair or "").upper()
+    bid_f = _f(bid)
+    ask_f = _f(ask)
+    row = {
         "schema": SCHEMA,
         "event": str(event or "").strip().lower() or "open",
         "ts_utc": ts_utc,
         "ts_dhaka": ts_dhaka,
-        "pair": str(pair or "").upper(),
+        "pair": pair_u,
         "side": str(side or "").upper() or None,
         "conf": _f(conf),
         "muted": _b(muted),
         "below_min": _b(below_min),
         "entry_mid": _f(entry_mid),
         "exit_mid": _f(exit_mid),
-        "bid": _f(bid),
-        "ask": _f(ask),
+        "bid": bid_f,
+        "ask": ask_f,
         "sl": _f(sl),
         "tp": _f(tp),
         "source": _source_tag(source),
@@ -122,6 +125,15 @@ def build_event(
         "advisory_id": str(advisory_id) if advisory_id else None,
         "notes": str(notes or "")[:240],
     }
+    # Stage-3 cost honesty (fail-soft): stamp assumed_cost when BA missing.
+    try:
+        from forex_lab.cost_honesty import enrich_assumed_cost_fields
+
+        row.update(enrich_assumed_cost_fields(bid=bid_f, ask=ask_f, pair=pair_u))
+    except Exception:  # noqa: BLE001 -- never block journal append
+        row.setdefault("ba_available", False)
+        row.setdefault("assumed_cost_pips", None)
+    return row
 
 
 def append_event(row: dict[str, Any] | None) -> bool:

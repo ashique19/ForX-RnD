@@ -38,11 +38,19 @@
 | exit_reason | str\|null | sl \| tp \| duration \| opposite \| manual \| … |
 | advisory_id | str\|null | board line id when desk_call / CTA linked |
 | notes | str | short free text; keep tiny |
+| assumed_spread_pips | float | Stage-3: config spread_pips (usually 1.0 RT) |
+| assumed_slippage_pips | float | Stage-3: replay.slippage_pips (usually 0.2) |
+| assumed_cost_pips | float\|null | Stage-3: RT mid-only cost when BA missing; null when BA present |
+| ba_available | bool | Stage-3: True only when tip Bid+Ask both present |
+| measured_spread_pips | float\|null | Stage-3: (ask-bid)/pip when BA present; else null |
+| notes_cost | str\|null | Stage-3: ba_missing_mid_only_assumed_rt \| ba_present_bbo_is_spread |
 
 ## Rules
 - Append is **fail-soft**: never raise into the desk; never block BUY/SELL/CLOSE.
 - Do **not** count STALE/MISSING/ERROR submits as fills (paper_order already blocks those).
 - Do **not** invent bid/ask. Mid-only fills leave bid/ask null.
+- Stage-3: when BA missing, stamp `assumed_cost_pips` (spread_pips + 2*slippage). When BA present, leave assumed_cost_pips null and record measured_spread_pips.
+- Cost probe: `scripts/cost_honesty_probe.py` -> `data/paper_shadow/cost_probe_YYYYMMDD.json` + `_COST_HONESTY_RESULT_YYYYMMDD.txt`.
 - No YAML gate / promote / min_conf / sessions / portfolio flips from this journal.
 - exit_hold stays at research KEEP (`min_bars_before_sl: 2`).
 

@@ -1,0 +1,30 @@
+# Stage-3 cost honesty micro-ship - 2026-10-02 Asia/Dhaka
+Roadmap: _ROADMAP_LIVE_EDGE_GRADE_20261002.txt Stage 3 (partial)
+Status: LANDED probe + journal assumed_cost stamp. NOT a YAML cost flip. NOT Replay restate.
+
+## Files
+- forex_lab/cost_honesty.py
+- scripts/cost_honesty_probe.py
+- forex_lab/paper_shadow.py (fail-soft assumed_cost_pips when BA missing)
+- data/paper_shadow/SCHEMA.md (Stage-3 fields)
+- data/paper_shadow/cost_probe_20261002.json
+- _COST_HONESTY_RESULT_20261002.txt
+- scripts/shadow_weekly_compare.py (ba/assumed/orphan counts)
+- tests/test_cost_honesty.py
+
+## Verify
+1) .venv\Scripts\python.exe -m pytest tests/test_cost_honesty.py tests/test_paper_shadow.py -q
+2) .venv\Scripts\python.exe scripts\cost_honesty_probe.py
+3) Confirm config spread_pips still 1.0 / slippage_pips 0.2; exit_hold untouched.
+
+## Blunt finding
+Tip mid-only everywhere. Assumed 1.0 RT is slightly pessimistic on EURUSD/USDJPY,
+optimistic on most crosses/minors vs pre-stamp Duka one-way. Recent history BA often
+constant-stamped - do not treat as live BBO. Next Stage-3 step: after-cost Replay
+restate with measured pair costs (still no promote).
+
+## Overnight handoff
+- No Jetta/Duka remesh required tonight.
+- Shadow journal still empty of fills; weekly stub ready.
+- Leave PC: next operator can run cost_honesty_probe after tip refresh, or start
+  measured-cost book restate design note without touching live YAML.

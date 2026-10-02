@@ -73,6 +73,17 @@ def main() -> None:
     closes = [e for e in week if e.get("event") == "close"]
     desk_calls = [e for e in week if e.get("event") == "desk_call"]
 
+    ba_present = sum(1 for e in week if e.get("ba_available") is True)
+    ba_missing = sum(1 for e in week if e.get("ba_available") is False)
+    assumed_stamped = sum(
+        1 for e in week if e.get("assumed_cost_pips") is not None
+    )
+    open_ids = {str(e.get("position_id") or "") for e in opens if e.get("position_id")}
+    close_ids = {str(e.get("position_id") or "") for e in closes if e.get("position_id")}
+    open_ids.discard("")
+    close_ids.discard("")
+    orphans = sorted(open_ids - close_ids)
+
     by_pair: dict[str, dict[str, int]] = defaultdict(lambda: {"open": 0, "close": 0})
     for e in opens:
         by_pair[str(e.get("pair") or "?")]["open"] += 1
@@ -85,6 +96,10 @@ def main() -> None:
         f"Window: last {WINDOW_DAYS}d",
         "",
         f"- opens={len(opens)} closes={len(closes)} desk_calls={len(desk_calls)}",
+        f"- ba_available true={ba_present} false={ba_missing} "
+        f"assumed_cost_stamped={assumed_stamped}",
+        f"- open position_ids without close in window={len(orphans)}"
+        + (f" (e.g. {', '.join(orphans[:5])})" if orphans else ""),
         f"- missing timestamps dropped upstream (parse failures ignored)",
         "",
         "## By pair (shadow counts only)",
@@ -103,6 +118,8 @@ def main() -> None:
         "## Shadow expectancy",
         "(stub) close events do not yet carry realized R on the JSONL row;",
         "join to data/paper_broker.json closed[] by position_id when computing PF.",
+        "When ba_available is false, assumed_cost_pips (Stage-3) is the mid-only RT",
+        "charge to subtract once R is joined - do not invent a pin delta here.",
         "",
         "## vs Replay pin",
         "(stub) intentionally empty - wire when Stage-2 has N>=4 weeks of",

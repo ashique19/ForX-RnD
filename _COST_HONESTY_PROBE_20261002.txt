@@ -1,5 +1,5 @@
 # Cost honesty probe (Stage-3 micro-step) — 2026-10-02 Asia/Dhaka
-Status: PROBE NOTE ONLY. No Jetta thrash. No Replay. No YAML cost flip.
+Status: LANDED via scripts/cost_honesty_probe.py + forex_lab/cost_honesty.py (2026-10-02). No Jetta thrash. No Replay. No YAML cost flip.\nSee _COST_HONESTY_RESULT_20261002.txt and data/paper_shadow/cost_probe_20261002.json.
 
 ## Assumed research costs (config/default.yaml today)
 - spread_pips: 1.0   (round-trip on mid fills via PaperBroker.spread_frac)
@@ -13,7 +13,7 @@ Status: PROBE NOTE ONLY. No Jetta thrash. No Replay. No YAML cost flip.
 - Shadow journal (Stage-2) therefore stores entry_mid/exit_mid and null BA
   until a tip donor with real Bid/Ask is present for that pair/bar.
 
-## Probe checklist (do later; do not thrash Jetta tonight)
+## Probe checklist (done 2026-10-02; no Jetta thrash)
 1) Sample N recent tip bars per Active pair: count how often Bid+Ask exist.
 2) When BA exists: measured_spread_pips = (ask-bid)/pip vs assumed 1.0 RT.
 3) Shadow fills: compare entry_mid to contemporaneous mid; slip proxy =

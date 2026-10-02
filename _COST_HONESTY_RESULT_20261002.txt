@@ -1,0 +1,43 @@
+# Cost honesty result (Stage-3) - 2026-10-02 21:49:47 Asia/Dhaka
+Schema: cost_honesty_probe_v1
+
+## Assumed research costs (read-only; YAML untouched)
+- spread_pips (RT): 1.0
+- slippage_pips / side: 0.2
+- assumed RT mid-only (spread + 2*slip): 1.4
+- assumed one-way half-spread: 0.500
+
+## Headline
+Tip path is mid-only for every sampled Active/watchlist pair; shadow journal BA stays null on the live tip path. Vs assumed half-RT (0.5p): pessimistic=2 optimistic=8 (pair-level, prefer pre-2026-09 median when recent history looks constant-stamped). EURUSD/USDJPY: assumed slightly pessimistic (pre-stamp ~0.4p < 0.5p). Most crosses/minors: assumed OPTIMISTIC (pre-stamp one-way often 0.6-1.5p). Recent history constant-stamp pairs=8/10 - not live BBO. Assumed RT mid-only charge is 1.4p (1.0 + 2*0.2). No YAML cost flip.
+
+Active=EURJPY | pairs=11 | tip_mid_only=11 | hist_BA=10 | constant_stamp=8 | assumed_optimistic=8 | assumed_pessimistic=2
+
+## Pair table (one-way pips)
+| pair | role | tip BA | hist med | pre-09 med | stamp? | vs assumed half-RT | blunt |
+|---|---|---:|---:|---:|---|---|---|
+| EURUSD | watchlist | 0/200 | 0.5026 | 0.4000 | YES | assumed_pessimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=0.5026p CONSTANT-STAMP; pre-2026-09 med=0.4000p; assumed_pessimistic_vs_tip |
+| USDJPY | watchlist | 0/200 | 0.7045 | 0.4000 | YES | assumed_pessimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=0.7045p CONSTANT-STAMP; pre-2026-09 med=0.4000p; assumed_pessimistic_vs_tip |
+| BTCUSD | watchlist | 0/200 | n/a | n/a | no | n/a | tip mid-only (Bid/Ask absent); history has no usable Bid/Ask |
+| AUDUSD | watchlist | 0/200 | 1.1199 | 0.8000 | YES | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=1.1199p CONSTANT-STAMP; pre-2026-09 med=0.8000p; assumed_optimistic_vs_tip |
+| NZDUSD | watchlist | 0/200 | 1.3053 | 0.9000 | YES | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=1.3053p CONSTANT-STAMP; pre-2026-09 med=0.9000p; assumed_optimistic_vs_tip |
+| USDCAD | watchlist | 0/200 | 1.4487 | 1.1000 | YES | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=1.4487p CONSTANT-STAMP; pre-2026-09 med=1.1000p; assumed_optimistic_vs_tip |
+| EURJPY | active | 0/200 | 1.3404 | 0.8000 | YES | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=1.3404p CONSTANT-STAMP; pre-2026-09 med=0.8000p; assumed_optimistic_vs_tip |
+| EURGBP | watchlist | 0/200 | 0.9690 | 0.6000 | YES | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=0.9690p CONSTANT-STAMP; pre-2026-09 med=0.6000p; assumed_optimistic_vs_tip |
+| USDCHF | watchlist | 0/200 | 0.8000 | 0.8000 | no | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=0.8000p (uniq=27); pre-2026-09 med=0.8000p; assumed_optimistic_vs_tip |
+| GBPJPY | watchlist | 0/200 | 1.7000 | 1.5000 | no | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=1.7000p (uniq=41); pre-2026-09 med=1.5000p; assumed_optimistic_vs_tip |
+| GBPUSD | watchlist | 0/200 | 1.0615 | 0.7000 | YES | assumed_optimistic_vs_tip | tip mid-only (Bid/Ask absent); hist one-way med=1.0615p CONSTANT-STAMP; pre-2026-09 med=0.7000p; assumed_optimistic_vs_tip |
+
+Assumed half-RT reference = 0.500 pip one-way (spread_pips/2). Slippage 0.2/side is extra on mid-only fills and still applies with BBO.
+
+## Interpretation (blunt)
+1) Live tip CSVs under data/*_1h.csv have NO Bid/Ask - shadow journal BA stays null.
+2) data/history/*_1h.csv carries Duka BidClose/AskClose; recent months often look
+   CONSTANT-STAMPED after tip-vol/Jetta work - not trustworthy as live BBO.
+3) Pre-2026-09 last-N medians: EURUSD/USDJPY ~0.4p one-way => assumed 0.5p half-RT
+   is slightly PESSIMISTIC (good caution). Older deep history often ~0.2-0.3p.
+4) Most crosses/minors (AUD/NZD/CAD/CHF/JPY crosses, GBPUSD) pre-stamp one-way
+   0.6-1.5p => assumed 1.0 RT is OPTIMISTIC vs tip/history BBO - Replay PF may
+   overstate live edge until Stage-3 restates after-cost book with measured cost.
+5) No YAML cost flip, no Replay re-pin, no Jetta remesh from this probe.
+
+Standing: desk remains a decision aid until Stages 2-4 clear.
