@@ -1,0 +1,34 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forex-lab/paper_shadow/measured_costs.schema.json",
+  "title": "MeasuredCostsTable",
+  "description": "Stage-3b per-pair measured one-way cost from honest Duka pre-stamp windows only. Stub: no instance numbers in this commit. See _MEASURED_COST_RESTATE_DESIGN_20261002.txt.",
+  "type": "object",
+  "required": ["schema", "as_of", "pairs"],
+  "properties": {
+    "schema": { "type": "string", "const": "measured_costs_v1" },
+    "as_of": { "type": "string", "description": "ISO date of table build (YYYY-MM-DD)" },
+    "source_note": { "type": "string" },
+    "pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pair", "window_start", "window_end", "n_bars", "one_way_p50", "one_way_p90", "stamp_rejected"],
+        "properties": {
+          "pair": { "type": "string" },
+          "window_start": { "type": "string", "description": "Inclusive UTC date of honest window" },
+          "window_end": { "type": "string", "description": "Inclusive UTC date of honest window" },
+          "n_bars": { "type": "integer", "minimum": 0 },
+          "one_way_p50": { "type": ["number", "null"], "description": "p50 one-way pips (Ask-Bid)/pip; null until filled" },
+          "one_way_p90": { "type": ["number", "null"], "description": "p90 one-way pips; null until filled" },
+          "stamp_rejected": { "type": "boolean", "description": "true if constant-stamp / unusable BA window rejected" },
+          "reject_reason": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "examples": []
+}

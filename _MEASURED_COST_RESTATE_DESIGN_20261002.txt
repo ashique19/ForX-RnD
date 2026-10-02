@@ -1,0 +1,111 @@
+﻿# Measured-cost restate design (Stage-3b) - 2026-10-02 Asia/Dhaka
+Repo: C:\AI\forex-lab
+Roadmap: _ROADMAP_LIVE_EDGE_GRADE_20261002.txt Stage 3
+Prior: _STAGE3_COST_HONESTY_20261002.txt + _COST_HONESTY_RESULT_20261002.txt
+Status: DESIGN NOTE ONLY. NOT a Replay. NOT a YAML cost flip. NOT a promote.
+
+Tone: blunt. Desk remains a decision aid until Stages 2-4 clear.
+
+
+## 1. Problem (from Stage-3 cost honesty probe)
+
+1) Live tip path is mid-only for every sampled Active/watchlist pair.
+   Tip CSVs under data/*_1h.csv have NO Bid/Ask. Shadow journal BA stays null
+   on the live tip path; assumed_cost_pips is stamped fail-soft instead.
+
+2) Research assumed costs (YAML untouched; read-only reference):
+   - spread_pips (RT): 1.0
+   - slippage_pips / side: 0.2
+   - assumed RT mid-only (spread + 2*slip): 1.4p
+   - assumed one-way half-spread reference: 0.5p
+
+3) Assumed 1.4p RT / 0.5p one-way is OPTIMISTIC on most crosses/minors vs
+   pre-stamp Duka one-way (often 0.6-1.5p). Only EURUSD/USDJPY look slightly
+   pessimistic on pre-2026-09 medians (~0.4p < 0.5p). Replay after-cost PF
+   may overstate live edge until the book is restated with measured pair costs.
+
+4) Recent history BidClose/AskClose on many pairs look CONSTANT-STAMPED after
+   tip-vol / Jetta work (probe: 8/10 hist_BA pairs). That BA is unusable as
+   live BBO. Prefer honest Duka windows only from pre-stamp eras
+   (pre-2026-09 last-N medians, or earlier deep history when clean).
+
+Standing: no YAML cost flip, no Replay re-pin, no Jetta remesh from the probe.
+
+
+## 2. Proposed Stage-3b (research only)
+
+### 2a. Per-pair measured cost table
+Build a pair-level table from honest Duka BidClose/AskClose windows ONLY:
+  - Sources: data/history/*_1h.csv BidClose/AskClose where present.
+  - Windows: pre-stamp eras only (cut before constant-stamp regimes;
+    probe used pre-2026-09 as the first cut). Reject constant-stamp segments.
+  - Metrics per pair (one-way pips): p50 and p90 of (AskClose-BidClose)/pip.
+  - Optional later: session buckets (London/NY/Asia) if sample sizes allow;
+    not required for first table.
+  - Artifact paths (proposed):
+      data/paper_shadow/measured_costs.schema.json   (schema stub; this commit)
+      data/paper_shadow/measured_costs.csv            (header skeleton; this commit)
+      data/paper_shadow/measured_costs_YYYYMMDD.json  (filled table; FUTURE)
+  - NO fake numbers in this commit. Empty schema + CSV header only.
+
+### 2b. Optional after-cost pin RESTATE research report
+Once the table has real numbers (future pass):
+  - Produce a written research report that restates champ / pin after-cost
+    expectancy using measured one-way * 2 (+ slip policy as written) per pair.
+  - Label clearly: RESTATE / research memo. Not a promote. Not a YAML default flip.
+  - If champ PF collapses under measured cost, champ is not live-edge grade
+    (roadmap Stage-3 exit). Still no auto-promote and no Active swap.
+
+### 2c. Explicit gate
+  - Human review BEFORE any yaml spread_pips / slippage_pips / cost-model change.
+  - NEVER promote from a restate alone. Promote still requires Stage-1 dual gate
+    (PF beat + DD hold) AND Stages 2-4 green for agreed N weeks AND human gate.
+  - Restate report may recommend a YAML cost review; it must not apply one.
+
+
+## 3. Shadow journal (Stage-2/3 continuity)
+
+Keep current Stage-3 stamping:
+  - assumed_spread_pips / assumed_slippage_pips / assumed_cost_pips when BA missing
+  - measured_spread_pips when tip BA present; ba_available flag
+
+ADD when measured cost table exists (future wire; not this commit):
+  - measured_cost_pair (float|null): lookup one-way (prefer p50) * 2 for RT,
+    or documented RT field from the table, keyed by pair at event time.
+  - Keep stamping assumed_cost always (do not replace). Dual stamp lets weekly
+    compare show assumed vs measured gap without rewriting history.
+
+Schema.md update for measured_cost_pair lands with the first filled table /
+journal wire - not tonight.
+
+
+## 4. Explicit non-goals (tonight and until Stage-3b table is human-reviewed)
+
+Do NOT:
+  - Jetta remesh thrash tonight (no tip-vol / Duka remesh required for this note).
+  - YAML roulette on spread/slip/gates/risk/min_conf/sessions/portfolio_brain.
+  - Replay challenger runs attached to this design (NO Replay run in this pass).
+  - Flip promote, Active pair, or live gates from cost honesty or this note.
+  - Treat constant-stamped recent history BA as live BBO.
+  - Invent measured numbers to fill the CSV/schema stubs.
+
+
+## 5. Exit criteria for Stage-3b (later)
+
+  - Filled measured_costs table: pair, window_start, window_end, n_bars,
+    one_way_p50, one_way_p90, stamp_rejected (bool/reason), source note.
+  - Written RESTATE memo: assumed 1.4p RT vs measured RT per pair on the
+    overlap / champ book; blunt call if PF collapses.
+  - Human sign-off recorded before any yaml spread/slip change.
+  - Shadow journal dual-stamping assumed_cost + measured_cost_pair when table live.
+  - Still: no promote from restate alone.
+
+
+## 6. This commit ships
+
+  - This design note: _MEASURED_COST_RESTATE_DESIGN_20261002.txt
+  - Stub: data/paper_shadow/measured_costs.schema.json (empty structure, no numbers)
+  - Stub: data/paper_shadow/measured_costs.csv (header only, no data rows)
+
+Does NOT ship: Replay, YAML cost/gate/promote edits, filled cost numbers,
+Jetta remesh, challenger jobs.
