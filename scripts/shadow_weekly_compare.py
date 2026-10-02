@@ -59,6 +59,7 @@ def main() -> None:
     cutoff = now - timedelta(days=WINDOW_DAYS)
     now_dhaka = now.astimezone(DHAKA).strftime("%Y-%m-%d %H:%M Asia/Dhaka")
     events = _load_events(path)
+    journal_empty = not events
     week = []
     for e in events:
         ts = _parse_utc(e.get("ts_utc"))
@@ -94,6 +95,13 @@ def main() -> None:
         f"# Shadow weekly compare stub - {now_dhaka}",
         f"Journal: `{path}`",
         f"Window: last {WINDOW_DAYS}d",
+    ]
+    if journal_empty:
+        lines += [
+            "",
+            "STATUS: journal empty / need fills - no Replay comparison performed; exit 0.",
+        ]
+    lines += [
         "",
         f"- opens={len(opens)} closes={len(closes)} desk_calls={len(desk_calls)}",
         f"- ba_available true={ba_present} false={ba_missing} "

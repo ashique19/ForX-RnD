@@ -1,0 +1,94 @@
+ForX weekend -> Monday ops handoff - Stage-2 shadow accumulation
+2026-10-03 00:10 Asia/Dhaka
+Repo: C:\AI\forex-lab
+
+STATUS
+------
+Stage-2 journaling is wired and production is still empty: no real fills have
+been fabricated. Stage-5 remains LOCKED. This handoff is docs + one tiny,
+read-only compare check only; no Replay, promote, or YAML roulette.
+
+DESK HEALTH / WEEKEND AND FRIDAY FILL-RATE CAVEAT
+--------------------------------------------------
+GET http://127.0.0.1:8000/health at 2026-10-03 00:10 Asia/Dhaka returned
+HTTP 200 with ok=true, service=forx-decision-api, timezone=Asia/Dhaka.
+
+Spot FX is normally open Sun 21:00 UTC through Fri 21:00 UTC (roughly Mon
+03:00 through Sat 03:00 Asia/Dhaka). Therefore this handoff is late Friday
+UTC / early Saturday Dhaka: the API is up, but the market closes at about
+Sat 03:00 Dhaka and stays closed through Sunday, reopening about Monday
+03:00 Dhaka. Expect zero fills while closed; resume accumulation in live desk
+sessions after reopen.
+
+The configured replay.weekday_gate is enabled, UTC, block=[mon, thu]. It
+blocks NEW opens on Monday and Thursday UTC; it does not mute Friday. The
+Thursday mute lifts on Friday UTC. Friday can therefore accumulate new opens
+before the normal Fri 21:00 UTC FX close, but the weekend close dominates
+late-Friday fill rate. The live paper path keeps signals.sessions=[] (all UTC
+hours); the replay session_gate is research-only. A muted weekday may still
+produce journaled desk_call skips, but those are not real fills.
+
+JOURNAL PATH AND VERIFY POINTER
+-------------------------------
+Production JSONL (gitignored; created on first successful append):
+  C:\AI\forex-lab\data\paper_shadow\journal.jsonl
+
+Verification note: _SHADOW_JOURNAL_VERIFY_20261002.txt. It records the
+runtime path, schema, fail-soft hooks, and the last health/test proof. Do not
+write test or fabricated fixtures into production journal.jsonl.
+
+HOW EVENTS GET JOURNALED
+------------------------
+- Manual paper board open/close: paper_order stamps open/close events.
+- Auto-paper open/close: the normal desk board poll path stamps open/close.
+- Auto-paper skip: price/rate/levels/portfolio skips stamp a desk_call event.
+- Shadow append is fail-soft: a journal write failure must not change paper
+  control flow. Events carry desk timestamps, pair/side/confidence/source,
+  advisory metadata when present, ba_available and cost fields.
+- A real session means operate the desk normally or allow normal auto-paper;
+  do not fabricate production fills.
+
+STAGE-2 EXIT / WEEKLY REVIEW
+----------------------------
+Exit requires N=4 consecutive weeks of journaled real fills, with no missing
+or silently stale submissions counted as fills, plus a weekly memo comparing
+shadow expectancy against Replay expectancy (trade count, PF/expectancy per
+trade, and max-DD path; explain cost/latency/skip deltas). Until that evidence
+exists, the desk remains a decision aid and Stage-5 stays locked.
+
+WEEKLY COMPARE STATUS
+---------------------
+scripts/shadow_weekly_compare.py remains a read-only stub; it does not run
+Replay or invent a Replay pin delta. Its empty-journal behavior was clarified
+minimally: it writes the blunt status
+"journal empty / need fills - no Replay comparison performed; exit 0."
+The current production journal path is absent/empty, so the compare exits 0
+and reports no fills. Run it after real journal data exists; it is not a fill
+producer.
+
+RISK / COST FREEZE
+------------------
+Risk freeze pointer: _RISK_ENVELOPE_FREEZE_20261002.txt (JSON companion:
+_RISK_ENVELOPE_FREEZE_20261002.json). Keep the frozen envelope and its
+no-YAML-roulette policy. Stage-3b measured-cost pointers are
+_STAGE3B_MEASURED_COSTS_FILL_20261002.txt,
+data/paper_shadow/measured_costs_20261002.json, and
+data/paper_shadow/measured_costs.csv. Measured costs still require human
+review before any YAML cost flip; do not flip them over the weekend.
+
+OVERNIGHT ROUTINE PROMPT
+------------------------
+No clear checked-in idle-routine prompt used by START/overnight was found.
+The on-disk overnight watcher is a historical Replay watcher, not a current
+shadow-accumulation prompt; do not run it under the Stage-5 lock. Prompt
+update is deferred to the parent routine/state owner (UpdateState).
+
+HARD STOPS
+----------
+- Do NOT start Stage-5.
+- Do NOT promote or swap Active.
+- Do NOT run Replay/challenger work.
+- Do NOT perform YAML risk/cost/gate/min-confidence/session roulette over the
+  weekend.
+- Next unlock is real fills over normal desk sessions, then four weekly
+  reviews -- not more YAML.
