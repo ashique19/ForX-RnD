@@ -1,0 +1,26 @@
+STAGE-3b MEASURED COSTS FILL - 2026-10-02 Asia/Dhaka
+Repo: C:\AI\forex-lab
+
+Method: real Duka BidClose/AskClose from data/history/*_1h.csv; one_way=(AskClose-BidClose)/pip_size.
+First cut was before 2026-09-01 UTC. Last 5000 usable pre-cut BA bars were used when honest. Constant-stamp windows were rejected.
+Assumed references: 0.5p one-way half-spread; 1.4p RT mid-only (1.0 spread + 2*0.2 slip).
+
+EURUSD: p50=0.400000p one-way; p90=0.700000p; measured RT(p50)=0.800000p; RT(p90)=1.400000p; vs 0.5p=pessimistic; vs 1.4p=below assumed RT; n=5000; window=2025-11-13..2026-08-31
+USDJPY: p50=0.500000p one-way; p90=1.200000p; measured RT(p50)=1.000000p; RT(p90)=2.400000p; vs 0.5p=in-line; vs 1.4p=below assumed RT; n=5000; window=2025-11-11..2026-08-31
+BTCUSD: REJECT stamp_rejected=true; reason=no usable BidClose/AskClose before 2026-09-01 (watch-only/pin-skip); n_bars=0
+AUDUSD: p50=0.900000p one-way; p90=1.300000p; measured RT(p50)=1.800000p; RT(p90)=2.600000p; vs 0.5p=optimistic; vs 1.4p=above assumed RT; n=5000; window=2025-11-11..2026-08-31
+NZDUSD: p50=1.000000p one-way; p90=1.600000p; measured RT(p50)=2.000000p; RT(p90)=3.200000p; vs 0.5p=optimistic; vs 1.4p=above assumed RT; n=5000; window=2025-11-11..2026-08-31
+USDCAD: p50=1.200000p one-way; p90=1.800000p; measured RT(p50)=2.400000p; RT(p90)=3.600000p; vs 0.5p=optimistic; vs 1.4p=above assumed RT; n=5000; window=2025-11-11..2026-08-31
+EURJPY: p50=0.900000p one-way; p90=2.000000p; measured RT(p50)=1.800000p; RT(p90)=4.000000p; vs 0.5p=optimistic; vs 1.4p=above assumed RT; n=5000; window=2025-11-11..2026-08-31
+EURGBP: p50=0.700000p one-way; p90=1.400000p; measured RT(p50)=1.400000p; RT(p90)=2.800000p; vs 0.5p=optimistic; vs 1.4p=at assumed RT; n=5000; window=2025-11-11..2026-08-31
+USDCHF: p50=0.800000p one-way; p90=1.500000p; measured RT(p50)=1.600000p; RT(p90)=3.000000p; vs 0.5p=optimistic; vs 1.4p=above assumed RT; n=5000; window=2025-11-11..2026-08-31
+GBPJPY: p50=1.700000p one-way; p90=3.800000p; measured RT(p50)=3.400000p; RT(p90)=7.600000p; vs 0.5p=optimistic; vs 1.4p=above assumed RT; n=5000; window=2025-11-11..2026-08-31
+GBPUSD: p50=0.700000p one-way; p90=1.400000p; measured RT(p50)=1.400000p; RT(p90)=2.800000p; vs 0.5p=optimistic; vs 1.4p=at assumed RT; n=5000; window=2025-11-11..2026-08-31
+
+Blunt calls:
+- Assumed one-way 0.5p is PESSIMISTIC (measured p50 lower) for: EURUSD.
+- Assumed one-way 0.5p is OPTIMISTIC (measured p50 higher) for: AUDUSD, NZDUSD, USDCAD, EURJPY, EURGBP, USDCHF, GBPJPY, GBPUSD.
+- One-way p50 in-line with 0.5p: USDJPY.
+- P90 is tail exposure, not a replacement for p50; crosses/JPY tails are materially wider than the assumed RT reference.
+
+Explicit non-goals: NO yaml flip. NO promote from this table. NO Replay/challenger/Active swap. NO Jetta remesh/tip-vol thrash. Assumed_cost remains stamped when BA is missing; measured_cost_pair is a separate RT research estimate.

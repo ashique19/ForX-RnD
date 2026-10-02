@@ -1,0 +1,128 @@
+{
+  "schema": "measured_costs_v1",
+  "as_of": "2026-10-02",
+  "source_note": "Duka data/history/{PAIR}_1h.csv BidClose/AskClose only; pre-2026-09-01 UTC first cut; last 5000 usable BA bars per pair; windows with constant rounded spread (<=2 unique) rejected. measured_cost_pair is one_way_p50*2 for usable rows; research dual stamp only.",
+  "pairs": [
+    {
+      "pair": "EURUSD",
+      "window_start": "2025-11-13",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.4,
+      "one_way_p90": 0.7,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=81; constant-stamp rejected"
+    },
+    {
+      "pair": "USDJPY",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.5,
+      "one_way_p90": 1.2,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=122; constant-stamp rejected"
+    },
+    {
+      "pair": "BTCUSD",
+      "window_start": "",
+      "window_end": "",
+      "n_bars": 0,
+      "one_way_p50": null,
+      "one_way_p90": null,
+      "stamp_rejected": true,
+      "reject_reason": "no usable BidClose/AskClose before 2026-09-01 (watch-only/pin-skip)",
+      "notes": "stamp_rejected; no honest Duka BA window"
+    },
+    {
+      "pair": "AUDUSD",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.9,
+      "one_way_p90": 1.3,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=78; constant-stamp rejected"
+    },
+    {
+      "pair": "NZDUSD",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 1.0,
+      "one_way_p90": 1.6,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=112; constant-stamp rejected"
+    },
+    {
+      "pair": "USDCAD",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 1.2,
+      "one_way_p90": 1.8,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=112; constant-stamp rejected"
+    },
+    {
+      "pair": "EURJPY",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.9,
+      "one_way_p90": 2.0,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=140; constant-stamp rejected"
+    },
+    {
+      "pair": "EURGBP",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.7,
+      "one_way_p90": 1.4,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=96; constant-stamp rejected"
+    },
+    {
+      "pair": "USDCHF",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.8,
+      "one_way_p90": 1.5,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=126; constant-stamp rejected"
+    },
+    {
+      "pair": "GBPJPY",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 1.7,
+      "one_way_p90": 3.8,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=202; constant-stamp rejected"
+    },
+    {
+      "pair": "GBPUSD",
+      "window_start": "2025-11-11",
+      "window_end": "2026-08-31",
+      "n_bars": 5000,
+      "one_way_p50": 0.7,
+      "one_way_p90": 1.4,
+      "stamp_rejected": false,
+      "reject_reason": null,
+      "notes": "Duka BidClose/AskClose; pre-2026-09; last 5000 usable BA bars; unique_rounded=131; constant-stamp rejected"
+    }
+  ]
+}

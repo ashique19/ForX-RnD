@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 import statistics
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -68,6 +69,9 @@ def enrich_assumed_cost_fields(
         "assumed_slippage_pips": assumed["assumed_slippage_pips"],
         "assumed_cost_pips": None,
         "measured_spread_pips": None,
+        # Stage-3b: dual stamp only; assumed_cost_pips remains the live
+        # mid-only fallback and is never replaced by this research estimate.
+        "measured_cost_pair": measured_cost_for_pair(pair),
     }
     if ba_ok:
         pip = pip_size_for_pair(pair or "EURUSD", cfg)
@@ -92,6 +96,63 @@ def _f(value: object) -> float | None:
     if out != out or out in (float("inf"), float("-inf")):
         return None
     return out
+
+
+def _measured_table_candidates(root: Path) -> list[Path]:
+    """Return measured-cost table candidates, newest dated table first.
+
+    The lookup is deliberately fail-soft: a missing or malformed research
+    table must never block paper shadow journaling.
+    """
+    raw = os.environ.get("FORX_MEASURED_COSTS_TABLE")
+    candidates: list[Path] = []
+    if raw:
+        override = Path(raw)
+        # An explicit override is authoritative; do not silently fall back to
+        # a repo table when a caller intentionally points at a missing file.
+        return [override if override.is_absolute() else root / override]
+    out_dir = root / "data" / "paper_shadow"
+    candidates.append(out_dir / "measured_costs.json")
+    candidates.extend(sorted(out_dir.glob("measured_costs_*.json"), reverse=True))
+    seen: set[Path] = set()
+    return [p for p in candidates if not (p in seen or seen.add(p))]
+
+
+def load_measured_costs(root: Path | None = None) -> dict[str, Any] | None:
+    """Load the Stage-3b measured table, returning None on any read/shape error."""
+    import json
+
+    base = root or project_root()
+    for path in _measured_table_candidates(base):
+        try:
+            if not path.is_file():
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("schema") != "measured_costs_v1":
+                continue
+            if not isinstance(payload.get("pairs"), list):
+                continue
+            return payload
+        except Exception:  # noqa: BLE001 -- fail-soft journal enrichment
+            continue
+    return None
+
+
+def measured_cost_for_pair(pair: str, root: Path | None = None) -> float | None:
+    """Return measured round-trip pips from a usable pair row, else None."""
+    try:
+        wanted = str(pair or "").upper()
+        table = load_measured_costs(root=root)
+        for row in (table or {}).get("pairs", []):
+            if str(row.get("pair") or "").upper() != wanted:
+                continue
+            if bool(row.get("stamp_rejected")):
+                return None
+            p50 = _f(row.get("one_way_p50"))
+            return round(p50 * 2.0, 6) if p50 is not None else None
+    except Exception:  # noqa: BLE001 -- fail-soft journal enrichment
+        return None
+    return None
 
 
 def _read_csv_tail(path: Path, n: int) -> tuple[list[str], list[dict[str, str]]]:
@@ -452,6 +513,8 @@ __all__ = [
     "ASSUMED_SPREAD_PIPS",
     "assumed_from_cfg",
     "enrich_assumed_cost_fields",
+    "load_measured_costs",
+    "measured_cost_for_pair",
     "render_result_text",
     "run_cost_probe",
     "sample_pair",

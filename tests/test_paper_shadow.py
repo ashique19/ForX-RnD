@@ -36,6 +36,8 @@ def test_record_open_appends_jsonl(tmp_path, monkeypatch):
     assert row["ts_utc"].endswith("Z")
     assert "Asia/Dhaka" in row["ts_dhaka"]
     assert row["bid"] is None and row["ask"] is None
+    assert row["assumed_cost_pips"] == 1.4
+    assert row["measured_cost_pair"] == 0.8
 
 
 def test_append_fail_soft_bad_path(monkeypatch):

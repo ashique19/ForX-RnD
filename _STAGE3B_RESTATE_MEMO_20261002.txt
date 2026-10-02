@@ -1,0 +1,17 @@
+STAGE-3b RESTATE MEMO - RESEARCH ONLY - 2026-10-02 Asia/Dhaka
+
+Purpose: qualitative after-cost restate using the filled measured table. This is NOT Replay, NOT a challenger, NOT a promote, and does not change YAML.
+
+Reference: assumed RT mid-only = 1.4p. Measured RT estimate = 2 * usable one-way p50; p90 is the tail reference only.
+
+Qualitative impact:
+- EURUSD: measured RT p50 0.8p, below assumed 1.4p; assumed book is conservative on median cost, but p90 RT is 1.4p.
+- USDJPY: measured RT p50 1.0p, below assumed; p90 RT 2.4p, so median is conservative but tail is wider.
+- EURGBP and GBPUSD: measured RT p50 1.4p, roughly at assumed; p90 RT 2.8p, tail is materially wider.
+- AUDUSD: measured RT p50 1.8p; NZDUSD 2.0p; USDCAD 2.4p; USDCHF 1.6p; EURJPY 1.8p; GBPJPY 3.4p. The assumed 1.4p RT therefore overstates after-cost expectancy on these medians, worst for GBPJPY.
+- BTCUSD: no history BidClose/AskClose; rejected and remains watch-only/pin-skip. No measured restate is allowed.
+
+Book implication: any positive edge relying on a flat 1.4p RT charge is likely overstated for the wider crosses, and p90 tails warn that median-only restatement is still not a live execution guarantee. EURUSD/USDJPY are not the same risk: their median charge is lower, but USDJPY tails remain wide. This memo does not recompute PF, expectancy, or Replay outputs.
+
+Explicit: NO yaml flip / NO promote from this table / NO Active swap / NO challenger / NO Jetta remesh.
+Next: human review, then Stage-4 evidence/weekly shadow continuity; do not promote from measured costs alone.

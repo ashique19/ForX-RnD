@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "forex-lab/paper_shadow/measured_costs.schema.json",
   "title": "MeasuredCostsTable",
-  "description": "Stage-3b per-pair measured one-way cost from honest Duka pre-stamp windows only. Stub: no instance numbers in this commit. See _MEASURED_COST_RESTATE_DESIGN_20261002.txt.",
+  "description": "Stage-3b per-pair measured one-way cost from honest Duka pre-stamp windows only. Blank window dates are used only for rejected rows with no usable BA. See _MEASURED_COST_RESTATE_DESIGN_20261002.txt.",
   "type": "object",
   "required": ["schema", "as_of", "pairs"],
   "properties": {

@@ -43,6 +43,7 @@
 | assumed_cost_pips | float\|null | Stage-3: RT mid-only cost when BA missing; null when BA present |
 | ba_available | bool | Stage-3: True only when tip Bid+Ask both present |
 | measured_spread_pips | float\|null | Stage-3: (ask-bid)/pip when BA present; else null |
+| measured_cost_pair | float\|null | Stage-3b usable-table RT estimate: `round(one_way_p50 * 2, 6)`; null for rejected/missing rows |
 | notes_cost | str\|null | Stage-3: ba_missing_mid_only_assumed_rt \| ba_present_bbo_is_spread |
 
 ## Rules
@@ -57,3 +58,9 @@
 ## Weekly compare (stub)
 Run `scripts/shadow_weekly_compare.py` to print shadow counts from the JSONL.
 Replay-pin diff is intentionally stubbed until Stage-2 has N weeks of fills.
+## Stage-3b measured cost table
+- Artifact: `data/paper_shadow/measured_costs_20261002.json`; CSV mirror: `measured_costs.csv`.
+- Source is real `data/history/{PAIR}_1h.csv` `BidClose`/`AskClose` only. The first cut is before `2026-09-01` UTC; each pair uses up to the last 5000 usable pre-cut BA bars.
+- Constant-stamp windows (`hist_spread_unique_rounded` approximately 1; implementation rejects <=2 unique rounded spreads) are not accepted. BTCUSD is watch-only/pin-skip and is rejected when no BA exists.
+- `measured_cost_pair` is a research RT estimate only: when a row is usable, it equals `round(one_way_p50 * 2, 6)`. It is dual-stamped alongside `assumed_cost_pips`; it never replaces the assumed fallback when BA is missing.
+- Missing/malformed table or rejected pair is fail-soft and yields `measured_cost_pair=null`. No YAML cost/gate change or promote follows from this table.
