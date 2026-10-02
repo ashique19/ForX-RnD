@@ -1,0 +1,123 @@
+﻿_ROADMAP_LIVE_EDGE_GRADE_20261002.txt
+=====================================
+Written: 2026-10-02 ~21:37 Asia/Dhaka
+Repo: C:\AI\forex-lab  |  PC: 7e587e4b-532e-420e-863a-f817a584547d
+Audience: research desk operators. Tone: blunt.
+
+WHAT "LIVE EDGE GRADE" MEANS
+----------------------------
+Survives after REAL costs (measured spread/slip, not assumed 0.2 pip) AND
+controlled drawdown out-of-sample / paper-live shadow — not just a pretty
+Replay PF on the champ book. Until that bar is cleared, this desk is a
+decision aid, not a trading system. User agrees: until then it is not much
+practical help.
+
+Tonight: WRITE THIS ROADMAP ONLY. No Replay. No YAML challenger. No promote.
+No live-gate flips.
+
+
+STAGE 0 — CURRENT TRUTH (where we are)
+--------------------------------------
+- Desk role: decision aid / research board. Not broker-live.
+- promote = null. Nothing is auto-promoted to live Active.
+- EURUSD champ: ~PF 2.7–3.2 after-cost on the overlap book (research pin).
+  Challengers that lift PF still fail the DD gate and get reverted/kept null.
+- Many FREEZEs still ON (measured-intel, risk overlays, portfolio_brain off,
+  serial challenger gate). Idle heal / tip-vol work is ops, not a live edge.
+- Paper practice exists; it is not yet a disciplined shadow book with weekly
+  expectancy reconciliation.
+
+Exit criteria (Stage 0 is descriptive, not a gate):
+  Operators can recite the above without hedging. No "almost live" language.
+
+
+STAGE 1 — RESEARCH PROMOTE GATE (already the rule; do not weaken)
+-------------------------------------------------------------------
+Rule (unchanged):
+  After-cost full-history PF must CLEARLY beat the current champ AND
+  drawdown must be controlled (not worse than champ / not past DD kill).
+  No live-gate flip, no Active swap, no promote without that dual pass.
+
+Exit criteria:
+  - Written improve-gate result vs champ pin: PF beat + DD hold.
+  - Challenger YAML reverted or KEEP with explicit promote=null if DD fails.
+  - Human still gates any live Active change even after a research KEEP.
+
+
+STAGE 2 — PAPER-LIVE SHADOW
+---------------------------
+Board advisories → journaled paper fills stamped with desk timestamps
+(not "I would have" memory). Weekly: compare shadow PnL / expectancy /
+trade count vs Replay expectancy on the same signal stream.
+
+Exit criteria:
+  - N consecutive weeks (suggest start N=4) of journaled fills with no
+    missing timestamps / no silent STALE submits counted as fills.
+  - Weekly memo: shadow vs Replay delta (PF, expectancy/trade, max DD path).
+  - Delta explained (cost, latency, skip rules) — not waved away.
+
+
+STAGE 3 — COST REALISM
+----------------------
+Stop trusting assumed 0.2 pip. Use tip bid/ask honesty and Jetta volume
+honesty where donors exist. Measure realized spread + slip on shadow fills
+(and tip quotes) vs the research assumption.
+
+Exit criteria:
+  - Written cost table: assumed vs measured (pair-level, session if needed).
+  - Research after-cost book re-stated with measured cost; if champ PF
+    collapses under measured cost, champ is not live-edge grade.
+  - No promote talk while assumed cost is still the only cost model.
+
+
+STAGE 4 — RISK ENVELOPE (freeze live risk params)
+-------------------------------------------------
+Already research-KEEP / standing: weekday + session filters, one-position
+posture, size discipline. For live path: freeze a hard envelope —
+  - max DD kill switch
+  - size caps
+  - one-position
+  - weekday / session already KEEP
+
+Do not retune live risk knobs while chasing Replay PF.
+
+Exit criteria:
+  - Written freeze of live risk params (values + kill behavior).
+  - Shadow book respects the same envelope; violations = fail week.
+  - No YAML roulette on risk params "to see if PF improves."
+
+
+STAGE 5 — TINY REAL SIZE (only after Stages 2–4 pass for N weeks)
+-----------------------------------------------------------------
+Micro lot only. Same risk envelope as Stage 4. Promote still human-gated.
+N weeks of Stage 2–4 pass is the unlock — not a single good Replay.
+
+Exit criteria:
+  - Stages 2–4 exit criteria all green for agreed N (default 4 weeks).
+  - First real size = micro; kill switch armed; human promote each change.
+  - Written post-mortem after first real week (costs, DD path, skips).
+
+
+STAGE 6 — EXPLICIT NON-GOALS UNTIL GATES CLEAR
+----------------------------------------------
+Do NOT:
+  - YAML filter roulette (spin knobs until PF looks good).
+  - Metric-chasing Replays that ignore DD / worsen DD then claim "win."
+  - Flip live gates, Active pair, min_confidence, portfolio_brain, or
+    promote=null → auto because a board looks busy.
+  - Treat tip-vol heal / Jetta remesh / UI polish as edge proof.
+
+These stay banned until Stage 1 dual-gate is honest AND Stages 2–4 are green.
+
+
+NEXT 1–2 CONCRETE ACTIONS FROM TONIGHT
+--------------------------------------
+1) Land this file on main (commit + push). Treat it as the standing path
+   from research desk → live-edge grade. No Replay / challenger / promote
+   attached to this commit.
+2) Tomorrow (or next operator session): sketch Stage 2 shadow journal
+   schema only (fields: desk_ts, pair, side, conf, advisory_id, paper_fill
+   price, assumed_cost, notes) — design note, not a Replay, not a gate flip.
+
+Standing reminder: until Stages 2–4 clear, the desk remains a decision aid.
+That is not failure; pretending otherwise is.
