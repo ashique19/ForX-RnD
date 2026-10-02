@@ -1,0 +1,28 @@
+﻿_AGGRESSIVE_FILL_PLAN_20261003
+
+Purpose: fill the Stage-2 shadow journal only through the live desk paper path.
+No fake journal rows, no YAML edits, no promote, no Stage-5, no Replay challengers.
+
+Observed at 2026-10-03 01:37 Asia/Dhaka:
+- API /health and desk :5173 were healthy.
+- FX is closed for the Asia/Dhaka weekend window. No paper CTA was attempted.
+- data/paper_shadow/journal.jsonl did not exist; baseline count was 0.
+- Board had no eligible BUY/SELL at the configured 0.60 minimum. USDCAD was raw SELL 0.5764 and NZDUSD raw BUY 0.4222, both below min_conf; all other watched rows were HOLD or need_train.
+- Existing auto paper was enabled (20 opens/hour, champion=brief); portfolio had no open positions and portfolio brain was disabled.
+
+Next Monday action (Asia/Dhaka):
+1. Keep START_DESK/API running and execute:
+   python scripts/shadow_paper_burst.py
+2. The script health-checks, ticks the existing auto paper path once, reads /board,
+   filters only BUY/SELL rows with confidence >= 0.60, validity OK, ready status,
+   no mute/gate reason, then POSTs each remaining call to /paper/order.
+3. /paper/order remains the production paper CTA, so one_position, stops/targets,
+   weekday/news gates, and risk-envelope freezes are enforced. The script never
+   writes journal.jsonl directly; it reports journal_before/after and delta.
+4. If Monday's UTC weekday gate blocks a call, leave it blocked and report the
+   endpoint response; do not lower min_conf or change YAML. Retry the next
+   eligible weekday/session.
+
+Expected evidence after a real fill:
+- data/paper_shadow/journal.jsonl exists and has an additional schema=paper_shadow_v1
+  open row (plus any legitimate auto close/desk_call rows), with position/fill IDs.
