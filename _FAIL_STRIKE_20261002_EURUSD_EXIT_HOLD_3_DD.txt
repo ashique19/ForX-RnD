@@ -1,0 +1,4 @@
+EXIT_HOLD min_bars_before_sl=3 DD HYPOTHESIS FAILED
+time: 2026-10-02 21:08:18 Asia/Dhaka
+reason: PF=True, DD=False, return=True; challenger must beat champion PF/return and not worsen DD
+action: reverted config/default.yaml to config/default.yaml.bak_pre_exit_hold3_20261002
