@@ -458,7 +458,7 @@ export function App() {
   }, [selected]);
 
   // Decision = 1h only; daily brief levels stay available for Lab elsewhere but not chart overlays here.
-  const levels = brief?.hourly ?? null;
+  const levels = brief && brief.pair === selected ? brief.hourly ?? null : null;
   const modelBuild = brief && brief.pair === selected ? brief.model_build ?? null : null;
 
   const runRetrainGate = useCallback(() => {
@@ -540,6 +540,9 @@ export function App() {
         setError(err instanceof Error ? err.message : "Could not set the active pair.");
         return;
       }
+      // Drop previous pair chart/brief immediately so board-click never shows stale candles/levels.
+      setOhlcv((cur) => (sameOhlcv(cur, pair, iv) ? cur : null));
+      setBrief((cur) => (sameBrief(cur, pair, iv) ? cur : null));
       setSelected(pair);
       setRowTf(iv);
       setChartTf(iv);
@@ -547,27 +550,28 @@ export function App() {
     [],
   );
 
+  const briefForActive = brief && brief.pair === selected ? brief : null;
   const signalBrief = (
                 <SignalBrief
-                  pair={brief?.pair ?? selected}
-                  bias={brief?.bias ?? "—"}
-                  confidence={brief?.confidence ?? null}
-                  rawSignal={brief?.raw_signal ?? null}
-                  biasTone={brief?.bias_tone ?? "flat"}
-                  headline={brief?.headline ?? (selected ? `${selected} — loading` : "Loading")}
-                  sub={brief?.sub ?? "Asia/Dhaka · research desk"}
-                  hourly={brief?.hourly ?? null}
-                  daily={brief?.daily ?? null}
-                  consensus={brief?.consensus ?? null}
-                  paper={brief?.paper ?? null}
+                  pair={selected}
+                  bias={briefForActive?.bias ?? "—"}
+                  confidence={briefForActive?.confidence ?? null}
+                  rawSignal={briefForActive?.raw_signal ?? null}
+                  biasTone={briefForActive?.bias_tone ?? "flat"}
+                  headline={briefForActive?.headline ?? (selected ? `${selected} — loading` : "Loading")}
+                  sub={briefForActive?.sub ?? "Asia/Dhaka · research desk"}
+                  hourly={briefForActive?.hourly ?? null}
+                  daily={briefForActive?.daily ?? null}
+                  consensus={briefForActive?.consensus ?? null}
+                  paper={briefForActive?.paper ?? null}
                   toast={paperToast}
                   chartInterval={chartTf}
                   compact
-                  nextEvent={brief?.next_event ?? null}
-                  calendarNote={brief?.calendar_note ?? null}
-                  calendarStale={Boolean(brief?.calendar_stale)}
-                  advice={brief?.advice ?? []}
-                  briefReady={brief != null}
+                  nextEvent={briefForActive?.next_event ?? null}
+                  calendarNote={briefForActive?.calendar_note ?? null}
+                  calendarStale={Boolean(briefForActive?.calendar_stale)}
+                  advice={briefForActive?.advice ?? []}
+                  briefReady={briefForActive != null}
                   onRefresh={() => void refreshData(true)}
                   onOrder={async (side, size) => {
                     const result = await api.paperOrder(selected, side, size, rowTf);

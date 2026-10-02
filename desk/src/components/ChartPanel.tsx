@@ -20,6 +20,7 @@ import {
   type PatternPrefs,
 } from "../patterns";
 import { RefreshIcon } from "./SignalBrief";
+import { ohlcvMatchesActive } from "../ohlcvMatch";
 
 /** Decision desk chart: 1h only (1d removed to free Decision capacity). */
 const TFS = [{ id: "1h", label: "1h" }];
@@ -120,11 +121,15 @@ export function ChartPanel({
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [patternPrefs, setPatternPrefs] = useState<PatternPrefs>(initialPatternPrefs);
-  const bars = data?.bars ?? [];
-  const precision = data?.digits ?? priceFormatFor(pair).precision;
+  // Board click / Active switch: never paint another pair's candles into this chart.
+  const matched = ohlcvMatchesActive(data, pair, interval);
+  const feed = matched ? data : null;
+  const bars = feed?.bars ?? [];
+  const precision = feed?.digits ?? priceFormatFor(pair).precision;
   const quote = bars.length ? ohlcParts(bars, precision) : null;
-  const stale = data && data.validity !== "OK" && data.validity !== "CLOSED";
-  const indicators = data?.indicators;
+  const stale = Boolean(feed && feed.validity !== "OK" && feed.validity !== "CLOSED");
+  const indicators = feed?.indicators;
+  const switching = Boolean(pair) && Boolean(data) && !matched;
 
   const drawnPositions = useMemo(
     () => buildDrawnPositions(openRows, pair, activePair, bars, interval),
@@ -207,19 +212,20 @@ export function ChartPanel({
 
   useEffect(() => {
     engine.current?.update({
-      pair: data?.pair ?? pair,
-      interval: data?.interval ?? interval,
-      bars: data?.bars ?? [],
-      indicators: data?.indicators,
+      pair,
+      interval,
+      bars,
+      indicators,
       toggles,
-      stop,
-      target,
+      // Levels only when ohlcv belongs to this Active pair (parent clears on switch).
+      stop: matched ? stop : null,
+      target: matched ? target : null,
       realtime: true,
-      precision: data?.digits ?? priceFormatFor(pair).precision,
+      precision,
       patterns: patternHits,
       positions: drawnPositions,
     });
-  }, [data, toggles, stop, target, pair, interval, patternHits, drawnPositions]);
+  }, [bars, indicators, toggles, stop, target, pair, interval, patternHits, drawnPositions, matched, precision]);
 
   async function closePicked() {
     if (!picked || closing) return;
@@ -363,10 +369,14 @@ export function ChartPanel({
             <span className="item"><span className="swatch" style={{ background: "#1570ef" }} /> Open</span>
           )}
         </div>
-        {stale && data?.note && <div className="chart-note" title={data.note}>{data.validity}</div>}
+        {stale && feed?.note && <div className="chart-note" title={feed.note}>{feed.validity}</div>}
         <div className="chart-canvas" ref={host} />
         {bars.length === 0 && (
-          <div className="chart-empty">{data?.note || "No cached bars for this timeframe."}</div>
+          <div className="chart-empty">
+            {switching || busy
+              ? `Loading ${String(pair || "pair").toUpperCase()} ${interval}...`
+              : feed?.note || "No cached bars for this timeframe."}
+          </div>
         )}
         {pick && picked && (
           <PositionCard
