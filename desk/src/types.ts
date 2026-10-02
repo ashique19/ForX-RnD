@@ -59,6 +59,13 @@ export interface AlertItem {
   pair: string;
 }
 
+export interface ShadowStatus {
+  ok: boolean;
+  stage: number;
+  fills: number;
+  note: string;
+}
+
 export interface Board {
   timezone: string;
   refreshed_at_dhaka: string;

@@ -192,6 +192,18 @@ def create_app() -> FastAPI:
         return gapfill_status()
 
     
+    @app.get("/shadow/status")
+    def get_shadow_status() -> dict:
+        """Read-only Stage-2 paper-shadow fill status for the decision desk."""
+        from forex_lab.paper_shadow import fill_count
+
+        return {
+            "ok": True,
+            "stage": 2,
+            "fills": fill_count(),
+            "note": "Paper shadow journal only; decision aid, not live.",
+        }
+
     @app.get("/watchlist")
     def get_watchlist() -> dict:
         return watchlist_json()

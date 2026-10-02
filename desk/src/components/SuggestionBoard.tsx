@@ -128,6 +128,7 @@ export function SuggestionBoard({
   const [boardGeneratedAt, setBoardGeneratedAt] = useState<string | null>(null);
   const [boardPolledAtMs, setBoardPolledAtMs] = useState<number>(() => Date.now());
   const [openPositions, setOpenPositions] = useState<PortfolioRow[]>([]);
+  const [shadowFills, setShadowFills] = useState<number | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [kbdIdx, setKbdIdx] = useState(-1);
   const scroller = useRef<HTMLDivElement>(null);
@@ -149,6 +150,25 @@ export function SuggestionBoard({
     };
     pull();
     const id = window.setInterval(pull, 60_000);
+    return () => {
+      cancel = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancel = false;
+    const pull = () => {
+      api.shadowStatus()
+        .then((status) => {
+          if (!cancel) setShadowFills(Number.isFinite(status?.fills) ? Math.max(0, status.fills) : 0);
+        })
+        .catch(() => {
+          if (!cancel) setShadowFills(null);
+        });
+    };
+    pull();
+    const id = window.setInterval(pull, 30_000);
     return () => {
       cancel = true;
       window.clearInterval(id);
@@ -358,6 +378,13 @@ export function SuggestionBoard({
             title={boardGeneratedAt ? `Board snapshot ${boardGeneratedAt}` : "Waiting for board snapshot"}
           >
             {boardAgeLabel(boardGeneratedAt, boardPolledAtMs) || "board ..."}
+          </span>
+          <span
+            className="sug-hd-age shadow-journal-chip"
+            title="Stage-2 paper shadow journal count; decision aid only, not live"
+            aria-label={`Shadow journal: ${shadowFills == null ? "unavailable" : `${shadowFills} fills`}`}
+          >
+            Shadow journal: {shadowFills == null ? "—" : `${shadowFills} fill${shadowFills === 1 ? "" : "s"}`}
           </span>
           <span className="sug-hd-note">Realtime chat - research only · Decision 1h</span>
           {onRefreshWatchlist ? (

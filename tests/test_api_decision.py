@@ -33,6 +33,22 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(create_app())
 
 
+def test_shadow_status_is_read_only_and_fail_soft(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    path = tmp_path / "shadow" / "journal.jsonl"
+    monkeypatch.setenv("FORX_SHADOW_JOURNAL", str(path))
+    path.parent.mkdir()
+    path.write_text('{"event":"open"}\n{"event":"desk_call"}\n', encoding="utf-8")
+
+    res = client.get("/shadow/status")
+    assert res.status_code == 200
+    assert res.json()["fills"] == 1
+    assert res.json()["stage"] == 2
+    assert "not live" in res.json()["note"]
+
+    path.unlink()
+    assert client.get("/shadow/status").json()["fills"] == 0
+
+
 def test_health_reports_dhaka_and_lab_version(client: TestClient):
     res = client.get("/health")
     assert res.status_code == 200

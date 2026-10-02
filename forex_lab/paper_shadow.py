@@ -304,6 +304,28 @@ def bid_ask_from_row(row: Any) -> tuple[float | None, float | None]:
     return None, None
 
 
+def fill_count() -> int:
+    """Count journaled paper opens without ever affecting the desk.
+
+    The JSONL is runtime state and may be absent, empty, or mid-write. Only
+    valid ``open`` events count as fills; advisory desk calls and close rows
+    do not.
+    """
+    count = 0
+    try:
+        with journal_path().open("r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(row, dict) and row.get("event") == "open":
+                    count += 1
+    except Exception:  # noqa: BLE001 -- status must be fail-soft
+        return 0
+    return count
+
+
 __all__ = [
     "SCHEMA",
     "append_event",

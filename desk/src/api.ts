@@ -1,4 +1,4 @@
-import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, PortfolioFeed, RefreshBatch, ReplayJob, ReplayLatest, Watchlist } from "./types";
+import type { AssetOption, Board, BoardRow, Brief, CalendarFeed, LearningsFeed, ModelBuild, Ohlcv, PaperState, PortfolioFeed, RefreshBatch, ReplayJob, ReplayLatest, ShadowStatus, Watchlist } from "./types";
 
 const rawBase = import.meta.env?.VITE_API_BASE;
 const BASE = typeof rawBase === "string" ? rawBase.replace(/\/$/, "") : "";
@@ -210,6 +210,7 @@ export const api = {
       body: JSON.stringify({ pair }),
     }),
   board: () => request<Board>("/board"),
+  shadowStatus: () => request<ShadowStatus>("/shadow/status", { cache: "no-store" }),
   suggestionsBoard: () =>
     request<{
       ok?: boolean;

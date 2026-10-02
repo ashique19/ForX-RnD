@@ -74,3 +74,15 @@ def test_record_desk_call_appends_skip_row_and_creates_parent(tmp_path, monkeypa
     assert row["entry_mid"] is None
     assert row["ba_available"] is False
     assert row["measured_cost_pair"] == 0.8
+
+
+def test_fill_count_is_open_events_and_fails_soft(tmp_path, monkeypatch):
+    path = tmp_path / "journal.jsonl"
+    monkeypatch.setenv("FORX_SHADOW_JOURNAL", str(path))
+    path.write_text(
+        '{"event":"open"}\n{"event":"desk_call"}\nnot-json\n{"event":"close"}\n',
+        encoding="utf-8",
+    )
+    assert ps.fill_count() == 1
+    path.unlink()
+    assert ps.fill_count() == 0
