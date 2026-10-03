@@ -2408,6 +2408,31 @@
       border-color: var(--border);
     }
 
+    .sug-decision-aid {
+      margin: 0 10px 8px;
+      padding: 7px 9px;
+      border: 1px solid var(--border, #d0d5dd);
+      border-radius: 8px;
+      background: var(--surface-2, #f8fafc);
+    }
+    .sug-decision-aid-label {
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .sug-decision-line {
+      color: var(--text-2, #475467);
+      font-size: 12px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .sug-decision-line + .sug-decision-line {
+      margin-top: 3px;
+    }
+
     .sug-desk-call {
       margin: 0 0 8px;
       padding: 8px 10px;

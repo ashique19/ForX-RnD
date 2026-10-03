@@ -420,6 +420,17 @@ export function SuggestionBoard({
         </div>
       </div>
 
+      {snapshot.decisionLines.length ? (
+        <div className="sug-decision-aid" aria-label="Trader decision summaries">
+          <div className="sug-decision-aid-label">Trader sentence - decision aid only</div>
+          {snapshot.decisionLines.map((line) => (
+            <div key={line.pair} className="sug-decision-line">
+              {line.text}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {deskCall ? (
         <div
           className={`sug-desk-call ${deskTone}${deskCall.pair && onOpenPair ? " is-clickable" : ""}${

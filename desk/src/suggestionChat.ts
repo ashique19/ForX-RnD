@@ -185,6 +185,79 @@ export function fingerprintLine(pair: string, kind: string, body: string): strin
   return `${pair.toUpperCase()}|${kind}|${body.trim()}`;
 }
 
+export interface DecisionAidLineOptions {
+  briefHourly?: Suggestion | null;
+  gateReason?: string | null;
+  rawSignal?: string | null;
+  confidence?: number | null;
+}
+
+export interface DecisionAidLine {
+  pair: string;
+  text: string;
+}
+
+function decisionLevel(value: number | null | undefined, pair: string): string {
+  return value != null && Number.isFinite(value) ? px(pair, value) : "unavailable";
+}
+
+function decisionCancelReason(gate: string, status: string, blocked: "muted" | "below-min" | "hold" | "need_train" | "none"): string {
+  const context = gate.toLowerCase();
+  if (context.includes("weekday") || context.includes("muted")) return "the weekday mute remains active";
+  if (/(pattern|edge)[^|.;]*(change|shift)|(?:change|shift)[^|.;]*(pattern|edge)/i.test(gate)) {
+    return "the pattern or edge changes";
+  }
+  if (blocked === "need_train" || status === "untrained") return "training remains unavailable";
+  if (blocked === "below-min") return "confidence stays below min conf";
+  if (blocked === "muted") return "the mute remains active";
+  if (blocked === "hold") return "the call flips from HOLD";
+  return "the call flips or drops under min conf";
+}
+
+/** One concise, deterministic trader sentence from the existing board/advisory fields. */
+export function buildDecisionAidLine(row: BoardRow, opts?: DecisionAidLineOptions): string {
+  const pair = String(row.pair || "").trim().toUpperCase();
+  if (!pair) return "";
+  const hourly = opts?.briefHourly;
+  const signal = normSide(hourly?.signal || row.signal);
+  const raw = normSide(opts?.rawSignal || hourly?.raw_signal || row.raw_signal);
+  const gate = humanizeGate(String(opts?.gateReason || hourly?.gate_reason || row.gate_reason || "").trim());
+  const status = String(row.status || "").trim().toLowerCase();
+  const last = hourly?.now ?? row.last;
+  const stop = hourly?.stop ?? row.stop ?? null;
+  const target = hourly?.target ?? row.target;
+  const conf = confText(opts?.confidence ?? hourly?.confidence ?? row.confidence) || gateConfText(gate);
+  const direction = signal === "BUY" || signal === "SELL" ? signal : raw === "BUY" || raw === "SELL" ? raw : "";
+  const gateLower = gate.toLowerCase();
+  const muted = gateLower.includes("muted") || gateLower.includes("weekday");
+  const belowMin = belowMinConf(gate) || gateLower.includes("below min");
+  const cancelContext = `${gate} ${String(row.rationale || "")}`;
+
+  if (status === "need_train" || status === "untrained") {
+    const why = decisionCancelReason(cancelContext, status, "need_train");
+    return `${pair} need_train: no live call, entry, stop, or target until trained. Cancel if ${why}.`;
+  }
+  if (muted) {
+    const why = decisionCancelReason(cancelContext, status, "muted");
+    const side = direction ? ` ${direction.toLowerCase()}` : " HOLD";
+    return `${pair}${side} muted: weekday mute is active; no entry, stop, or target. Cancel if ${why}.`;
+  }
+  if (belowMin) {
+    const why = decisionCancelReason(cancelContext, status, "below-min");
+    const side = direction ? ` ${direction.toLowerCase()}` : " HOLD";
+    return `${pair}${side} below-min: confidence is below min conf; no entry, stop, or target. Cancel if ${why}.`;
+  }
+  if (signal === "HOLD" || !direction) {
+    const why = decisionCancelReason(cancelContext, status, "hold");
+    return `${pair} HOLD: no clean directional call; no entry, stop, or target. Cancel if ${why}.`;
+  }
+
+  const side = direction.toLowerCase();
+  const why = conf ? `${conf} confidence ${side} signal` : `existing ${direction} signal`;
+  const cancel = decisionCancelReason(cancelContext, status, "none");
+  return `${pair} ${side} ${decisionLevel(last, pair)}, stop ${decisionLevel(stop, pair)}, target ${decisionLevel(target, pair)}. Why: ${why}. Cancel if ${cancel}.`;
+}
+
 export function formatBoardChatLine(
   row: BoardRow,
   opts?: {
@@ -379,7 +452,7 @@ export function buildClientSuggestionFeed(args: {
   openPositions?: PortfolioRow[];
   nowMs?: number;
   prevKinds?: Record<string, string>;
-}): { lines: SuggestionChatLine[]; kinds: Record<string, string> } {
+}): { lines: SuggestionChatLine[]; kinds: Record<string, string>; decisionLines: DecisionAidLine[] } {
   const active = String(args.active || "").toUpperCase() || null;
   const opens = args.openPositions || [];
   const openByPair = new Map(opens.map((p) => [String(p.pair || "").toUpperCase(), p]));
@@ -478,5 +551,20 @@ export function buildClientSuggestionFeed(args: {
     const bc = typeof b.confidence === "number" ? b.confidence : -1;
     return bc - ac;
   });
-  return { lines: filtered, kinds };
+  const decisionLines: DecisionAidLine[] = ordered
+    .map((row) => {
+      const pair = String(row.pair || "").toUpperCase();
+      if (!pair) return null;
+      return {
+        pair,
+        text: buildDecisionAidLine(row, {
+          briefHourly: pair === active ? args.brief?.hourly ?? null : null,
+          gateReason: pair === active ? args.brief?.gate_reason ?? row.gate_reason ?? null : row.gate_reason ?? null,
+          rawSignal: pair === active ? args.brief?.raw_signal ?? row.raw_signal ?? null : row.raw_signal ?? null,
+          confidence: pair === active ? args.brief?.confidence ?? null : null,
+        }),
+      };
+    })
+    .filter((line): line is DecisionAidLine => Boolean(line));
+  return { lines: filtered, kinds, decisionLines };
 }

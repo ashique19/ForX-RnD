@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from "vitest";
-import { buildClientSuggestionFeed, formatBoardChatLine } from "./suggestionChat";
+import { buildClientSuggestionFeed, buildDecisionAidLine, formatBoardChatLine } from "./suggestionChat";
 import type { BoardRow } from "./types";
 
 const base = (over: Partial<BoardRow> = {}): BoardRow => ({
@@ -145,6 +145,36 @@ describe("suggestionChat", () => {
     expect(line?.text.toLowerCase()).toContain("pin-skip");
     expect(line?.text.includes("Train idle") || line?.text.includes("Train (Lab")).toBe(false);
     expect(line?.id.endsWith("|pin_skip")).toBe(true);
+  });
+
+  it("builds the trader sentence from real buy levels", () => {
+    const text = buildDecisionAidLine(
+      base({ signal: "BUY", target: 1.13454, stop: 1.13098, last: 1.13276 }),
+      { confidence: 0.72 },
+    );
+    expect(text).toBe(
+      "EURUSD buy 1.13276, stop 1.13098, target 1.13454. Why: 72% confidence buy signal. Cancel if the call flips or drops under min conf.",
+    );
+  });
+
+  it("keeps hold and gated states honest without a fake entry", () => {
+    expect(buildDecisionAidLine(base({ signal: "HOLD", last: 1.13276 }))).toContain(
+      "EURUSD HOLD: no clean directional call; no entry, stop, or target.",
+    );
+    expect(
+      buildDecisionAidLine(
+        base({ pair: "AUDUSD", signal: "HOLD", raw_signal: "SELL", gate_reason: "conf=0.55 < min 0.60", last: 0.69555 }),
+      ),
+    ).toContain("AUDUSD sell below-min: confidence is below min conf; no entry, stop, or target.");
+    expect(buildDecisionAidLine(base({ gate_reason: "weekday_gate blocks Mon (UTC); today=Mon" }))).toContain(
+      "EURUSD HOLD muted: weekday mute is active; no entry, stop, or target.",
+    );
+  });
+
+  it("states need_train plainly", () => {
+    const text = buildDecisionAidLine(base({ pair: "AUDUSD", status: "need_train", signal: "\u2014" }));
+    expect(text).toContain("AUDUSD need_train: no live call, entry, stop, or target until trained.");
+    expect(text).toContain("Cancel if training remains unavailable.");
   });
 
   it("open window lists stop target at price", () => {
