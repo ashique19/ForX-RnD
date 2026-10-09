@@ -197,12 +197,27 @@ def create_app() -> FastAPI:
         """Read-only Stage-2 paper-shadow fill status for the decision desk."""
         from forex_lab.paper_shadow import fill_count
 
+        fills = fill_count()
+        raw = fill_count(include_excluded=True)
         return {
             "ok": True,
             "stage": 2,
-            "fills": fill_count(),
-            "note": "Paper shadow journal only; decision aid, not live.",
+            "fills": fills,
+            "fills_raw": raw,
+            "excluded": max(0, raw - fills),
+            "note": "Paper shadow journal only; decision aid, not live. "
+            "fills excludes annotated exclude_from_stage2 rows.",
         }
+
+    @app.get("/explore/status")
+    def get_explore_status() -> dict:
+        """Read-only exploration-book counts. Never Stage-2; never writes."""
+        from forex_lab.explore_book import status as explore_status
+
+        try:
+            return {"ok": True, **explore_status()}
+        except Exception as exc:  # noqa: BLE001 -- fail-soft status
+            return {"ok": False, "book": "explore", "stage2": False, "fills": 0, "error": str(exc)}
 
     @app.get("/watchlist")
     def get_watchlist() -> dict:

@@ -304,30 +304,106 @@ def bid_ask_from_row(row: Any) -> tuple[float | None, float | None]:
     return None, None
 
 
-def fill_count() -> int:
-    """Count journaled paper opens without ever affecting the desk.
+ANNOTATION_EVENT = "annotation"
 
-    The JSONL is runtime state and may be absent, empty, or mid-write. Only
-    valid ``open`` events count as fills; advisory desk calls and close rows
-    do not.
+
+def record_annotation(
+    *,
+    reason: str,
+    ref_fill_id: str | None = None,
+    ref_position_id: str | None = None,
+    exclude_from_stage2: bool = True,
+    notes: str = "",
+    now: datetime | None = None,
+) -> bool:
+    """Append-only annotation referencing an earlier fill/position.
+
+    Never edits or deletes journal rows. ``exclude_from_stage2=True`` removes
+    the referenced fill (and its position's close) from Stage-2 counts.
     """
-    count = 0
+    if not (ref_fill_id or ref_position_id) or not str(reason or "").strip():
+        return False
+    ts_utc, ts_dhaka = _ts_pair(now)
+    row = {
+        "schema": SCHEMA,
+        "event": ANNOTATION_EVENT,
+        "ts_utc": ts_utc,
+        "ts_dhaka": ts_dhaka,
+        "ref_fill_id": str(ref_fill_id) if ref_fill_id else None,
+        "ref_position_id": str(ref_position_id) if ref_position_id else None,
+        "reason": str(reason).strip()[:120],
+        "exclude_from_stage2": bool(exclude_from_stage2),
+        "notes": str(notes or "")[:240],
+    }
+    return append_event(row)
+
+
+def load_events(path: Path | None = None) -> list[dict[str, Any]]:
+    """Read all valid JSON rows. Fail-soft (missing/mid-write -> skip)."""
+    rows: list[dict[str, Any]] = []
     try:
-        with journal_path().open("r", encoding="utf-8") as fh:
+        with (path or journal_path()).open("r", encoding="utf-8") as fh:
             for line in fh:
                 try:
                     row = json.loads(line)
                 except (TypeError, ValueError):
                     continue
-                if isinstance(row, dict) and row.get("event") == "open":
-                    count += 1
+                if isinstance(row, dict):
+                    rows.append(row)
+    except Exception:  # noqa: BLE001
+        return rows
+    return rows
+
+
+def excluded_refs(events: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+    """(fill_ids, position_ids) excluded from Stage-2 by annotation events."""
+    fills: set[str] = set()
+    positions: set[str] = set()
+    for row in events:
+        if row.get("event") != ANNOTATION_EVENT or not row.get("exclude_from_stage2"):
+            continue
+        if row.get("ref_fill_id"):
+            fills.add(str(row["ref_fill_id"]))
+        if row.get("ref_position_id"):
+            positions.add(str(row["ref_position_id"]))
+    return fills, positions
+
+
+def is_excluded(row: dict[str, Any], refs: tuple[set[str], set[str]]) -> bool:
+    fills, positions = refs
+    return (bool(row.get("fill_id")) and str(row.get("fill_id")) in fills) or (
+        bool(row.get("position_id")) and str(row.get("position_id")) in positions
+    )
+
+
+def fill_count(*, include_excluded: bool = False) -> int:
+    """Count journaled paper opens without ever affecting the desk.
+
+    The JSONL is runtime state and may be absent, empty, or mid-write. Only
+    valid ``open`` events count as fills; advisory desk calls, close rows and
+    annotations do not. By default fills excluded by an annotation
+    (``exclude_from_stage2``) are not counted toward Stage-2.
+    """
+    try:
+        events = load_events()
+        refs = excluded_refs(events)
+        return sum(
+            1
+            for row in events
+            if row.get("event") == "open" and (include_excluded or not is_excluded(row, refs))
+        )
     except Exception:  # noqa: BLE001 -- status must be fail-soft
         return 0
-    return count
 
 
 __all__ = [
+    "ANNOTATION_EVENT",
     "SCHEMA",
+    "excluded_refs",
+    "fill_count",
+    "is_excluded",
+    "load_events",
+    "record_annotation",
     "append_event",
     "bid_ask_from_row",
     "build_event",

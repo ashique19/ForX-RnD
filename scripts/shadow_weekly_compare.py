@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from forex_lab.paper_shadow import journal_path
+from forex_lab.paper_shadow import excluded_refs, is_excluded, journal_path
 
 DHAKA = ZoneInfo("Asia/Dhaka")
 WINDOW_DAYS = 7
@@ -70,8 +70,11 @@ def main() -> None:
         if ts >= cutoff:
             week.append(e)
 
-    opens = [e for e in week if e.get("event") == "open"]
-    closes = [e for e in week if e.get("event") == "close"]
+    # Stage-2 excludes fills/positions flagged by append-only annotations.
+    refs = excluded_refs(events)
+    excluded = [e for e in week if e.get("event") in {"open", "close"} and is_excluded(e, refs)]
+    opens = [e for e in week if e.get("event") == "open" and not is_excluded(e, refs)]
+    closes = [e for e in week if e.get("event") == "close" and not is_excluded(e, refs)]
     desk_calls = [e for e in week if e.get("event") == "desk_call"]
 
     ba_present = sum(1 for e in week if e.get("ba_available") is True)
@@ -103,7 +106,8 @@ def main() -> None:
         ]
     lines += [
         "",
-        f"- opens={len(opens)} closes={len(closes)} desk_calls={len(desk_calls)}",
+        f"- opens={len(opens)} closes={len(closes)} desk_calls={len(desk_calls)} "
+        f"excluded_by_annotation={len(excluded)} (not Stage-2)",
         f"- ba_available true={ba_present} false={ba_missing} "
         f"assumed_cost_stamped={assumed_stamped}",
         f"- open position_ids without close in window={len(orphans)}"

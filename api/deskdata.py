@@ -1598,58 +1598,28 @@ def run_train_idle_pair(
     with_signals: bool = True,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Cheap Train for one idle/watchlist pair: joblib fit (+ optional signals).
+    """Locked: never trains. Reports need_train / model status only.
 
-    Does **not** change Active, does not run champion/challenger retrain gate,
-    does not backtest/Replay, and does not promote. Safe for suggestion-board
-    flashes on non-Active pairs.
+    Production joblib is written only by the explicit retrain gate
+    (scripts/weekly_retrain.py --promote). See forex_lab.train_lock.
     """
-    from forex_lab.ui import pipeline as pl
+    from forex_lab.train_lock import STATUS_NEED_TRAIN, TRAIN_LOCKED_MSG
     from forex_lab.ui.model_build import model_build_status as _model_build_status
 
+    _ = with_signals
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
-    steps: list[dict[str, Any]] = []
-
-    def _step(name: str, fn) -> tuple[int, str]:
-        rc, log = fn(symbol, cfg=cfg)
-        text_log = str(log or "")
-        if len(text_log) > 4000:
-            text_log = text_log[-4000:]
-        steps.append({"step": name, "ok": rc == 0, "log": text_log})
-        return rc, text_log
-
-    rc, _log = _step("train", pl.run_train)
-    if rc != 0:
-        return {
-            "ok": False,
-            "pair": symbol,
-            "failed": "train",
-            "steps": steps,
-            "active_unchanged": True,
-            "model_build": _model_build_status(symbol, cfg),
-            "note": "Cheap Train only (no Active change, no promote, no Replay gate).",
-        }
-    if with_signals:
-        rc, _log = _step("signals", pl.run_signals)
-        if rc != 0:
-            return {
-                "ok": False,
-                "pair": symbol,
-                "failed": "signals",
-                "steps": steps,
-                "active_unchanged": True,
-                "model_build": _model_build_status(symbol, cfg),
-                "note": "Cheap Train only (no Active change, no promote, no Replay gate).",
-            }
     return {
-        "ok": True,
+        "ok": False,
         "pair": symbol,
-        "failed": None,
-        "steps": steps,
+        "failed": "train_locked",
+        "locked": True,
+        "trained": False,
+        "status": STATUS_NEED_TRAIN,
+        "steps": [],
         "active_unchanged": True,
         "model_build": _model_build_status(symbol, cfg),
-        "note": "Cheap Train only (no Active change, no promote, no Replay gate).",
+        "note": TRAIN_LOCKED_MSG,
     }
 
 
@@ -1659,12 +1629,18 @@ def run_pipeline_pair(
     fetch: bool = False,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """train → backtest → generate. Optional fetch first. Stops on the first failure."""
+    """Optional fetch, then signals with the EXISTING model. Never trains/backtests.
+
+    Train + backtest are locked out of the desk (forex_lab.train_lock). A pair
+    without a model reports ``need_train`` instead of fitting one.
+    """
+    from forex_lab.train_lock import NEED_TRAIN_RC, STATUS_NEED_TRAIN, TRAIN_LOCKED_MSG
     from forex_lab.ui import pipeline as pl
 
     cfg = cfg if cfg is not None else app_config()
     symbol = normalize_pair(pair)
     steps: list[dict[str, Any]] = []
+    base = {"pair": symbol, "trained": False, "locked_steps": ["train", "backtest"], "note": TRAIN_LOCKED_MSG}
 
     def _step(name: str, fn, **kwargs) -> tuple[int, str]:
         rc, log = fn(symbol, cfg=cfg, **kwargs)
@@ -1677,17 +1653,13 @@ def run_pipeline_pair(
     if fetch:
         rc, _log = _step("fetch", pl.run_fetch)
         if rc != 0:
-            return {"ok": False, "pair": symbol, "failed": "fetch", "steps": steps}
-    rc, _log = _step("train", pl.run_train)
-    if rc != 0:
-        return {"ok": False, "pair": symbol, "failed": "train", "steps": steps}
-    rc, _log = _step("backtest", pl.run_backtest)
-    if rc != 0:
-        return {"ok": False, "pair": symbol, "failed": "backtest", "steps": steps}
+            return {**base, "ok": False, "failed": "fetch", "steps": steps}
     rc, _log = _step("signals", pl.run_signals)
+    if rc == NEED_TRAIN_RC:
+        return {**base, "ok": False, "failed": STATUS_NEED_TRAIN, "status": STATUS_NEED_TRAIN, "steps": steps}
     if rc != 0:
-        return {"ok": False, "pair": symbol, "failed": "signals", "steps": steps}
-    return {"ok": True, "pair": symbol, "failed": None, "steps": steps}
+        return {**base, "ok": False, "failed": "signals", "steps": steps}
+    return {**base, "ok": True, "failed": None, "steps": steps}
 
 
 def pin_scoreboard_payload(cfg: dict | None = None) -> dict:

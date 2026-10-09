@@ -129,6 +129,7 @@ export function SuggestionBoard({
   const [boardPolledAtMs, setBoardPolledAtMs] = useState<number>(() => Date.now());
   const [openPositions, setOpenPositions] = useState<PortfolioRow[]>([]);
   const [shadowFills, setShadowFills] = useState<number | null>(null);
+  const [exploreFills, setExploreFills] = useState<{ fills: number; open: number } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [kbdIdx, setKbdIdx] = useState(-1);
   const scroller = useRef<HTMLDivElement>(null);
@@ -169,6 +170,27 @@ export function SuggestionBoard({
     };
     pull();
     const id = window.setInterval(pull, 30_000);
+    return () => {
+      cancel = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancel = false;
+    const pull = () => {
+      api.exploreStatus()
+        .then((status) => {
+          if (!cancel && status?.ok) {
+            setExploreFills({ fills: Math.max(0, Number(status.fills) || 0), open: Math.max(0, Number(status.open) || 0) });
+          } else if (!cancel) setExploreFills(null);
+        })
+        .catch(() => {
+          if (!cancel) setExploreFills(null);
+        });
+    };
+    pull();
+    const id = window.setInterval(pull, 60_000);
     return () => {
       cancel = true;
       window.clearInterval(id);
@@ -385,6 +407,12 @@ export function SuggestionBoard({
             aria-label={`Shadow journal: ${shadowFills == null ? "unavailable" : `${shadowFills} fills`}`}
           >
             Shadow journal: {shadowFills == null ? "—" : `${shadowFills} fill${shadowFills === 1 ? "" : "s"}`}
+          </span>
+          <span
+            className="sug-hd-age explore-journal-chip"
+            title="Exploration paper book (conf >= 0.50). Separate journal; never Stage-2; never trains."
+          >
+            Explore: {exploreFills == null ? "n/a" : `${exploreFills.fills} fill${exploreFills.fills === 1 ? "" : "s"} (${exploreFills.open} open)`}
           </span>
           <span className="sug-hd-note">Realtime chat - research only · Decision 1h</span>
           {onRefreshWatchlist ? (

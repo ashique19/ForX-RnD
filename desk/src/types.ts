@@ -59,6 +59,16 @@ export interface AlertItem {
   pair: string;
 }
 
+export interface ExploreStatus {
+  ok: boolean;
+  book: string;
+  stage2: boolean;
+  fills: number;
+  open?: number;
+  closed?: number;
+  explore_only_fills?: number;
+}
+
 export interface ShadowStatus {
   ok: boolean;
   stage: number;

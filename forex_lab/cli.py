@@ -54,14 +54,11 @@ def cmd_fetch(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_train(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
-    df = load_ohlcv(args.pair, cfg)
-    results = train_models(df, cfg, args.pair)
-    payload = {
-        k: (v if not isinstance(v, dict) else {kk: vv for kk, vv in v.items() if kk != "report"})
-        for k, v in results.items()
-    }
-    safe_print(json.dumps(payload, indent=2, default=str))
-    return 0
+    """Locked: production joblib is only written by the explicit retrain gate."""
+    from forex_lab.train_lock import NEED_TRAIN_RC, TRAIN_LOCKED_MSG
+
+    safe_print(f"[train] {str(getattr(args, 'pair', '') or '').upper()}: {TRAIN_LOCKED_MSG}")
+    return NEED_TRAIN_RC
 
 
 def cmd_backtest(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
@@ -84,9 +81,11 @@ def cmd_signals(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     try:
         sigs = generate_signals(df, cfg, args.pair, interval=iv)
     except FileNotFoundError:
-        safe_print(f"[signals] model missing for {iv} - training first")
-        train_models(df, cfg, args.pair)
-        sigs = generate_signals(df, cfg, args.pair, interval=iv)
+        # Never train implicitly: report need_train (see forex_lab.train_lock).
+        from forex_lab.train_lock import NEED_TRAIN_RC, TRAIN_LOCKED_MSG
+
+        safe_print(f"[signals] need_train: no {iv} model for {str(args.pair).upper()} ({TRAIN_LOCKED_MSG})")
+        return NEED_TRAIN_RC
     path = write_signals(sigs, cfg)
     safe_print(f"[signals] csv: {path}")
     return 0

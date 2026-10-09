@@ -609,20 +609,20 @@ def test_refresh_active_fetches_1h_and_1d_only_for_that_pair(
     assert seen.index(("EURUSD", "1h")) < seen.index(("EURUSD", "1d"))
 
 
-def test_pipeline_stops_on_train_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+def test_pipeline_never_trains_or_backtests(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     order: list[str] = []
 
     def _train(pair, cfg=None):
         order.append("train")
-        return 1, "train failed"
+        raise AssertionError("desk pipeline must not train")
 
     def _backtest(pair, cfg=None, model=None):
         order.append("backtest")
-        return 0, "should not run"
+        raise AssertionError("desk pipeline must not backtest")
 
     def _signals(pair, cfg=None):
         order.append("signals")
-        return 0, "should not run"
+        return 0, "ok"
 
     monkeypatch.setattr("forex_lab.ui.pipeline.run_train", _train)
     monkeypatch.setattr("forex_lab.ui.pipeline.run_backtest", _backtest)
@@ -630,10 +630,10 @@ def test_pipeline_stops_on_train_failure(client: TestClient, monkeypatch: pytest
     res = client.post("/pipeline/EURUSD")
     assert res.status_code == 200
     body = res.json()
-    assert body["ok"] is False
-    assert body["failed"] == "train"
-    assert order == ["train"]
-    assert body["steps"][0]["step"] == "train"
+    assert body["ok"] is True
+    assert body["trained"] is False
+    assert order == ["signals"]
+    assert body["locked_steps"] == ["train", "backtest"]
 
 
 def _paper_row(validity: str):
