@@ -128,3 +128,139 @@ Stages 2 foundation and 3/3b are done; Stage 4 risk envelope freeze landed in
 _RISK_ENVELOPE_FREEZE_20261002.txt (with a read-only drift checker). Stage 2
 still needs N weeks of journaled fills and weekly compares; Stage 5 remains
 locked until Stages 2-4 are green for the agreed N weeks plus the human gate.
+
+
+Revision 2026-10-09
+===================
+Written: 2026-10-09 ~20:10 Asia/Dhaka. Source: research/edge_check/EDGE_REALITY_20261009.md.
+
+STAGE 0 CORRECTION (computed, not opinion)
+------------------------------------------
+"EURUSD champ ~PF 2.7-3.2 after-cost on the overlap book" and every Jetta-era
+pin (pin_scoreboard PF 2.4-3.0) are INVALID.
+- Why: the Jetta decoder built Open/High/Low from the previous CLOSE. The feed
+  encodes each field relative to the previous bar's same field.
+- Effect: Replay entries filled 10-18 pips better than the real Dukascopy open.
+- Re-priced on real closes with measured costs, every pair pin is PF 0.83-0.99
+  (noise).
+- The only clean-data candidate is the small EURUSD weekly champion a0d93fc6:
+  re-sim PF 1.71, DSR 0.58 after 67 trials, holdout PF 1.13 on 23 trades
+  (doubtful).
+- Treat the desk as having NO demonstrated edge.
+
+HARD RULES (unchanged, restated)
+--------------------------------
+- Promote ONLY via an explicit `--promote` run by the user. Nothing auto-promotes.
+- No live-gate flips (Active pair, min_confidence 0.60, gates, portfolio_brain).
+- No YAML roulette. The frozen risk-envelope keys stay frozen.
+- Failed families stay banned:
+  - size-by-conf, meta-label variants, tight-stop 1.75, min-TP 16, min-vol-regime
+    0.80, news-blackout-expanded, exit-hold-3, time-stop-6, vol-scaled-conf, ADX
+    skip-chop, purge-CV;
+  - any other family with a recorded FAIL/strike.
+  A banned family can come back only as a NEW written mechanism judged on the
+  holdout.
+- No Replay result on Jetta-era bars counts for anything until the decoder is
+  fixed and history is re-pulled (user approval needed for the re-pull).
+
+(1) HELD-OUT EXAM
+-----------------
+- Cutoff: 2025-10-01 00:00 UTC. The holdout is everything from then on (about 12
+  months as of 2026-10-09). It is written in research/holdout.json.
+- Enforced in code by forex_lab/holdout.py:
+  - backtest.walk_forward_backtest (retrain/challenger gate) drops training rows
+    whose bar time OR label-settle time is >= cutoff; folds past the cutoff use
+    a model frozen on the last pre-cutoff window. The result carries a
+    "holdout" block (in-sample vs holdout PF/DD/n);
+  - replay._refit applies the same mask, and the Replay result carries a
+    per-book "holdout" split;
+  - model.train_models also drops holdout rows.
+  FORX_HOLDOUT_FILE=off is for unit tests only.
+- Every new idea is judged on the HOLDOUT plus paper shadow, never on
+  full-history Replay.
+- The current champion and pins were tuned on full history that INCLUDES the
+  holdout, so their holdout numbers are a BASELINE, not a pass.
+- Baseline (re-sim on real closes, measured p50 cost, bars >= 2025-10-01):
+  - EURUSD pin 2cee7e71: PF 0.85, DD -10.0%
+  - EURUSD weekly champion a0d93fc6: PF 1.13, DD -1.2%, 23 trades
+  - USDJPY: PF 0.93, DD -5.7%
+  - EURJPY: PF 0.88, DD -5.4%
+  - AUDUSD: PF 0.94, DD -8.7%
+  - NZDUSD: PF 0.94, DD -6.5%
+  - GBPJPY: PF 0.89, DD -7.1%
+  - USDCAD: PF 0.80, DD -8.1%
+  - GBPUSD: PF 0.93, DD -7.4%
+  - USDCHF: PF 0.85, DD -12.0%
+  - EURGBP: PF 0.98, DD -2.4%
+  DD is additive at unit size.
+
+(2) REAL COSTS - PENDING USER APPROVAL
+-------------------------------------
+- Plan: open a free broker demo account, take real spread and slippage from it,
+  and price paper fills off live bid/ask.
+- NO signup, account or credential until the user explicitly approves the
+  broker and the account.
+- Until then: measured_costs.csv (Duka bid/ask p50/p90) is the cost model, and
+  p90 is the stress case.
+
+(3) DD VIA SIZING (written hypothesis, not a yaml change)
+---------------------------------------------------------
+- Hypothesis: drawdown is driven by loss clustering and same-currency stacking,
+  not by any single trade. Two ways to cut it:
+  - cut size after losses (e.g. halve after 2 consecutive losses, restore after
+    a win);
+  - cap total exposure and per-currency exposure (e.g. max 1 open position per
+    currency leg, max N open overall). This is the study's "book risk budget".
+- Judged on: the holdout plus bootstrap worst-case DD (block bootstrap of
+  holdout trade returns, 95th-percentile max DD). It must not lower holdout
+  expectancy per unit risk.
+- How it differs from the BANNED size-by-conf:
+  - size-by-conf scaled size UP on model confidence, i.e. it bet on the signal
+    being calibrated, which it is not;
+  - this rule scales size only from realized book state (recent losses, open
+    exposure). It never sizes up and never uses model confidence.
+
+(4) NEW FEATURES ONE AT A TIME (holdout only)
+---------------------------------------------
+Each feature gets a written mechanism hypothesis before any run, one feature
+per run, judged on the holdout only.
+- a) Rate differential / carry: the policy-rate spread sets a drift and a
+  funding cost for multi-hour holds.
+- b) Trend-vs-range regime: barrier wins should depend on whether the pair is
+  trending (ADX/efficiency ratio) or ranging. This is distinct from the banned
+  ADX skip-chop gate, because here it is a feature, not a gate.
+- c) Session timing: liquidity and volatility differ by session, so barrier
+  hit rates should too. Hour Fourier terms already exist; the new feature must
+  add something they don't.
+- d) USD strength index: a common USD factor drives the USD pairs. Use a
+  basket of the watchlist USD legs, computed causally.
+
+(5) LEARN FROM PAPER TRADES
+---------------------------
+- Every entry logs its reason via the call logger (forex_lab/call_log.py ->
+  data/paper_shadow/calls.jsonl, append-only, gitignored). It records every
+  pair's call on every burst, with ATR stop/target and skip/mute reasons.
+  scripts/score_calls.py labels each call once 8 later closed bars exist, after
+  measured cost.
+- A weekly CHALLENGER-ONLY retrain on realized outcomes starts only once there
+  are enough labeled samples: proposed >= 300 scored calls and >= 100 per
+  confidence band used. It never auto-promotes (rule above).
+- Widen paper coverage with the exploration book (explore_book_v1, conf >= 0.50,
+  separate journal, never Stage-2) for volume.
+
+(6) UPTIME - PENDING USER APPROVAL
+---------------------------------
+- Plan: move the paper desk and data feed to an always-on machine, so bursts
+  and logging don't depend on this PC being awake.
+- NO spend, VPS, cloud account or signup until the user approves.
+
+(7) STRONGER STAGE-2 GATE
+-------------------------
+Stage 2 passes only when ALL of these hold:
+- the ~4 clean weeks of journaled fills (existing rule);
+- AND >= 50 main-book paper trades (Stage-2 fills, excluding annotated ones);
+- AND paper expectancy per trade after measured costs is > 0 AND within an
+  agreed band of the holdout prediction. Proposed band: within 50% of the
+  predicted after-cost expectancy, i.e. paper >= 0.5 x predicted and > 0.
+If the holdout prediction is <= 0 (as it is today for every pin), Stage 2
+cannot pass, whatever paper luck shows.

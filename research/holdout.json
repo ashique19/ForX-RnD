@@ -1,0 +1,8 @@
+{
+  "cutoff_utc": "2025-10-01T00:00:00",
+  "chosen_on": "2026-10-09",
+  "window": "2025-10-01 00:00 UTC -> open-ended (about 12 months as of 2026-10-09)",
+  "rule": "No training, challenger fit or Replay model fit may use any bar at or after cutoff_utc. Results on bars >= cutoff are reported separately as OOS (holdout).",
+  "champion_note": "Current champion/pins were tuned on full history including this window; their holdout numbers are a BASELINE, not a pass.",
+  "enforced_by": ["forex_lab/holdout.py", "forex_lab/retrain.py", "forex_lab/replay.py"]
+}

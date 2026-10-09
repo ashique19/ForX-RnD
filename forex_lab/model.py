@@ -341,6 +341,10 @@ def train_models(
 ) -> dict[str, Any]:
     """Train XGBoost (primary) and logistic (baseline comparison) on time-ordered split."""
     X, y, _ = make_dataset(df, cfg, pair=pair)
+    from forex_lab.holdout import train_mask
+
+    keep = train_mask(X.index, horizon=int(cfg.get("horizon") or 0), bar_index=df.index).to_numpy()
+    X, y = X[keep], y[keep]
     if len(X) < 200:
         raise RuntimeError(f"Not enough rows to train ({len(X)})")
 

@@ -948,6 +948,9 @@ def _refit(
     embargo_bars = int(rc.get("embargo_bars") if rc.get("embargo_bars") is not None else wf.get("embargo_bars") or 0)
     purge_bars = max(0, purge_bars, embargo_bars)
     mask = trainable_mask(feats.index, frame.index, ts, horizon, purge_bars=purge_bars)
+    from forex_lab.holdout import train_mask as _holdout_mask
+
+    mask = mask & _holdout_mask(feats.index, horizon=horizon, bar_index=frame.index).to_numpy()
     y = labels.reindex(feats.index)
     mask = mask & y.notna()
     x_all = feats.loc[mask]
@@ -1164,6 +1167,7 @@ def _publish(
         "job_dir": str(job_dir),
         "promotion": decision.as_dict(),
         "promotion_line": line,
+        "holdout": _holdout_split(trade_rows),
         "calendar_note": CALENDAR_ASOF_GAP,
         "scoreboard": board.to_dict(orient="records"),
         "files": {
@@ -1176,6 +1180,19 @@ def _publish(
         },
         "decisions": decisions,
     }
+
+
+def _holdout_split(trade_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Per-book PF/DD before vs at-or-after the holdout cutoff (reported separately)."""
+    from forex_lab.holdout import split_report
+
+    if not trade_rows:
+        return None
+    tr = pd.DataFrame(trade_rows)
+    out: dict[str, Any] = {}
+    for book, g in tr.groupby("book"):
+        out[str(book)] = split_report(g, time_col="entry_time_utc", ret_col="net_pnl")
+    return out
 
 
 def _promotion_line(payload: dict[str, Any], min_conf: object) -> str:

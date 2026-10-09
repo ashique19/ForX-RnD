@@ -139,6 +139,16 @@ def main() -> int:
         if ok:
             candidates.append(raw)
 
+    try:  # Study #3 call log: append-only, never trades, never Stage-2
+        sys.path.insert(0, str(ROOT))
+        from forex_lab.call_log import log_board
+        from forex_lab.explore_book import board_barriers
+
+        skips = {str(c["pair"]).upper(): c["reason"] for c in result["candidates"] if c.get("pair") and not c.get("eligible")}
+        result["calls_logged"] = log_board(rows, source="shadow_paper_burst", skip_reasons=skips, barrier_fn=board_barriers)
+    except Exception as exc:  # noqa: BLE001 - logging must never block a burst
+        result["calls_logged"] = {"error": f"{type(exc).__name__}: {exc}"}
+
     port_status, portfolio = http_json(args.base_url, "GET", "/portfolio?sync=false")
     open_pairs = set()
     if port_status == 200 and isinstance(portfolio, dict):

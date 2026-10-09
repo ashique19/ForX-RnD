@@ -326,6 +326,9 @@ def walk_forward_backtest(
         start = max(min_train, int(n * 0.6))
 
     atr_full = true_range_atr(df, int(cfg.get("atr_period", 14)))
+    from forex_lab.holdout import split_report, train_mask
+
+    trainable = train_mask(X.index, horizon=int(cfg.get("horizon") or 0), bar_index=df.index).to_numpy()
     fold = 0
     while start < n:
         tr_start = max(0, start - train_bars)
@@ -333,7 +336,13 @@ def walk_forward_backtest(
         te_end = min(n, start + test_bars)
         if tr_end - tr_start < min_train or te_end - start < 10:
             break
-        X_tr, y_tr = X.iloc[tr_start:tr_end], y.iloc[tr_start:tr_end]
+        keep = trainable[tr_start:tr_end]
+        X_tr, y_tr = X.iloc[tr_start:tr_end][keep], y.iloc[tr_start:tr_end][keep]
+        if len(X_tr) < min_train:
+            # past the holdout cutoff: freeze on the last pre-cutoff train window
+            X_tr, y_tr = X[trainable].iloc[-train_bars:], y[trainable].iloc[-train_bars:]
+        if len(X_tr) < min_train:
+            break
         X_te = X.iloc[start:te_end]
         y_te = y.iloc[start:te_end]
 
@@ -417,6 +426,7 @@ def walk_forward_backtest(
         "baseline_always_long": long_metrics,
         "compare_logistic": logistic_metrics,
         "fold_stability": _fold_stability(fold_rows),
+        "holdout": split_report(model_trades, time_col="entry_time", ret_col="net_return"),
         "costs": {
             "spread_pips": cfg.get("spread_pips"),
             "commission_pips": cfg.get("commission_pips", 0.0),
