@@ -552,6 +552,13 @@ def format_retrain_text(result: Mapping[str, Any]) -> str:
         lines.append(f"fail-soft: {result.get('error')}")
     if result.get("dry_run"):
         lines.append("dry-run: champion not written (compare only)")
+    elif result.get("promotion_blocked"):
+        lines.append(
+            "challenger only: champion not written (gate passed; human promotion "
+            "required - rerun with --promote)"
+        )
+    elif not result.get("allow_promote") and not result.get("champion_written"):
+        lines.append("challenger only: champion not written (no --promote)")
     elif result.get("champion_written") and result.get("verdict") == VERDICT_SEED:
         lines.append("champion seeded (first record - not a claimed improvement)")
     elif result.get("trained"):
@@ -576,8 +583,19 @@ def run_retrain_gate(
     challenger_metrics: Mapping[str, Any] | None = None,
     dry_run: bool = False,
     persist: bool = True,
+    allow_promote: bool = False,
 ) -> dict[str, Any]:
-    """Train/score a challenger and maybe promote it.
+    """Score a challenger vs the champion; promote only on explicit human action.
+
+    By default (``allow_promote=False``) this NEVER writes the champion
+    (``data/champion/<PAIR>.json`` / ``models/<PAIR>_champion.json``) and never
+    refreshes production joblib. It saves only the challenger comparison
+    report (``<PAIR>_challenger.json``: after-cost WF PF / DD / return vs
+    champion, plus the unchanged gate decision) and a history line. A gate
+    pass is reported as ``promote_eligible`` for a human to act on.
+
+    Promotion (or a first seed) writes the champion only when the caller
+    passes ``allow_promote=True`` (CLI ``retrain --promote``).
 
     ``dry_run`` uses ``challenger_metrics`` or ``reports/latest_metrics.json``
     and never writes joblib. Tests inject ``walk_forward_fn`` / ``train_fn``.
@@ -596,6 +614,9 @@ def run_retrain_gate(
         "dry_run": bool(dry_run),
         "trained": False,
         "champion_written": False,
+        "allow_promote": bool(allow_promote),
+        "promote_eligible": False,
+        "promotion_blocked": False,
         "copied": {},
         "honest_note": HONEST_NOTE,
         "live_edge": False,
@@ -696,10 +717,47 @@ def run_retrain_gate(
         result["champion"] = champion_rec
         result["champion_metrics"] = champ_metrics or None
 
-        do_seed = decision.verdict == VERDICT_SEED
-        do_promote = decision.promote
+        gate_seed = decision.verdict == VERDICT_SEED
+        gate_promote = bool(decision.promote)
         result["verdict"] = decision.verdict
-        result["promote"] = bool(do_promote)
+        result["promote_eligible"] = gate_promote
+        result["costs"] = (wf_result or {}).get("costs") if isinstance(wf_result, dict) else None
+        result["comparison"] = {
+            "basis": "walk-forward after configured costs",
+            "champion": {
+                "profit_factor": (champ_metrics or {}).get("profit_factor"),
+                "max_drawdown": (champ_metrics or {}).get("max_drawdown"),
+                "total_return": (champ_metrics or {}).get("total_return"),
+                "n_trades": (champ_metrics or {}).get("n_trades"),
+            }
+            if champion_rec
+            else None,
+            "challenger": {
+                "profit_factor": chal_metrics.get("profit_factor"),
+                "max_drawdown": chal_metrics.get("max_drawdown"),
+                "total_return": chal_metrics.get("total_return"),
+                "n_trades": chal_metrics.get("n_trades"),
+            },
+            "deltas": decision.deltas,
+        }
+        # Human-in-the-loop: the gate decides eligibility; only an explicit
+        # allow_promote (CLI --promote) may write the champion or prod joblib.
+        if dry_run:
+            do_seed = gate_seed
+            do_promote = gate_promote
+        elif allow_promote:
+            do_seed = gate_seed
+            do_promote = gate_promote
+        else:
+            do_seed = False
+            do_promote = False
+            result["promotion_blocked"] = bool(gate_promote or gate_seed)
+            if result["promotion_blocked"]:
+                result["human_action"] = (
+                    "gate passed; champion NOT written. Review the challenger report, "
+                    "then rerun with --promote to promote explicitly."
+                )
+        result["promote"] = bool(do_promote) if (dry_run or allow_promote) else False
 
         # Refresh production joblib only on a real promotion, or on a seed that
         # came from a fresh walk-forward (not a copy of latest_metrics.json).
@@ -762,6 +820,8 @@ def run_retrain_gate(
                 {
                     "verdict": result["verdict"],
                     "promote": result["promote"],
+                    "promote_eligible": result.get("promote_eligible"),
+                    "promotion_blocked": result.get("promotion_blocked"),
                     "deltas": (result.get("decision") or {}).get("deltas"),
                     "error": result.get("error"),
                     **stamps,

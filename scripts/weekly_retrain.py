@@ -4,8 +4,15 @@
     python3 scripts/weekly_retrain.py --pair EURUSD
     python3 scripts/weekly_retrain.py --dry-run
 
-Walk-forward compare vs the saved champion. Promote only if PF / total return /
-max DD improve (or the non-regression bar). Else keep champion and report null.
+Walk-forward compare vs the saved champion. By default this trains/scores a
+challenger and writes ONLY the challenger comparison report
+(data/champion/<PAIR>_challenger.json: after-cost PF / DD / return vs champion).
+It NEVER writes the champion (data/champion/<PAIR>.json, models/<PAIR>_champion.json)
+or refreshes production joblib. A gate pass is reported as promote_eligible.
+
+Promotion is a separate, explicit human action:
+
+    python3 scripts/weekly_retrain.py --pair EURUSD --promote
 
 Same as `python -m forex_lab retrain`. Fail-soft. No live broker. Not a live edge.
 

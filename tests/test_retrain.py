@@ -157,6 +157,7 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
         walk_forward_fn=_wf,
         train_fn=_train,
         persist=True,
+        allow_promote=True,
     )
     assert promoted["verdict"] == VERDICT_PROMOTE
     assert promoted["promote"] is True
@@ -185,6 +186,7 @@ def test_run_retrain_gate_promote_and_null(tmp_path):
         walk_forward_fn=_wf_worse,
         train_fn=_train,
         persist=True,
+        allow_promote=True,
     )
     assert kept["verdict"] == VERDICT_NULL
     assert kept["promote"] is False
@@ -216,6 +218,7 @@ def test_run_retrain_gate_seeds_without_claiming_improve(tmp_path):
         challenger_metrics=_m(pf=0.978, ret=-0.0206, dd=-0.077, n=1066),
         dry_run=False,
         persist=True,
+        allow_promote=True,
     )
     # dry_run False + no champion + metrics provided -> seed, no train
     assert seeded["verdict"] == VERDICT_SEED
@@ -357,3 +360,65 @@ def test_min_trades_floor_from_promotion_block():
     d = promotion_decision(champ, chal)
     assert d.promote is False
     assert "min_trades" in d.reasons[0]
+
+
+def test_default_retrain_never_writes_champion(tmp_path):
+    """Weekly default path: gate may pass, but champion files stay untouched."""
+    cfg = {
+        "ui": {"timezone": "Asia/Dhaka"},
+        "retrain": {
+            "store": str(tmp_path / "champion"),
+            "mode": "improve",
+            "train_on_promote": True,
+            "fail_soft": True,
+            "seed_from_metrics": False,
+        },
+        "model": {"type": "xgboost"},
+        "paths": {"models_dir": str(tmp_path / "models"), "data_dir": str(tmp_path / "data")},
+    }
+    save_champion("EURUSD", cfg, {"pair": "EURUSD", "metrics": _m(pf=1.00, ret=0.01, dd=-0.10, wr=0.50)})
+    champ_store = tmp_path / "champion" / "EURUSD.json"
+    champ_ptr = tmp_path / "models" / "EURUSD_champion.json"
+    before = (champ_store.read_bytes(), champ_ptr.read_bytes())
+    mtimes = (champ_store.stat().st_mtime_ns, champ_ptr.stat().st_mtime_ns)
+    trained = {"n": 0}
+
+    def _wf(_df, _cfg, _pair):
+        return ({"pair": "EURUSD", "model": _m(pf=1.12, ret=0.04, dd=-0.06, n=40, wr=0.52)}, None)
+
+    def _train(_df, _cfg, _pair):
+        trained["n"] += 1
+        return {}
+
+    out = run_retrain_gate("EURUSD", cfg, ohlcv=object(), walk_forward_fn=_wf, train_fn=_train, persist=True)
+    # Gate logic unchanged: it would promote, but default path only reports.
+    assert out["verdict"] == VERDICT_PROMOTE
+    assert out["promote_eligible"] is True
+    assert out["promote"] is False
+    assert out["promotion_blocked"] is True
+    assert out["champion_written"] is False
+    assert out["trained"] is False and trained["n"] == 0
+    assert (champ_store.read_bytes(), champ_ptr.read_bytes()) == before
+    assert (champ_store.stat().st_mtime_ns, champ_ptr.stat().st_mtime_ns) == mtimes
+    assert not list((tmp_path / "models").glob("*.joblib"))
+    chal = json.loads((tmp_path / "champion" / "EURUSD_challenger.json").read_text(encoding="utf-8"))
+    assert chal["comparison"]["challenger"]["profit_factor"] == 1.12
+    assert chal["comparison"]["champion"]["max_drawdown"] == -0.10
+    assert "promote" in format_retrain_text(out).lower()
+
+    # No champion yet: default path must not seed one either.
+    cfg2 = dict(cfg, retrain=dict(cfg["retrain"], store=str(tmp_path / "c2")),
+                paths={"models_dir": str(tmp_path / "m2")})
+    seeded = run_retrain_gate("EURUSD", cfg2, challenger_metrics=_m(pf=1.1, ret=0.02, dd=-0.05, n=50), persist=True)
+    assert seeded["verdict"] == VERDICT_SEED
+    assert seeded["champion_written"] is False
+    assert load_champion("EURUSD", cfg2) is None
+    assert not (tmp_path / "m2" / "EURUSD_champion.json").exists()
+
+
+def test_cli_retrain_promote_flag_is_opt_in():
+    from forex_lab.cli import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["retrain"]).promote is False
+    assert parser.parse_args(["retrain", "--promote"]).promote is True

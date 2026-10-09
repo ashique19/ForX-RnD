@@ -116,7 +116,9 @@ def cmd_retrain(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
     pair = str(getattr(args, "pair", None) or (cfg.get("retrain") or {}).get("pair") or "EURUSD")
     dry = bool(getattr(args, "dry_run", False))
-    result = run_retrain_gate(pair, cfg, dry_run=dry)
+    # Default never writes the champion; promotion is an explicit human flag.
+    promote = bool(getattr(args, "promote", False))
+    result = run_retrain_gate(pair, cfg, dry_run=dry, allow_promote=promote)
     if bool(getattr(args, "json", False)):
         safe_print(json.dumps(result, indent=2, default=str))
     else:
@@ -264,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser(
         "retrain",
-        help="Weekly champion/challenger walk-forward gate (promote or null; not a live edge)",
+        help="Weekly champion/challenger walk-forward gate (challenger report only; --promote to promote)",
     )
     r.add_argument("--pair", default=None, help="e.g. EURUSD (default retrain.pair or EURUSD)")
     r.add_argument("--config", default=None, help="Path to YAML config")
@@ -272,6 +274,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Compare latest_metrics.json vs champion without walk-forward or train",
+    )
+    r.add_argument(
+        "--promote",
+        action="store_true",
+        help="Explicit human action: allow the gate to write the champion. "
+        "Default writes only the challenger report and never the champion.",
     )
     r.add_argument("--json", action="store_true", help="Print JSON instead of text")
 
