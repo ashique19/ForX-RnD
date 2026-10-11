@@ -265,3 +265,42 @@ Yearly re-sim PF (p50) [computed]:
    it is a data rewrite, and the history files are gitignored but large.
 3. Judge everything on the held-out window (`research/holdout.json`, cutoff
    2025-10-01) plus paper shadow, per Roadmap Revision 2026-10-09.
+
+## Addendum 2026-10-11 — bar validation before rebuild (validate_bars.py)
+
+PR #54 (same-field Jetta decode + integrity gate) merged as 5b4376e. Stored history was NOT rebuilt:
+Jetta returned HTTP 202 (empty) on every retry 2026-10-11 ~23:10 Dhaka, and datafeed.dukascopy.com
+timed out from both the PC and a cloud box. No raw Jetta payload is cached locally, so high/low/ask
+same-field bases remain unverified on a live body (open verified, corr 0.980).
+
+Validation of data/history (wickless = share of bars with no wick; med_gap = median |Open - prev Close| in pips):
+
+```
+  pair     era  bars  wickless  med_gap_pips  gaps
+AUDUSD 2015-21 43633     0.620          4.55     8
+AUDUSD   2022+ 29596     0.595          4.10     7
+EURGBP 2015-21 43632     0.598          3.60     8
+EURGBP   2022+ 29675     0.569          2.40     8
+EURJPY 2015-21 43633     0.617          6.20     8
+EURJPY   2022+ 29596     0.584          7.70     6
+EURUSD 2015-21 42234     0.001          0.05   755
+EURUSD   2022+ 29705     0.596          4.30    18
+GBPJPY 2015-21 43633     0.608          8.80     8
+GBPJPY   2022+ 29686     0.588         10.05     7
+GBPUSD 2015-21 43632     0.605          6.45     8
+GBPUSD   2022+ 29677     0.591          5.65     8
+NZDUSD 2015-21 43631     0.608          4.55     8
+NZDUSD   2022+ 29589     0.589          3.90     9
+USDCAD 2015-21 43633     0.624          5.70     8
+USDCAD   2022+ 29595     0.597          4.70     6
+USDCHF 2015-21 43635     0.601          4.15     8
+USDCHF   2022+ 29597     0.589          3.95     8
+USDJPY 2015-21 43632     0.624          4.80     9
+USDJPY   2022+ 29595     0.597          7.15     6
+
+```
+
+Finding: the bad decode spans the WHOLE stored history (2015+) for 10 of 11 pairs, not just 2022+.
+Only EURUSD 2015-2021 is clean (wickless 0.1%, gap 0.05 pip). Therefore any "clean-data" result above
+that used a non-EURUSD pair's 2015-2021 bars is also INVALID. The only trustworthy clean-data result is
+EURUSD 2015-2021. Re-scoring per pair is deferred until a full-history rebuild is possible.
