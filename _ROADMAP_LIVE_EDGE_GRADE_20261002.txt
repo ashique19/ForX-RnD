@@ -138,6 +138,13 @@ STAGE 0 CORRECTION (computed, not opinion)
 ------------------------------------------
 "EURUSD champ ~PF 2.7-3.2 after-cost on the overlap book" and every Jetta-era
 pin (pin_scoreboard PF 2.4-3.0) are INVALID.
+Freeze (2026-10-11): every Replay result from 2026-09-30 01:01 Asia/Dhaka
+onward is INVALID, including the pin scoreboard, the weekly champion pins,
+and the overlap book. Numbers in this file are unchanged and are not an edge.
+The decoder now chains each of Open/High/Low/Close off the previous same
+field. Replay and backtest refuse wickless share above 10% or a median
+|Open - previous Close| above 1 pip. History stays gitignored; re-pull it
+before the next run.
 - Why: the Jetta decoder built Open/High/Low from the previous CLOSE. The feed
   encodes each field relative to the previous bar's same field.
 - Effect: Replay entries filled 10-18 pips better than the real Dukascopy open.

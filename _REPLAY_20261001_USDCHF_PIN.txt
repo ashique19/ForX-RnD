@@ -1,2 +1,4 @@
+INVALID: Jetta-era pin (Replay on or after 2026-09-30 01:01 Asia/Dhaka). Figures below are unchanged and are not an edge. See research/edge_check/EDGE_REALITY_20261009.md.
+
 ﻿# USDCHF after-cost pin - 2026-10-01 06:11 Asia/Dhaka
 job **d9f7260455da471791ff88d6044bd107**. Champ PF **2.601** / WR 70.2% / n 6211 / DD -2.42% / ret 377.5. SMA 0.785. Promote null. Active=EURUSD. No promote.

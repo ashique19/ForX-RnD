@@ -35,6 +35,7 @@ config/default.yaml.bak_pre_horizon6_20261002 and records a strike.
 
 Baseline reference
 ------------------
+INVALID: weekly champion pin a0d93fc6df364c2a869b5f3a69eef206 is a Jetta-era pin (on or after 2026-09-30 01:01 Asia/Dhaka). Figures below are unchanged and are not an edge.
 Current weekly champion pointer a0d93fc6df364c2a869b5f3a69eef206 reports
 after-cost champion PF 1.474545, return 0.055068, max DD -0.011813.
 This experiment is research-only; no live or promotion action is authorized.

@@ -1,3 +1,5 @@
+INVALID: Jetta-era pin (Replay on or after 2026-09-30 01:01 Asia/Dhaka). Figures below are unchanged and are not an edge. See research/edge_check/EDGE_REALITY_20261009.md.
+
 ﻿# USDCAD full-history after-cost pin Replay - 2026-10-01 Asia/Dhaka
 STRICT SERIAL multi-pair proof (data, not features). Do NOT promote.
 Active remains EURUSD. No feature/regime/conf challengers in this job.

@@ -35,25 +35,37 @@ from forex_lab.replay import (
 def _bars(n: int = 40, start: str = "2015-01-05") -> pd.DataFrame:
     idx = pd.date_range(start, periods=n, freq="h")
     rng = np.random.default_rng(7)
-    mid = 1.10 + np.cumsum(rng.normal(0, 0.0004, n))
+    close = 1.10 + np.cumsum(rng.normal(0, 0.0004, n))
+    open_ = np.empty(n)
+    open_[0] = close[0]
+    # Continuous hours: the next open sits on the previous close (sub-pip noise).
+    open_[1:] = close[:-1] + rng.normal(0, 0.000002, n - 1)
+    high = np.maximum(open_, close) + 0.0004
+    low = np.minimum(open_, close) - 0.0004
     spread = np.full(n, 0.00012)
-    bid = mid - spread / 2
-    ask = mid + spread / 2
+    bid_close = close - spread / 2
+    ask_close = close + spread / 2
+    bid_open = np.empty(n)
+    ask_open = np.empty(n)
+    bid_open[0] = bid_close[0]
+    ask_open[0] = ask_close[0]
+    bid_open[1:] = bid_close[:-1]
+    ask_open[1:] = ask_close[:-1]
     return pd.DataFrame(
         {
-            "Open": mid,
-            "High": mid + 0.0004,
-            "Low": mid - 0.0004,
-            "Close": mid,
+            "Open": open_,
+            "High": high,
+            "Low": low,
+            "Close": close,
             "Volume": 100.0,
-            "BidOpen": bid,
-            "BidHigh": bid + 0.0003,
-            "BidLow": bid - 0.0005,
-            "BidClose": bid,
-            "AskOpen": ask,
-            "AskHigh": ask + 0.0003,
-            "AskLow": ask - 0.0005,
-            "AskClose": ask,
+            "BidOpen": bid_open,
+            "BidHigh": np.maximum(bid_open, bid_close) + 0.0003,
+            "BidLow": np.minimum(bid_open, bid_close) - 0.0005,
+            "BidClose": bid_close,
+            "AskOpen": ask_open,
+            "AskHigh": np.maximum(ask_open, ask_close) + 0.0003,
+            "AskLow": np.minimum(ask_open, ask_close) - 0.0005,
+            "AskClose": ask_close,
             "Spread": spread,
         },
         index=idx,

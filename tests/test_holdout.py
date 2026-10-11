@@ -61,7 +61,19 @@ def test_walk_forward_never_trains_on_holdout(cutoff_file, monkeypatch):
     idx = pd.date_range("2025-06-01", periods=3200, freq="1h")
     rng = np.random.default_rng(0)
     close = 1.1 + np.cumsum(rng.normal(0, 0.0005, len(idx)))
-    df = pd.DataFrame({"Open": close, "High": close + 0.0006, "Low": close - 0.0006, "Close": close, "Volume": 1000.0}, index=idx)
+    open_ = np.empty(len(idx))
+    open_[0] = close[0]
+    open_[1:] = close[:-1]
+    df = pd.DataFrame(
+        {
+            "Open": open_,
+            "High": np.maximum(open_, close) + 0.0006,
+            "Low": np.minimum(open_, close) - 0.0006,
+            "Close": close,
+            "Volume": 1000.0,
+        },
+        index=idx,
+    )
     from forex_lab.config_loader import load_config
 
     cfg = load_config()
