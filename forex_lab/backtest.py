@@ -304,6 +304,9 @@ def walk_forward_backtest(
     pair: str,
     model_type: str | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
+    from forex_lab.data_integrity import assert_bar_integrity
+
+    assert_bar_integrity(df, pair, cfg, context="backtest")
     X, y, ohlcv = make_dataset(df, cfg, pair=pair)
     wf = cfg.get("walk_forward") or {}
     train_bars = int(wf.get("train_bars", 2000))

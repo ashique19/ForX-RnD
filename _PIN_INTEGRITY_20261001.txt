@@ -1,3 +1,5 @@
+INVALID: Jetta-era pin scoreboard check. The match below only says the desk copied the job file. The profit factors are not an edge. Figures are unchanged. See research/edge_check/EDGE_REALITY_20261009.md.
+
 # Pin job integrity check - 2026-10-01 Asia/Dhaka
 
 EURUSD job=2cee7e71 missing=none status=done pf_job=1.988673516691955 pf_desk=1.989 match=True

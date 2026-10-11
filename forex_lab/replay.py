@@ -558,6 +558,9 @@ def run_replay(
         if col not in frame.columns:
             raise ReplayError(f"history is missing {col}", reason="insufficient_bars")
     cfg = dict(cfg or {})
+    from forex_lab.data_integrity import assert_bar_integrity
+
+    assert_bar_integrity(frame, pair_u, cfg, context="replay")
     from forex_lab.session import apply_replay_session_gate
     from forex_lab.news_blackout import apply_replay_news_blackout
     from forex_lab.vol_regime import apply_replay_vol_regime

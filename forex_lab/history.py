@@ -96,6 +96,7 @@ class HistoryError(RuntimeError):
 _REASON_LABELS = {
     "download": "Download failed",
     "decode": "Decode failed",
+    "integrity": "Data integrity",
     "insufficient_bars": "Not enough bars",
     "train": "Train failed",
 }
@@ -692,11 +693,17 @@ def jetta_instrument(pair: str) -> str:
 
 
 def decode_jetta_side(payload: dict[str, Any]) -> dict[pd.Timestamp, tuple[float, float, float, float, float]]:
-    """Decode one Jetta candle side.
+    """Decode one Jetta candle side (bid or ask).
 
-    Later bars' o/h/l/c are deltas from the **previous close** times ``multiplier``.
-    The first bar uses the top-level open/high/low/close absolutes. Wrong bases
-    (e.g. previous open) produce Ask drift and High<Low — keep this decode.
+    Bar 0 uses the absolute open/high/low/close. Each later bar's open, high,
+    low, and close is the previous bar's **same field** plus ``delta * multiplier``.
+    Close still chains off the previous close, because that is its same field.
+    Open, high, and low must not.
+
+    Same-field bases are verified for Open on the bid side (see
+    ``research/edge_check/EDGE_REALITY_20261009.md``). High, low, and the ask
+    side use the same rule; a live Jetta body was not available to re-check
+    them (HTTP 202 on 2026-10-09, and stored highs/lows had been clamped).
     """
     if not isinstance(payload, dict):
         raise HistoryError("Jetta payload is not a JSON object", reason="decode")
@@ -717,26 +724,28 @@ def decode_jetta_side(payload: dict[str, Any]) -> dict[pd.Timestamp, tuple[float
         return {}
     out: dict[pd.Timestamp, tuple[float, float, float, float, float]] = {}
     t = t0
-    prev: float | None = None
+    # Raw previous fields. The wick clamp below is not the next bar's base.
+    prev_o = prev_h = prev_l = prev_c = 0.0
+    started = False
     for i in range(n):
         t = t0 + int(times[i]) * shift if i == 0 else t + int(times[i]) * shift
-        if i == 0:
+        if not started:
             o = float(payload["open"])
             h = float(payload["high"])
             low = float(payload["low"])
             c = float(payload["close"])
+            started = True
         else:
-            assert prev is not None
-            o = prev + float(opens[i]) * mult
-            h = prev + float(highs[i]) * mult
-            low = prev + float(lows[i]) * mult
-            c = prev + float(closes[i]) * mult
+            o = prev_o + float(opens[i]) * mult
+            h = prev_h + float(highs[i]) * mult
+            low = prev_l + float(lows[i]) * mult
+            c = prev_c + float(closes[i]) * mult
         hi = max(h, o, c)
         lo = min(low, o, c)
         ts = pd.Timestamp(datetime.fromtimestamp(t / 1000.0, tz=timezone.utc)).tz_convert(None)
         ts = ts.replace(minute=0, second=0, microsecond=0)
         out[ts] = (float(o), float(hi), float(lo), float(c), float(volumes[i]))
-        prev = float(c)
+        prev_o, prev_h, prev_l, prev_c = float(o), float(h), float(low), float(c)
     return out
 
 

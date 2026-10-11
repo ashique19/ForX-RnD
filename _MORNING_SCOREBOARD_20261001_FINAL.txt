@@ -1,4 +1,6 @@
-﻿# FINAL autonomy scoreboard - stop for weekly retrain
+﻿INVALID: Jetta-era scoreboard (2026-10-01 Asia/Dhaka, after 2026-09-30 01:01). Pin profit factors below are unchanged and are not an edge. See research/edge_check/EDGE_REALITY_20261009.md.
+
+# FINAL autonomy scoreboard - stop for weekly retrain
 Wall-clock stop: **07:40 Asia/Dhaka** (2026-10-01). Started ~05:33. **No promote.** Live Active=EURUSD min_confidence=0.60.
 
 ## 1) Meta-label strike 3/3 — FREEZE

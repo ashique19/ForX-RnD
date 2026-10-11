@@ -1,3 +1,5 @@
+INVALID: Jetta-era pin scoreboard summary. Figures below are unchanged and are not an edge. See research/edge_check/EDGE_REALITY_20261009.md.
+
 # Multi-pair pin summary - 2026-10-01 06:20 Asia/Dhaka
 
 | rank | pair | PF | WR | n | DD | ret | SMA |

@@ -1,3 +1,5 @@
+INVALID: Jetta-era pin (Replay on or after 2026-09-30 01:01 Asia/Dhaka). Figures below are unchanged and are not an edge. See research/edge_check/EDGE_REALITY_20261009.md.
+
 ﻿# QA GBPUSD pin d6a6f7a6 - 2026-10-01 Asia/Dhaka
 Light cost/pip QA (same shape as USDJPY TRUST QA `5e56454` / `_QA_USDJPY_PIN_20261001.txt`). Read-only; no promote; no full re-run.
 

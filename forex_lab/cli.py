@@ -62,8 +62,16 @@ def cmd_train(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_backtest(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    from forex_lab.data_integrity import DataIntegrityError
+    from forex_lab.history import explain_failure
+
     df = load_ohlcv(args.pair, cfg)
-    result, trades, _preds = walk_forward_backtest(df, cfg, args.pair, model_type=args.model)
+    try:
+        result, trades, _preds = walk_forward_backtest(df, cfg, args.pair, model_type=args.model)
+    except DataIntegrityError as exc:
+        _reason, text = explain_failure(exc)
+        safe_print(f"[backtest] refused: {text}")
+        return 1
     path = write_report(result, cfg, trades)
     m = result["model"]
     safe_print(

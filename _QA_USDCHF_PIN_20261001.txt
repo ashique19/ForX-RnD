@@ -1,3 +1,5 @@
+INVALID: Jetta-era pin (Replay on or after 2026-09-30 01:01 Asia/Dhaka). Figures below are unchanged and are not an edge. See research/edge_check/EDGE_REALITY_20261009.md.
+
 ﻿# QA USDCHF pin d9f72604 - 2026-10-01 06:11 Asia/Dhaka
 ## Verdict: TRUST
 PF~2.60 WR 70.2%; pip 0.0001; SMA 0.785 not rich. True Jetta Sep BA (no synth). Research only. No promote.

@@ -256,6 +256,9 @@ Yearly re-sim PF (p50) [computed]:
 1. **Freeze every Jetta-era Replay result as invalid.** That means all runs from
    2026-09-30 01:01 Dhaka onward, plus pin_scoreboard, weekly champion pins and the
    overlap book. Stop citing "PF 2.7-3.2".
+   Status 2026-10-11: those results are marked INVALID in the README, the
+   roadmap, the pin scoreboard, the weekly champion pin note, and the overlap
+   book. Numbers in this file are unchanged.
 2. Fix `decode_jetta_side`: the base should be the previous same field, not the previous
    close. Add a data-integrity gate (wickless share, |Open - prevClose| p50) that
    refuses Replay/backtest on bad bars. Then re-pull history. This needs the user's go:
