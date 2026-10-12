@@ -304,3 +304,43 @@ Finding: the bad decode spans the WHOLE stored history (2015+) for 10 of 11 pair
 Only EURUSD 2015-2021 is clean (wickless 0.1%, gap 0.05 pip). Therefore any "clean-data" result above
 that used a non-EURUSD pair's 2015-2021 bars is also INVALID. The only trustworthy clean-data result is
 EURUSD 2015-2021. Re-scoring per pair is deferred until a full-history rebuild is possible.
+
+
+---
+
+## Addendum 2026-10-12 — clean HistData rebuild and frozen-model rescore
+
+**Data.** `data/history/<PAIR>_1h.csv` for the 10 FX pairs was replaced with a clean HistData bid rebuild
+(`research/edge_check/rebuild_histdata.py` -> `assemble_rebuild.py`), with the desk's yfinance tail through
+2026-10-12 18:00 UTC. EURUSD before 2022 keeps the clean Dukascopy rows. Pre-swap files: `D:\ForX-backup\2026-10-12\pre_swap\`
+(84 files, 742,608,131 bytes). BTCUSD was untouched. Validation (`research/rebuild/validate_rebuild.py`, `data/history_rebuild/validation.json`):
+all 10 pairs PASS. Wickless share 0.0-0.2% (was ~60%). Median |Open-prevClose| is 0.10 pip (0.05 for EURUSD pre-2022, 0.20 for GBPJPY);
+it was 4-10 pips before. **Known hole:** HistData's own 2023 files miss ~13% of hours (~680 one-to-two-hour holes per pair,
+confirmed in the raw M1 files). They are left as gaps, not synthesized. Bars are bid-only, Ask/Spread are blank, and costs come from `measured_costs.csv`.
+
+**Rescore.** `research/rebuild/clean_rescore.py` loads the frozen production xgboost models, predicts, applies the production
+signal filters and simulates with `forex_lab.backtest._simulate_trades` (next-open entry, ATR barriers, H/L path). There is no fit and no Replay.
+The integrity gate passed for every pair. Round-trip cost = 2 x measured one-way p50 / p90. DSR: N = 67 trials, V[SR] across the 10 pairs.
+
+**Caveats.** (1) The models were fit on Jetta-corrupted bars. (2) `train_models` fit on the first 80% of each pair's history
+(to roughly mid-2024), so 2015-2024 is in-sample and the holdout from 2025-10-01 is out-of-sample for fitting. However, the yaml filters and pins were
+tuned on full history including the holdout, so the holdout is a baseline, not a pass.
+
+| Pair | n full | PF full p50 / p90 | DSR full p50 | n holdout | PF holdout p50 / p90 | DSR holdout p50 / p90 | DD holdout p50 | Verdict |
+|---|---|---|---|---|---|---|---|---|
+| EURUSD | 655 | 1.16 / 1.09 | 0.06 | 85 | 1.70 / 1.57 | 0.86 / 0.77 | -0.7% | promising, unproven (few trades) |
+| USDJPY | 3137 | 0.99 / 0.88 | 0.00 | 307 | 1.85 / 1.67 | 0.99 / 0.94 | -2.3% | holdout strong, full history fails: candidate, unproven |
+| EURJPY | 2564 | 0.91 / 0.79 | 0.00 | 266 | 1.61 / 1.39 | 0.89 / 0.59 | -5.0% | weak candidate |
+| GBPJPY | 2627 | 0.93 / 0.76 | 0.00 | 269 | 1.39 / 1.13 | 0.62 / 0.12 | -3.7% | noise after p90 |
+| USDCHF | 4132 | 0.85 / 0.73 | 0.00 | 355 | 1.35 / 1.12 | 0.60 / 0.08 | -4.8% | noise after p90 |
+| NZDUSD | 1672 | 0.77 / 0.66 | 0.00 | 189 | 1.23 / 1.01 | 0.34 / 0.05 | -6.0% | noise |
+| GBPUSD | 3715 | 0.96 / 0.88 | 0.00 | 334 | 1.20 / 1.05 | 0.23 / 0.04 | -3.4% | noise |
+| EURGBP | 4435 | 0.83 / 0.69 | 0.00 | 390 | 1.08 / 0.77 | 0.04 / 0.00 | -3.0% | fail |
+| AUDUSD | 4606 | 0.86 / 0.79 | 0.00 | 402 | 0.85 / 0.76 | 0.00 / 0.00 | -12.9% | fail |
+| USDCAD | 4466 | 0.80 / 0.71 | 0.00 | 404 | 0.81 / 0.69 | 0.00 / 0.00 | -6.8% | fail |
+
+**Verdict.** No pair has a proven edge: none clears DSR 0.95 on full history. On the out-of-sample holdout, USDJPY
+(PF 1.85 / 1.67, DSR 0.99 / 0.94), EURUSD (1.70 / 1.57, 85 trades) and EURJPY (1.61 / 1.39) are the only candidates worth a
+challenger built on clean bars. AUDUSD, USDCAD and EURGBP fail. Full-history PF below 1 next to holdout PF above 1 is a regime or
+selection warning, not confirmation. Next step, which needs Ashiqul: a clean-bar challenger fit (pre-cutoff only), judged on the holdout and paper shadow. No promote.
+Raw outputs: `data/edge_check/clean_rescore_20261012.json` and `clean_rescore_<PAIR>_<p50|p90>.csv` (gitignored).

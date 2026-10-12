@@ -1,4 +1,4 @@
-﻿"""Per-pair / per-year bar integrity table (wickless share, median |O-prevC| pips, gaps).
+"""Per-pair / per-year bar integrity table (wickless share, median |O-prevC| pips, gaps).
 Usage: python research/edge_check/validate_bars.py [history_dir]"""
 import sys, glob, os
 import pandas as pd
