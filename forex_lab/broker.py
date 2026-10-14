@@ -560,7 +560,10 @@ class PaperBroker(BrokerPort):
             pos["bars_held"] = scored.bars_seen
             pos["outcome"] = scored.outcome
             if scored.status == "closed" and scored.exit_px is not None and scored.reason:
-                events.append(self._finalize(pos, float(scored.exit_px), scored.reason, last_ts))
+                when = _exit_bar_stamp(ohlcv, pos, scored.bars_seen) or last_ts
+                fill = self._finalize(pos, float(scored.exit_px), scored.reason, when)
+                events.append(fill)
+                _journal_stage2_close(pos, float(scored.exit_px), scored.reason, fill)
             else:
                 self._touch_open(pos)
         return events
@@ -600,3 +603,51 @@ __all__ = [
     "session_name",
     "walk_barriers",
 ]
+
+
+def _exit_bar_stamp(ohlcv: pd.DataFrame, pos: dict[str, Any], bars_seen: int) -> str | None:
+    """UTC stamp of the bar that closed the position (not the latest bar)."""
+    try:
+        from forex_lab.score import start_loc_after_entry
+
+        start = start_loc_after_entry(ohlcv, pos.get("entry_bar_time"))
+        if start is None or not bars_seen:
+            return None
+        ts = pd.Timestamp(ohlcv.index[start + int(bars_seen) - 1])
+        ts = ts.tz_convert("UTC") if ts.tzinfo else ts
+        return ts.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _journal_stage2_close(pos: dict[str, Any], exit_px: float, reason: str, fill: dict[str, Any]) -> bool:
+    """Append a Stage-2 close row for a bar-walk close, once.
+
+    Only for positions that have a Stage-2 ``open`` row and no ``close`` row
+    yet, so the desk auto path and this path never double-close. Never raises.
+    """
+    try:
+        from forex_lab import paper_shadow as ps
+
+        pid = str(pos.get("id") or "")
+        events = ps.load_events()
+        if not any(e.get("event") == "open" and str(e.get("position_id")) == pid for e in events):
+            return False
+        if any(e.get("event") == "close" and str(e.get("position_id")) == pid for e in events):
+            return False
+        return ps.record_close(
+            pair=str(pos.get("pair") or ""),
+            side=str(pos.get("side") or "CLOSE"),
+            conf=pos.get("confidence"),
+            entry_mid=pos.get("entry_price"),
+            exit_mid=exit_px,
+            sl=pos.get("sl"),
+            tp=pos.get("tp"),
+            source="desk",
+            position_id=pid,
+            fill_id=str((fill or {}).get("id") or ""),
+            exit_reason="duration" if reason == "timeout" else reason,
+            notes=f"bar-walk close at {fill.get('time')} (refresh_from_ohlcv)",
+        )
+    except Exception:  # noqa: BLE001
+        return False
