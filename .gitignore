@@ -40,3 +40,7 @@ desk/dist/
 data/paper_shadow/explore_journal.jsonl
 data/paper_shadow/calls.jsonl
 data/edge_check/
+
+# MT5 demo credentials (never commit)
+.env*
+
