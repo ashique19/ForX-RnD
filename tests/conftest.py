@@ -13,3 +13,8 @@ def _isolate_paper_journals(tmp_path_factory, monkeypatch):
     # Synthetic test bars are often dated after the real cutoff; holdout tests opt in.
     monkeypatch.setenv("FORX_HOLDOUT_FILE", "off")
     yield
+
+
+# Never reach the real MT5 terminal from tests (forex_lab.data.try_mt5_refresh); tests inject a fake fetch.
+import os as _os_mt5
+_os_mt5.environ.setdefault("FORX_MT5_TIP", "off")

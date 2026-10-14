@@ -56,8 +56,29 @@ def journal_count() -> int:
         return sum(1 for line in handle if line.strip())
 
 
-def eligible(row: dict[str, Any], min_conf: float) -> tuple[bool, str]:
+MAX_SIGNAL_AGE_H = 2.0
+
+
+def signal_age_hours(row: dict[str, Any], now: datetime | None = None) -> float | None:
+    """Hours between now and the board row's signal bar (last_signal_dhaka, else last_bar_dhaka)."""
+    raw = str(row.get("last_signal_dhaka") or row.get("last_bar_dhaka") or "").replace("Asia/Dhaka", "").strip()
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(raw[:19]).replace(tzinfo=DHAKA)
+    except ValueError:
+        return None
+    now = now or datetime.now(DHAKA)
+    return (now - ts).total_seconds() / 3600.0
+
+
+def eligible(row: dict[str, Any], min_conf: float, now: datetime | None = None) -> tuple[bool, str]:
     pair = str(row.get("pair") or "?")
+    age = signal_age_hours(row, now)
+    if age is None:
+        return False, "not_current:no_signal_time"
+    if age > MAX_SIGNAL_AGE_H:
+        return False, f"not_current:signal_bar_{age:.1f}h_old"
     signal = str(row.get("signal") or "").upper()
     if signal not in {"BUY", "SELL"}:
         return False, "not_directional"

@@ -28,6 +28,7 @@ from forex_lab.clock import fmt_display, parse_ts, timezone_name, timezone_tag
 from forex_lab.config_loader import load_config, pip_size_for_pair
 from forex_lab.data import (
     SOURCE_DUKASCOPY,
+    SOURCE_MT5,
     SOURCE_RESAMPLED_FROM_1H,
     SOURCE_YFINANCE,
     SOURCE_YFINANCE_M1,
@@ -1532,13 +1533,15 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     )
     row = build_board_row(symbol, cfg, interval=iv, refresh_data=False, regenerate=True)
     # Surface which provider won on the board row (sidecar may already match).
-    if source in {SOURCE_DUKASCOPY, SOURCE_YFINANCE, SOURCE_YFINANCE_M1, SOURCE_RESAMPLED_FROM_1H}:
+    if source in {SOURCE_MT5, SOURCE_DUKASCOPY, SOURCE_YFINANCE, SOURCE_YFINANCE_M1, SOURCE_RESAMPLED_FROM_1H}:
         row.data_source = source
     fetch_failed = fetched is None
     if fetch_failed:
         _note_failed_refresh(row, reason)
     if source == SOURCE_RESAMPLED_FROM_1H:
         source_label = SOURCE_RESAMPLED_FROM_1H
+    elif source == SOURCE_MT5:
+        source_label = SOURCE_MT5
     elif source == SOURCE_DUKASCOPY:
         source_label = SOURCE_DUKASCOPY
     elif source == SOURCE_YFINANCE_M1:
@@ -1552,7 +1555,7 @@ def refresh_pair(pair: str, *, interval: str | None = None, cfg: dict[str, Any] 
     payload_row = row_json(row, cfg=cfg)
     if source_label and not payload_row.get("data_source"):
         payload_row["data_source"] = source if source in {
-            SOURCE_DUKASCOPY, SOURCE_YFINANCE, SOURCE_YFINANCE_M1, SOURCE_RESAMPLED_FROM_1H
+            SOURCE_MT5, SOURCE_DUKASCOPY, SOURCE_YFINANCE, SOURCE_YFINANCE_M1, SOURCE_RESAMPLED_FROM_1H
         } else None
     return {
         "ok": True,

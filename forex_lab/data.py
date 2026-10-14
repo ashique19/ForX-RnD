@@ -228,7 +228,8 @@ SOURCE_YFINANCE = "yfinance"
 SOURCE_DUKASCOPY = "dukascopy"
 SOURCE_YFINANCE_M1 = "yfinance_1m"
 SOURCE_RESAMPLED_FROM_1H = "resampled_from_1h"
-PROVIDER_SOURCES = frozenset({SOURCE_YFINANCE, SOURCE_DUKASCOPY, SOURCE_YFINANCE_M1})
+SOURCE_MT5 = "mt5"
+PROVIDER_SOURCES = frozenset({SOURCE_YFINANCE, SOURCE_DUKASCOPY, SOURCE_YFINANCE_M1, SOURCE_MT5})
 
 
 def cache_source_path(pair: str, cfg: dict[str, Any], interval: str | None = None) -> Path:
@@ -622,6 +623,144 @@ def _yfinance_m1_aggregate(
     return agg[REQUIRED_COLS], ""
 
 
+# ---------------------------------------------------------------------------
+# MT5 (OANDA demo, read-only) 1h tip source  — fix for yfinance_1m Volume=0 tips
+# ---------------------------------------------------------------------------
+# Volume-scale choice (documented): MT5 tick_volume tracks the cache/history volume
+# closely (corr ~0.89-0.94 over Jun-Oct 2026) but on a different scale (cache/MT5
+# median ratio ~0.35-0.55, pair-dependent). vol_z is a rolling z-score over
+# ``vol_window`` bars, so a level jump at the source boundary would distort it.
+# MT5 volume is therefore RESCALED per pair to the existing cache level using the
+# median ratio cache/MT5 over overlapping bars where both are > 0 (last
+# ``MT5_RATIO_WINDOW`` bars). With fewer than ``MT5_MIN_OVERLAP`` overlapping bars
+# the ratio is 1.0 and the result says so. Prices are taken from MT5 as-is (bid OHLC).
+MT5_RATIO_WINDOW = 500
+MT5_MIN_OVERLAP = 50
+TIP_GUARD_BARS = 3
+
+
+def mt5_volume_ratio(existing: pd.DataFrame | None, mt5_bars: pd.DataFrame) -> tuple[float, int]:
+    """Median(cache Volume / MT5 tick_volume) over overlapping bars with both > 0."""
+    if existing is None or existing.empty or mt5_bars is None or mt5_bars.empty:
+        return 1.0, 0
+    a = pd.to_numeric(existing["Volume"], errors="coerce")
+    b = pd.to_numeric(mt5_bars["Volume"], errors="coerce")
+    j = pd.concat([a.rename("c"), b.rename("m")], axis=1, join="inner").dropna()
+    j = j[(j.c > 0) & (j.m > 0)].tail(MT5_RATIO_WINDOW)
+    if len(j) < MT5_MIN_OVERLAP:
+        return 1.0, int(len(j))
+    return float((j.c / j.m).median()), int(len(j))
+
+
+def fetch_mt5_1h_utc(pair: str, count: int) -> pd.DataFrame:
+    """MT5 1h bars for ``pair`` indexed in naive UTC, Volume = tick_volume. Raises on failure."""
+    from forex_lab import mt5_feed as F
+
+    F.connect(require_demo=True)
+    try:
+        sym = F.resolve_symbols([pair]).get(pair.upper())
+        if not sym:
+            raise RuntimeError(f"no MT5 symbol for {pair}")
+        bars = F.bars_1h(sym, count)
+        off = F.server_offset_hours(sym)
+    finally:
+        F.shutdown()
+    bars = bars[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+    bars.index = pd.DatetimeIndex(bars.index) - pd.Timedelta(hours=off)
+    bars.index.name = "Datetime"
+    return bars
+
+
+def guard_tip_volume(
+    df: pd.DataFrame,
+    refill: pd.DataFrame | None = None,
+    n_tip: int = TIP_GUARD_BARS,
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    """Flag tip rows (last ``n_tip``) whose Volume is 0/NaN and refill them; never drop rows.
+
+    Refill order: ``refill`` frame (e.g. rescaled MT5) at the same timestamp when > 0,
+    else the median of the previous 20 positive volumes (volume only; prices untouched).
+    Returns the frame and a list of {ts, action} flags.
+    """
+    if df is None or df.empty or "Volume" not in df.columns:
+        return df, []
+    out = df.copy()
+    vol = pd.to_numeric(out["Volume"], errors="coerce")
+    flags: list[dict[str, Any]] = []
+    for ts in out.index[-n_tip:]:
+        v = vol.get(ts)
+        if v is not None and np.isfinite(v) and v > 0:
+            continue
+        action = "unfilled"
+        if refill is not None and ts in refill.index:
+            rv = pd.to_numeric(pd.Series([refill.loc[ts, "Volume"]]), errors="coerce").iloc[0]
+            if np.isfinite(rv) and rv > 0:
+                out.loc[ts, "Volume"] = float(rv); action = "refilled_mt5"
+        if action == "unfilled":
+            prior = vol[(vol.index < ts) & (vol > 0)].tail(20)
+            if len(prior):
+                out.loc[ts, "Volume"] = float(prior.median()); action = "refilled_median20"
+        flags.append({"ts": str(ts), "action": action})
+    if flags:
+        safe_print(f"[tip_guard] zero/NaN tip volume flagged: {flags}")
+    return out, flags
+
+
+def try_mt5_refresh(
+    pair: str,
+    cfg: dict[str, Any],
+    period: str | None = None,
+    interval: str | None = None,
+    *,
+    incremental: bool = False,
+    fetch=None,
+) -> tuple[pd.DataFrame | None, str]:
+    """1h tip bars from the MT5 demo feed (read-only), merged into the cache. 1h only."""
+    _ = period
+    iv = str(interval or cfg.get("interval") or "1h")
+    board = dict(cfg.get("board") or {})
+    if iv != "1h":
+        return None, f"mt5 unsupported interval {iv}"
+    import os as _os
+    if fetch is None and _os.environ.get("FORX_MT5_TIP", "on").strip().lower() in {"off", "0", "false", "no"}:
+        return None, "mt5 disabled (FORX_MT5_TIP=off)"
+    if not bool(board.get("mt5_tip", True)):
+        return None, "mt5 disabled"
+    out_path = data_path(pair, cfg, iv)
+    existing = None
+    if out_path.exists():
+        try:
+            existing = load_cached_ohlcv(pair, cfg, iv)
+        except Exception:
+            existing = None
+    count = int(board.get("mt5_incremental_bars") or 72) if incremental else int(board.get("mt5_bootstrap_bars") or 2000)
+    try:
+        mt5_bars = (fetch or fetch_mt5_1h_utc)(pair, count)
+    except Exception as exc:  # noqa: BLE001 - fall back to the existing chain
+        return None, f"mt5 unavailable ({exc})"
+    if mt5_bars is None or mt5_bars.empty:
+        return None, "mt5 empty"
+    ratio, n_overlap = mt5_volume_ratio(existing, mt5_bars)
+    scaled = mt5_bars.copy()
+    scaled["Volume"] = (pd.to_numeric(scaled["Volume"], errors="coerce") * ratio).round()
+    parts = [p for p in (existing, scaled) if p is not None and not p.empty]
+    df = _merge_live_ohlcv_parts(parts)
+    df, flags = guard_tip_volume(df, refill=scaled)
+    if len(df) < MIN_CACHE_BARS:
+        return None, f"mt5 too few bars: {len(df)}"
+    df.to_csv(out_path)
+    write_cache_source(pair, cfg, iv, SOURCE_MT5)
+    try:
+        import json as _json
+        meta = {"pair": pair.upper(), "source": SOURCE_MT5, "volume_ratio_cache_over_mt5": ratio,
+                "ratio_overlap_bars": n_overlap, "mt5_bars": int(len(mt5_bars)),
+                "last_bar_utc": str(df.index.max()), "tip_flags": flags}
+        out_path.with_suffix(".mt5.json").write_text(_json.dumps(meta, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+    return df, SOURCE_MT5
+
+
 def try_live_refresh(
     pair: str,
     cfg: dict[str, Any],
@@ -630,7 +769,11 @@ def try_live_refresh(
     *,
     incremental: bool = False,
 ) -> tuple[pd.DataFrame | None, str]:
-    """Primary denser Dukascopy, then yfinance. Never writes synthetic bars."""
+    """MT5 demo 1h tip (read-only) first, then Dukascopy, then yfinance. Never writes synthetic bars."""
+    fetched, tag = try_mt5_refresh(pair, cfg, period=period, interval=interval, incremental=incremental)
+    if fetched is not None:
+        return fetched, tag
+    mt5_reason = str(tag or "mt5 failed").strip()
     fetched, tag = try_dukascopy_refresh(
         pair, cfg, period=period, interval=interval, incremental=incremental
     )
@@ -643,7 +786,7 @@ def try_live_refresh(
     if fetched is not None:
         return fetched, tag
     yf_reason = str(tag or "yfinance failed").strip()
-    return None, f"dukascopy: {duka_reason}; {yf_reason}"
+    return None, f"dukascopy: {duka_reason}; {yf_reason}; mt5: {mt5_reason}"
 
 
 def ensure_interval_ohlcv(
