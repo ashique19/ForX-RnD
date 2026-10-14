@@ -15,7 +15,7 @@ from forex_lab.broker import BrokerError, PaperBroker, make_broker, position_for
 from forex_lab.clock import fmt_display, parse_ts, timezone_name
 from forex_lab.data import load_cached_ohlcv
 from forex_lab.freshness import INTERVAL_SECONDS
-from forex_lab.score import normalize_outcome
+from forex_lab.score import normalize_outcome, score_from_ohlcv, start_loc_after_entry
 from api.strategies import (
     BRIEF,
     STRATEGIES,
@@ -664,6 +664,35 @@ def _barrier_reason(pos: dict[str, Any], price: float) -> str | None:
     return None
 
 
+def _bar_path_exit(pos: dict[str, Any], frame: Any, cfg: dict[str, Any]) -> tuple[str, float, str] | None:
+    """First SL/TP touch (or horizon close) on cached bars after the entry bar.
+
+    Closing at whatever price the next pass sees books a late, inflated exit
+    when passes are hours apart (desk down overnight). Returns (reason, barrier
+    price, exit bar UTC stamp) or None when nothing has hit yet.
+    """
+    try:
+        scored = score_from_ohlcv(pos, frame, {**cfg, "horizon": pos.get("horizon") or cfg.get("horizon") or 8})
+    except Exception:  # noqa: BLE001
+        return None
+    if scored.status != "closed" or scored.exit_px is None or not scored.reason:
+        return None
+    start = start_loc_after_entry(frame, pos.get("entry_bar_time"))
+    stamp = ""
+    if start is not None and scored.bars_seen:
+        try:
+            ts = frame.index[start + int(scored.bars_seen) - 1]
+            stamp = str(ts.strftime("%Y-%m-%d %H:%M:%S")) + " UTC"
+        except Exception:  # noqa: BLE001
+            stamp = ""
+    reason = "duration" if scored.reason == "timeout" else str(scored.reason)
+    return reason, float(scored.exit_px), stamp or _now_stamp_fallback()
+
+
+def _now_stamp_fallback() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def _duration_expired(pos: dict[str, Any], now: datetime) -> bool:
     """Brief duration is horizon bars × the entry timeframe. Unknown TF does not expire."""
     tf = str(pos.get("timeframe") or "")
@@ -964,13 +993,18 @@ def _auto_one(
         pos = position_for_pair(broker, symbol, sid)
         side_now = view["signal"] if view["signal"] in {"BUY", "SELL"} else None
         if pos is not None and price is not None:
-            reason = _barrier_reason(pos, price)
-            if reason is None and _duration_expired(pos, clock):
-                reason = "duration"
-            if reason is None and allowed and side_now and side_now != str(pos.get("side") or "").upper():
-                reason = "opposite"
+            exit_px, exit_when = price, when
+            path_hit = _bar_path_exit(pos, frame, cfg)
+            if path_hit is not None:
+                reason, exit_px, exit_when = path_hit
+            else:
+                reason = _barrier_reason(pos, price)
+                if reason is None and _duration_expired(pos, clock):
+                    reason = "duration"
+                if reason is None and allowed and side_now and side_now != str(pos.get("side") or "").upper():
+                    reason = "opposite"
             if reason:
-                fill = broker.close(str(pos["id"]), price=price, reason=reason, timestamp=when)
+                fill = broker.close(str(pos["id"]), price=exit_px, reason=reason, timestamp=exit_when)
                 # stage2-shadow: auto close
                 try:
                     muted, below = _shadow_flags_for_row(row, cfg)
@@ -982,7 +1016,7 @@ def _auto_one(
                         muted=muted,
                         below_min=below,
                         entry_mid=pos.get("entry_price"),
-                        exit_mid=price,
+                        exit_mid=exit_px,
                         bid=bid,
                         ask=ask,
                         sl=pos.get("sl"),
