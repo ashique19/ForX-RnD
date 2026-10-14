@@ -18,3 +18,4 @@ def _isolate_paper_journals(tmp_path_factory, monkeypatch):
 # Never reach the real MT5 terminal from tests (forex_lab.data.try_mt5_refresh); tests inject a fake fetch.
 import os as _os_mt5
 _os_mt5.environ.setdefault("FORX_MT5_TIP", "off")
+_os_mt5.environ.setdefault("FORX_MT5_EXEC", "off")

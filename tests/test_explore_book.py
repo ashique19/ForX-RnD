@@ -32,10 +32,10 @@ def journals(tmp_path, monkeypatch):
     return main, exp
 
 
-def test_explore_takes_050_to_060_and_logs_propensity(journals):
+def test_explore_takes_045_to_060_and_logs_propensity(journals):
     main, exp = journals
     main_before = main.read_bytes()
-    out = eb.run_pass([_row(), _row(pair="NZDUSD", raw="SELL", conf=0.45, gate="conf=0.45 < min 0.60")])
+    out = eb.run_pass([_row(), _row(pair="NZDUSD", raw="SELL", conf=0.44, gate="conf=0.44 < min 0.60")])
     assert out["fills_added"] == 1
     assert main.read_bytes() == main_before  # main journal untouched
     assert ps.fill_count() == 1  # Stage-2 count unchanged
@@ -44,23 +44,26 @@ def test_explore_takes_050_to_060_and_logs_propensity(journals):
     assert {d["pair"] for d in dec} == {"EURUSD", "NZDUSD"}
     eur = next(d for d in dec if d["pair"] == "EURUSD")
     assert eur["take"] is True and eur["would_main_take"] is False
-    assert eur["propensity"] == 1.0 and eur["threshold"] == 0.50 and eur["main_threshold"] == 0.60
+    assert eur["propensity"] == 1.0 and eur["threshold"] == 0.45 and eur["main_threshold"] == 0.60
     nzd = next(d for d in dec if d["pair"] == "NZDUSD")
     assert nzd["take"] is False and nzd["propensity"] == 0.0 and nzd["reason"].startswith("below_explore_min")
     assert all(r["schema"] == eb.SCHEMA for r in rows)
 
 
-def test_max_two_positions_per_pair(journals):
-    for _ in range(3):
+def test_max_three_positions_per_pair(journals):
+    for _ in range(4):
         eb.run_pass([_row()])
     st = eb.status()
-    assert st["open"] == 2 and st["fills"] == 2 and st["stage2"] is False
+    assert st["open"] == 3 and st["fills"] == 3 and st["stage2"] is False
 
 
 def test_other_gates_still_apply(journals):
     cfg = eb.EXPLORE_CONFIG
     assert eb.explore_eligible(_row(muted=True), cfg)[1] == "muted"
-    assert eb.explore_eligible(_row(gate="weekday mute"), cfg)[1].startswith("gate:")
+    assert eb.explore_eligible(_row(gate="news blackout"), cfg)[1].startswith("gate:")
+    # explore drops the UTC weekday mute (main book keeps it)
+    assert eb.explore_eligible(_row(muted=True, gate="conf=0.55 < min 0.60 | muted Monday (UTC weekday gate)"), cfg)[0]
+    assert eb.explore_eligible(_row(gate="weekday mute"), {**cfg, "drop_weekday_mute": False})[1].startswith("gate:")
     assert eb.explore_eligible(_row(last_signal_dhaka="2026-10-08 17:00:00 Asia/Dhaka"), cfg)[1] == "stale_signal"
     assert eb.explore_eligible(_row(validity="STALE"), cfg)[1].startswith("validity")
     assert eb.explore_eligible(_row(raw="HOLD"), cfg)[1] == "not_directional"

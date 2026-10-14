@@ -48,6 +48,7 @@ def http_json(base: str, method: str, path: str) -> tuple[int, object]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Exploration paper book pass (never Stage-2)")
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
+    ap.add_argument("--no-mt5-exec", action="store_true", help="skip MT5 DEMO order mirroring")
     args = ap.parse_args()
     now_dhaka = datetime.now(DHAKA)
     main_j = journal_path()
@@ -75,8 +76,16 @@ def main() -> int:
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 3
     rows = [r for r in (board.get("rows") or []) if isinstance(r, dict)]
+    before_ids = {str(e.get("position_id")) for e in load() if e.get("event") == "open"}
     out = run_pass(rows)
     result.update(out)
+    new_ids = [str(e.get("position_id")) for e in load() if e.get("event") == "open" and str(e.get("position_id")) not in before_ids]
+    if args.no_mt5_exec:
+        result["mt5_exec"] = {"enabled": False, "reason": "--no-mt5-exec"}
+    else:
+        from forex_lab.mt5_exec import mirror  # noqa: PLC0415
+
+        result["mt5_exec"] = mirror(new_ids)
     result["explore_events_after"] = len(load())
     result["main_journal_sha_after"] = _hash(main_j)
     result["main_journal_untouched"] = result["main_journal_sha_before"] == result["main_journal_sha_after"]

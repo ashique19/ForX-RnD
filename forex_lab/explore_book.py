@@ -35,9 +35,12 @@ _DEFAULT_REL = Path("data") / "paper_shadow" / "explore_journal.jsonl"
 # and is never changed here.
 EXPLORE_CONFIG: dict[str, Any] = {
     "policy": "threshold_v1",
-    "min_conf": 0.50,
+    "min_conf": 0.45,
     "main_min_conf": 0.60,
-    "max_positions_per_pair": 2,
+    "max_positions_per_pair": 3,
+    # Explore-only: the main book's UTC weekday mute is ignored here. Main
+    # gates / YAML are untouched; any other gate text still blocks.
+    "drop_weekday_mute": True,
     "max_opens_per_pass": 20,
     "default_horizon_bars": 8,
     "bar_hours": 1.0,
@@ -155,16 +158,33 @@ def would_main_take(row: dict[str, Any], main_min_conf: float) -> bool:
     )
 
 
+def _below_min_part(part: str) -> bool:
+    g = part.strip().lower()
+    return bool(g) and "< min" in g and "conf" in g
+
+
+def _weekday_part(part: str) -> bool:
+    g = part.strip().lower()
+    return "weekday gate" in g or "weekday_gate" in g or "weekday mute" in g
+
+
+def _residual_gate(gate: str, drop_weekday: bool) -> str:
+    """Gate text left after removing the parts exploration relaxes."""
+    parts = [x for x in str(gate or "").split(" | ") if x.strip()]
+    keep = [x for x in parts if not _below_min_part(x) and not (drop_weekday and _weekday_part(x))]
+    return " | ".join(keep)
+
+
 def _below_min_only(gate: str) -> bool:
-    g = gate.strip().lower()
-    return bool(g) and "< min" in g and "conf" in g and ";" not in g
+    return bool(gate.strip()) and not _residual_gate(gate, False)
 
 
 def explore_eligible(row: dict[str, Any], cfg: dict[str, Any]) -> tuple[bool, str, str | None]:
     """(eligible, reason, side). Uses raw_signal so below-0.60 calls are seen.
 
-    Every other main gate still applies (mute, validity, status, news/weekday
-    gate text); only the main min_conf gate is relaxed to cfg['min_conf'].
+    Every other main gate still applies (non-weekday mute, validity, status, news
+    gate text); the main min_conf gate is relaxed to cfg['min_conf'] and, when
+    cfg['drop_weekday_mute'], the UTC weekday mute is ignored (explore only).
     """
     side = str(row.get("raw_signal") or row.get("signal") or "").upper()
     if side not in {"BUY", "SELL"}:
@@ -174,15 +194,21 @@ def explore_eligible(row: dict[str, Any], cfg: dict[str, Any]) -> tuple[bool, st
         return False, "missing_confidence", side
     if conf < float(cfg["min_conf"]):
         return False, f"below_explore_min:{conf:.4f}<{float(cfg['min_conf']):.2f}", side
+    gate = str(row.get("gate_reason") or "")
+    drop_wd = bool(cfg.get("drop_weekday_mute"))
     if row.get("muted"):
-        return False, "muted", side
+        weekday_only = drop_wd and any(_weekday_part(x) for x in gate.split(" | ")) and not any(
+            x.strip().lower().startswith("muted ") and not _weekday_part(x) for x in gate.split(" | ")
+        )
+        if not weekday_only:
+            return False, "muted", side
     if str(row.get("validity") or "").upper() != "OK":
         return False, f"validity:{row.get('validity')}", side
     if str(row.get("status") or "").lower() not in {"ready", ""}:
         return False, f"status:{row.get('status')}", side
-    gate = str(row.get("gate_reason") or "")
-    if gate.strip() and not _below_min_only(gate):
-        return False, f"gate:{gate}", side
+    residual = _residual_gate(gate, drop_wd)
+    if residual:
+        return False, f"gate:{residual}", side
     if cfg.get("require_fresh_signal") and row.get("last_signal_dhaka") != row.get("last_bar_dhaka"):
         return False, "stale_signal", side
     if _f(row.get("last")) is None:
