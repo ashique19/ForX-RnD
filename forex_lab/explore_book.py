@@ -129,7 +129,15 @@ def status(events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     opens = [e for e in ev if e.get("event") == "open"]
     closes = [e for e in ev if e.get("event") == "close"]
     decisions = [e for e in ev if e.get("event") == "decision"]
-    rs = [c.get("pnl_r") for c in closes if isinstance(c.get("pnl_r"), (int, float))]
+    ann = {str(a.get("ref_position_id")): a for a in ev if a.get("event") == "annotation"}
+    rs = []
+    for c in closes:
+        a = ann.get(str(c.get("position_id")))
+        if a and a.get("exclude_from_explore"):
+            continue
+        r = a.get("corrected_pnl_r") if a and isinstance(a.get("corrected_pnl_r"), (int, float)) else c.get("pnl_r")
+        if isinstance(r, (int, float)):
+            rs.append(r)
     return {
         "book": "explore",
         "stage2": False,
@@ -139,6 +147,7 @@ def status(events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "decisions": len(decisions),
         "explore_only_fills": sum(1 for o in opens if not o.get("would_main_take")),
         "sum_r": round(sum(rs), 4) if rs else None,
+        "annotations": len(ann),
         "min_conf": EXPLORE_CONFIG["min_conf"],
         "note": "Exploration paper book; never Stage-2, never trains, never touches main gates.",
     }
@@ -266,6 +275,67 @@ def _age_hours(open_row: dict[str, Any], now: datetime) -> float:
     return (now - t).total_seconds() / 3600.0
 
 
+def board_bars(pair: str):
+    """Cached 1h OHLCV (UTC index) for bar-path exits; None when unavailable.
+
+    FORX_EXPLORE_BARS=off disables it (tests, so they never read desk data)."""
+    if os.environ.get("FORX_EXPLORE_BARS", "on").lower() == "off":
+        return None
+    try:
+        from forex_lab.config_loader import load_config
+        from forex_lab.data import load_cached_ohlcv
+
+        return load_cached_ohlcv(pair, load_config(), "1h")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def path_exit(pos: dict[str, Any], bars, now: datetime, cfg: dict[str, Any]) -> dict[str, Any] | None:
+    """First SL/TP touch (or horizon expiry) on COMPLETED 1h bars after entry.
+
+    Exits at the barrier price, not at whatever the board shows when the next
+    pass happens to run (a long gap between passes otherwise books -7R "stops").
+    Bars that straddle the entry are skipped; if SL and TP are both inside one
+    bar, SL is assumed (conservative). Returns None when nothing is hit yet.
+    """
+    if bars is None or len(bars) == 0:
+        return None
+    import pandas as pd
+
+    try:
+        t0 = pd.Timestamp(str(pos.get("ts_utc")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    idx = pd.DatetimeIndex(bars.index)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    nowt = pd.Timestamp(now).tz_convert("UTC")
+    hours = float(cfg["bar_hours"])
+    start = t0.floor("h") + pd.Timedelta(hours=hours)
+    expiry = t0 + pd.Timedelta(hours=float(pos.get("horizon_bars") or cfg["default_horizon_bars"]) * hours)
+    sl, tp, side = _f(pos.get("sl")), _f(pos.get("tp")), pos.get("side")
+    for ts, (_, bar) in zip(idx, bars.iterrows()):
+        end = ts + pd.Timedelta(hours=hours)
+        if ts < start or end > nowt:
+            continue
+        hi, lo, cl = _f(bar.get("High")), _f(bar.get("Low")), _f(bar.get("Close"))
+        if hi is None or lo is None:
+            continue
+        if side == "BUY":
+            if sl is not None and lo <= sl:
+                return {"reason": "sl", "price": sl, "bar_utc": ts}
+            if tp is not None and hi >= tp:
+                return {"reason": "tp", "price": tp, "bar_utc": ts}
+        else:
+            if sl is not None and hi >= sl:
+                return {"reason": "sl", "price": sl, "bar_utc": ts}
+            if tp is not None and lo <= tp:
+                return {"reason": "tp", "price": tp, "bar_utc": ts}
+        if end >= expiry and cl is not None:
+            return {"reason": "duration", "price": cl, "bar_utc": ts}
+    return None
+
+
 def _exit_reason(pos: dict[str, Any], last: float, now: datetime, cfg: dict[str, Any]) -> str | None:
     side = pos.get("side")
     sl, tp = _f(pos.get("sl")), _f(pos.get("tp"))
@@ -291,6 +361,7 @@ def run_pass(
     cfg: dict[str, Any] | None = None,
     now: datetime | None = None,
     barrier_fn=board_barriers,
+    bars_fn=board_bars,
 ) -> dict[str, Any]:
     """One exploration pass over board rows: mark-to-close, then open."""
     c = {**EXPLORE_CONFIG, **(cfg or {})}
@@ -303,11 +374,17 @@ def run_pass(
     for pid, pos in open_positions(events).items():
         row = by_pair.get(str(pos.get("pair") or "").upper())
         last = _f((row or {}).get("last"))
-        if last is None:
-            continue
-        reason = _exit_reason(pos, last, now, c)
-        if not reason:
-            continue
+        hit = path_exit(pos, bars_fn(str(pos.get("pair") or "").upper()) if bars_fn else None, now, c)
+        basis = "bar_path_barrier"
+        if hit:
+            reason, last = hit["reason"], float(hit["price"])
+        else:
+            if last is None:
+                continue
+            reason = _exit_reason(pos, last, now, c)
+            basis = "board_last_at_pass"
+            if not reason:
+                continue
         entry = _f(pos.get("entry_mid")) or last
         risk = abs(entry - (_f(pos.get("sl")) or entry)) or None
         direction = 1.0 if pos.get("side") == "BUY" else -1.0
@@ -316,7 +393,8 @@ def run_pass(
             "event": "close", **_stamps(now), "pair": pos.get("pair"), "side": pos.get("side"),
             "position_id": pid, "entry_mid": entry, "exit_mid": last, "exit_reason": reason,
             "pnl_price": round(pnl, 8), "pnl_r": round(pnl / risk, 4) if risk else None,
-            "exit_basis": "board_last_at_pass",
+            "exit_basis": basis,
+            "exit_bar_utc": hit["bar_utc"].strftime("%Y-%m-%dT%H:%M:%SZ") if hit else None,
         }
         append(close)
         out["closes"].append({"pair": pos.get("pair"), "position_id": pid, "exit_reason": reason, "pnl_r": close["pnl_r"]})

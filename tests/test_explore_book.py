@@ -121,3 +121,23 @@ def test_explore_status_endpoint_read_only(journals):
     assert body["ok"] is True and body["stage2"] is False
     assert body["fills"] == 1 and body["open"] == 1
     assert (main.read_bytes(), exp.read_bytes()) == before
+
+
+def test_bar_path_exit_uses_barrier_not_late_mark(journals):
+    import pandas as pd
+
+    t0 = datetime(2026, 10, 14, 5, 36, tzinfo=timezone.utc)
+    eb.run_pass([_row()], now=t0, bars_fn=lambda p: None)
+    idx = pd.date_range("2026-10-14 06:00", periods=6, freq="h", tz="UTC")
+    bars = pd.DataFrame({"Open": 1.1, "High": 1.1005, "Low": [1.0995, 1.0975, 1.09, 1.09, 1.09, 1.09], "Close": 1.099}, index=idx)
+    late = t0 + timedelta(hours=11)
+    out = eb.run_pass([_row(last=1.0900, raw="HOLD")], now=late, bars_fn=lambda p: bars)
+    assert out["closes"][0]["exit_reason"] == "sl" and out["closes"][0]["pnl_r"] == pytest.approx(-1.0)
+    close = [e for e in eb.load() if e["event"] == "close"][0]
+    assert close["exit_bar_utc"] == "2026-10-14T07:00:00Z" and close["exit_basis"] == "bar_path_barrier"
+
+
+def test_status_applies_corrected_r_annotation(journals):
+    eb.append({"event": "close", "position_id": "x1", "pnl_r": -7.0})
+    eb.append({"event": "annotation", "ref_position_id": "x1", "corrected_pnl_r": -1.0})
+    assert eb.status()["sum_r"] == -1.0

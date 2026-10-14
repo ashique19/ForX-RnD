@@ -19,3 +19,4 @@ def _isolate_paper_journals(tmp_path_factory, monkeypatch):
 import os as _os_mt5
 _os_mt5.environ.setdefault("FORX_MT5_TIP", "off")
 _os_mt5.environ.setdefault("FORX_MT5_EXEC", "off")
+_os_mt5.environ.setdefault("FORX_EXPLORE_BARS", "off")
