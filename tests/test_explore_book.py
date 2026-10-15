@@ -51,8 +51,9 @@ def test_explore_takes_045_to_060_and_logs_propensity(journals):
 
 
 def test_max_three_positions_per_pair(journals):
-    for _ in range(4):
-        eb.run_pass([_row()])
+    for h in range(4):  # cap stacks across DIFFERENT signal bars only
+        bar = f"2026-10-09 1{h}:00:00 Asia/Dhaka"
+        eb.run_pass([_row(last_bar_dhaka=bar, last_signal_dhaka=bar)])
     st = eb.status()
     assert st["open"] == 3 and st["fills"] == 3 and st["stage2"] is False
 
@@ -86,7 +87,8 @@ def test_exit_tp_sl_duration(journals):
     out = eb.run_pass([_row(last=1.1025, conf=0.40)], now=t0 + timedelta(minutes=30))
     assert [c["exit_reason"] for c in out["closes"]] == ["tp"]
     assert out["closes"][0]["pnl_r"] == pytest.approx(1.25)
-    eb.run_pass([_row()], now=t0 + timedelta(hours=1))
+    nb = "2026-10-09 18:00:00 Asia/Dhaka"
+    eb.run_pass([_row(last_bar_dhaka=nb, last_signal_dhaka=nb)], now=t0 + timedelta(hours=1))
     out = eb.run_pass([_row(conf=0.40)], now=t0 + timedelta(hours=10))
     assert [c["exit_reason"] for c in out["closes"]] == ["duration"]
 

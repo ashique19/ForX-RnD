@@ -23,6 +23,7 @@ class FakeMT5:
         self.sent = []
         self.positions = {}
         self.n = 1000
+        self.modified = []
 
     def account_info(self):
         return NS(trade_mode=self.mode, server="DEMO-SRV")
@@ -39,6 +40,9 @@ class FakeMT5:
     def order_send(self, req):
         self.sent.append(req)
         self.n += 1
+        if req.get("action") == 6:  # TRADE_ACTION_SLTP
+            self.modified.append(req)
+            return NS(retcode=10009, order=0, deal=0, price=0.0, comment="done")
         if "position" in req:
             self.positions.pop(req["position"], None)
             return NS(retcode=10009, order=self.n, deal=self.n + 5000, price=req["price"] - 0.00001, comment="done")
@@ -86,7 +90,14 @@ def test_open_logs_ticket_fill_slippage_spread(journal):
     out = mx.mirror(["exp_abc"], mt5=fake)
     assert len(out["opened"]) == 1 and not out["errors"]
     req = fake.sent[0]
-    assert req["volume"] == 0.01 and req["sl"] == 1.098 and req["tp"] == 1.104 and req["type"] == fake.ORDER_TYPE_BUY
+    # paper distances (-0.00206 / +0.00394) anchored on the ask we trade at
+    assert req["volume"] == 0.01 and req["sl"] == 1.09806 and req["tp"] == 1.10406 and req["type"] == fake.ORDER_TYPE_BUY
+    mod = fake.modified[0]  # then moved onto the actual fill (1.10014)
+    assert mod["sl"] == 1.09808 and mod["tp"] == 1.10408 and mod["position"] == 1001
+    reb = [e for e in eb.load() if e["event"] == "rebase"][0]
+    assert reb["entry_mid"] == pytest.approx(1.10014) and reb["sl"] == 1.09808 and reb["tp"] == 1.10408
+    pos = eb.open_positions(eb.load())["exp_abc"]
+    assert pos["entry_mid"] == pytest.approx(1.10014) and pos["sl"] == 1.09808
     row = [e for e in eb.load() if e["event"] == "mt5_open"][0]
     assert row["ticket"] == 1001 and row["fill_price"] == pytest.approx(1.10014)
     assert row["slippage_pips"] == pytest.approx(0.2) and row["spread_pips"] == pytest.approx(1.2)
@@ -97,7 +108,7 @@ def test_no_double_open(journal):
     fake = FakeMT5()
     mx.mirror(["exp_abc"], mt5=fake)
     mx.mirror(["exp_abc"], mt5=fake)
-    assert len(fake.sent) == 1
+    assert len([r for r in fake.sent if r.get("action") != 6]) == 1
 
 
 def test_close_when_paper_closes(journal):
@@ -119,7 +130,7 @@ def test_close_already_closed_at_broker(journal):
     fake.positions.clear()
     eb.append({"event": "close", "pair": "EURUSD", "position_id": "exp_abc"})
     out = mx.mirror([], mt5=fake)
-    assert out["closed"][0]["already_closed"] is True and len(fake.sent) == 1
+    assert out["closed"][0]["already_closed"] is True and len([r for r in fake.sent if r.get("action") != 6]) == 1
 
 
 def test_disabled_by_env(journal, monkeypatch):

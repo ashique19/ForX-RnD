@@ -118,10 +118,54 @@ def open_positions(events: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]
         if not pid:
             continue
         if e.get("event") == "open":
-            opened[pid] = e
+            opened[pid] = dict(e)
+        elif e.get("event") == "rebase" and pid in opened:
+            # Entry/SL/TP moved onto the real MT5 fill (same distances).
+            for k in ("entry_mid", "sl", "tp"):
+                if _f(e.get(k)) is not None:
+                    opened[pid][k] = _f(e.get(k))
+            opened[pid]["entry_basis"] = e.get("basis") or "rebase"
         elif e.get("event") == "close":
             opened.pop(pid, None)
     return opened
+
+
+def closed_r(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """THE single definition of closed exploration R (used by status / monitor).
+
+    One entry per closed position_id (first close row wins). The latest
+    annotation for that position overrides: ``exclude_from_explore`` drops the
+    trade; a numeric ``corrected_pnl_r`` replaces the close row's pnl_r.
+    """
+    ev = list(events)
+    ann: dict[str, dict[str, Any]] = {}
+    for a in ev:
+        if a.get("event") == "annotation":
+            ann[str(a.get("ref_position_id"))] = a
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for c in ev:
+        if c.get("event") != "close":
+            continue
+        pid = str(c.get("position_id"))
+        if pid in seen:
+            continue
+        seen.add(pid)
+        a = ann.get(pid)
+        if a and a.get("exclude_from_explore"):
+            continue
+        corrected = a is not None and isinstance(a.get("corrected_pnl_r"), (int, float))
+        r = a.get("corrected_pnl_r") if corrected else c.get("pnl_r")  # type: ignore[union-attr]
+        if isinstance(r, (int, float)):
+            out.append({"position_id": pid, "pair": c.get("pair"), "pnl_r": float(r), "annotated": corrected})
+    return out
+
+
+def sum_r(events: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
+    rows = closed_r(load() if events is None else events)
+    return {"sum_r": round(sum(r["pnl_r"] for r in rows), 4) if rows else None, "closed_counted": len(rows),
+            "annotated": sum(1 for r in rows if r["annotated"]),
+            "definition": "sum of pnl_r over closed explore positions; annotation corrected_pnl_r overrides, exclude_from_explore drops"}
 
 
 def status(events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -130,14 +174,7 @@ def status(events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     closes = [e for e in ev if e.get("event") == "close"]
     decisions = [e for e in ev if e.get("event") == "decision"]
     ann = {str(a.get("ref_position_id")): a for a in ev if a.get("event") == "annotation"}
-    rs = []
-    for c in closes:
-        a = ann.get(str(c.get("position_id")))
-        if a and a.get("exclude_from_explore"):
-            continue
-        r = a.get("corrected_pnl_r") if a and isinstance(a.get("corrected_pnl_r"), (int, float)) else c.get("pnl_r")
-        if isinstance(r, (int, float)):
-            rs.append(r)
+    sr = sum_r(ev)
     return {
         "book": "explore",
         "stage2": False,
@@ -146,7 +183,8 @@ def status(events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "closed": len(closes),
         "decisions": len(decisions),
         "explore_only_fills": sum(1 for o in opens if not o.get("would_main_take")),
-        "sum_r": round(sum(rs), 4) if rs else None,
+        "sum_r": sr["sum_r"],
+        "sum_r_closed_counted": sr["closed_counted"],
         "annotations": len(ann),
         "min_conf": EXPLORE_CONFIG["min_conf"],
         "note": "Exploration paper book; never Stage-2, never trains, never touches main gates.",
@@ -245,7 +283,8 @@ def board_barriers(pair: str, side: str) -> dict[str, Any] | None:
     if not lv:
         return None
     key = "long" if side == "BUY" else "short"
-    return {"sl": float(lv[f"{key}_sl"]), "tp": float(lv[f"{key}_tp"]), "horizon_bars": int(lv["horizon"])}
+    return {"sl": float(lv[f"{key}_sl"]), "tp": float(lv[f"{key}_tp"]), "horizon_bars": int(lv["horizon"]),
+            "entry": float(lv["entry"])}
 
 
 def _resolve_sl_tp(row: dict[str, Any], side: str, barrier_fn) -> tuple[float | None, float | None, int | None, str]:
@@ -255,7 +294,13 @@ def _resolve_sl_tp(row: dict[str, Any], side: str, barrier_fn) -> tuple[float | 
     lv = barrier_fn(str(row.get("pair") or "").upper(), side) if barrier_fn else None
     if not lv:
         return None, None, None, "none"
-    return _f(lv.get("sl")), _f(lv.get("tp")), lv.get("horizon_bars"), "board_atr_barrier_recomputed"
+    sl, tp = _f(lv.get("sl")), _f(lv.get("tp"))
+    ref, last = _f(lv.get("entry")), _f(row.get("last"))
+    if sl is not None and tp is not None and ref is not None and last is not None:
+        # Barrier is ATR distances off the cached close; keep the distances but
+        # anchor them on the actual entry price (else R is lopsided).
+        return last + (sl - ref), last + (tp - ref), lv.get("horizon_bars"), "board_atr_barrier_rebased_to_entry"
+    return sl, tp, lv.get("horizon_bars"), "board_atr_barrier_recomputed"
 
 
 def _cost_fields(pair: str) -> dict[str, Any]:
@@ -405,6 +450,10 @@ def run_pass(
     per_pair: dict[str, int] = {}
     for pos in open_now.values():
         per_pair[str(pos.get("pair"))] = per_pair.get(str(pos.get("pair")), 0) + 1
+    entered = {
+        (str(e.get("pair")).upper(), str(e.get("side")).upper(), str(e.get("signal_bar_dhaka")))
+        for e in events if e.get("event") == "open" and e.get("signal_bar_dhaka")
+    }
     opens = 0
     for pair, row in by_pair.items():
         ok, reason, side = explore_eligible(row, c)
@@ -419,7 +468,10 @@ def run_pass(
             if sl is None or tp is None:
                 ok, reason = False, "no_sl_tp"
         if ok:
-            if per_pair.get(pair, 0) >= int(c["max_positions_per_pair"]):
+            bar_key = (pair, str(side).upper(), str(row.get("last_signal_dhaka")))
+            if row.get("last_signal_dhaka") and bar_key in entered:
+                reason = "signal_bar_already_entered"
+            elif per_pair.get(pair, 0) >= int(c["max_positions_per_pair"]):
                 reason = "max_positions_per_pair"
             elif opens >= int(c["max_opens_per_pass"]):
                 reason = "max_opens_per_pass"
@@ -446,9 +498,12 @@ def run_pass(
             "propensity": 1.0, "position_id": pid, "fill_id": f"expfill_{uuid.uuid4().hex[:12]}",
             "entry_mid": _f(row.get("last")), "sl": sl, "tp": tp, "barrier_source": barrier_src,
             "horizon_bars": int(horizon or row.get("horizon_bars") or c["default_horizon_bars"]),
-            "entry_basis": "board_last_mid", **_cost_fields(pair),
+            "entry_basis": "board_last_mid", "signal_bar_dhaka": row.get("last_signal_dhaka"),
+            **_cost_fields(pair),
         }
         append(open_row)
+        if row.get("last_signal_dhaka"):
+            entered.add((pair, str(side).upper(), str(row.get("last_signal_dhaka"))))
         per_pair[pair] = per_pair.get(pair, 0) + 1
         opens += 1
         out["fills_added"] += 1
@@ -463,6 +518,8 @@ __all__ = [
     "explore_journal_path",
     "load",
     "open_positions",
+    "closed_r",
+    "sum_r",
     "run_pass",
     "status",
     "would_main_take",

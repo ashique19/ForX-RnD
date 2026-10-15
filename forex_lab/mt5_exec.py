@@ -69,12 +69,16 @@ def open_order(mt5, symbol: str, open_row: dict[str, Any]) -> dict[str, Any]:
         return {**base, "ok": False, "error": f"no symbol/tick ({mt5.last_error()})"}
     digits = int(getattr(info, "digits", 5))
     req_price = float(tick.ask if side == "BUY" else tick.bid)
+    # Same SL/TP distances as the paper row, anchored on the price we trade at.
+    entry_paper = float(open_row.get("entry_mid") or req_price)
+    sl_d = float(open_row["sl"]) - entry_paper
+    tp_d = float(open_row["tp"]) - entry_paper
     spread = float(tick.ask) - float(tick.bid)
     comment = (COMMENT_PREFIX + pid[-12:])[:31]
     request = {
         "action": mt5.TRADE_ACTION_DEAL, "symbol": symbol, "volume": LOT,
         "type": mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL,
-        "price": req_price, "sl": round(float(open_row["sl"]), digits), "tp": round(float(open_row["tp"]), digits),
+        "price": req_price, "sl": round(req_price + sl_d, digits), "tp": round(req_price + tp_d, digits),
         "deviation": DEVIATION_POINTS, "magic": MAGIC, "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC, "type_filling": _filling(mt5, info),
     }
@@ -89,7 +93,16 @@ def open_order(mt5, symbol: str, open_row: dict[str, Any]) -> dict[str, Any]:
     fill = float(res.price or req_price)
     direction = 1.0 if side == "BUY" else -1.0
     pos = _find_position(mt5, symbol, comment, int(res.order))
-    return {**row, "ok": True, "retcode": int(res.retcode), "order_ticket": int(res.order), "deal_ticket": int(res.deal),
+    sl_new, tp_new = round(fill + sl_d, digits), round(fill + tp_d, digits)
+    sltp_ok = None
+    if pos is not None and (sl_new != request["sl"] or tp_new != request["tp"]):
+        mod = {"action": getattr(mt5, "TRADE_ACTION_SLTP", 6), "symbol": symbol, "position": int(pos.ticket),
+               "sl": sl_new, "tp": tp_new, "magic": MAGIC}
+        assert_demo(mt5)
+        mres = mt5.order_send(mod)
+        sltp_ok = mres is not None and int(mres.retcode) == int(mt5.TRADE_RETCODE_DONE)
+    return {**row, "ok": True, "sl": sl_new, "tp": tp_new, "sl_sent": request["sl"], "tp_sent": request["tp"],
+            "sltp_modified": sltp_ok, "retcode": int(res.retcode), "order_ticket": int(res.order), "deal_ticket": int(res.deal),
             "ticket": int(pos.ticket) if pos is not None else int(res.order), "fill_price": fill,
             "slippage_pips": round((fill - req_price) * direction / _pip(pair), 3),
             "entry_mid_paper": open_row.get("entry_mid")}
@@ -173,6 +186,11 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
                 except Exception as exc:  # noqa: BLE001
                     row = {"event": "mt5_open", "position_id": pid, "pair": o.get("pair"), "ok": False, "error": str(exc)}
             eb.append({**row, **eb._stamps(now)})
+            if row.get("ok") and row.get("fill_price"):
+                # Paper follows the real fill so paper and demo carry the same R.
+                eb.append({"event": "rebase", **eb._stamps(now), "position_id": pid, "pair": o.get("pair"),
+                           "basis": "mt5_fill", "entry_mid": row["fill_price"], "sl": row["sl"], "tp": row["tp"],
+                           "prev_entry_mid": o.get("entry_mid"), "prev_sl": o.get("sl"), "prev_tp": o.get("tp")})
             (out["opened"] if row.get("ok") else out["errors"]).append(row)
     finally:
         if owns:
