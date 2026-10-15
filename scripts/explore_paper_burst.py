@@ -50,6 +50,10 @@ def main() -> int:
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
     ap.add_argument("--no-mt5-exec", action="store_true", help="skip MT5 DEMO order mirroring")
     args = ap.parse_args()
+    halt = ROOT / "data" / "paper_explore" / "HALT"
+    if halt.exists():
+        print(json.dumps({"ok": True, "halted": True, "reason": f"HALT file present: {halt}"}, indent=2))
+        return 0
     now_dhaka = datetime.now(DHAKA)
     main_j = journal_path()
     result = {

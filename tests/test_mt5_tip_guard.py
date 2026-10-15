@@ -1,4 +1,4 @@
-﻿"""MT5 tip source, volume rescale, tip-volume guard, and burst staleness (2026-10-14 fix)."""
+"""MT5 tip source, volume rescale, tip-volume guard, and burst staleness (2026-10-14 fix)."""
 from __future__ import annotations
 
 import importlib.util
@@ -54,10 +54,11 @@ def test_tip_guard_median_fallback_without_refill():
 def test_try_mt5_refresh_merges_rescales_and_writes(tmp_path, monkeypatch):
     cfg = {"interval": "1h", "paths": {"data_dir": str(tmp_path)}}
     path = D.data_path("EURUSD", cfg, "1h")
-    cache = _bars("2026-09-01", 300, 400.0)
+    full = _bars("2026-09-01", 396, 400.0)  # one consistent price path (closed-bar guard)
+    cache = full.iloc[:300].copy()
     cache.iloc[-3:, cache.columns.get_loc("Volume")] = 0.0  # yfinance_1m tip with Volume=0
     cache.index.name = "Datetime"; cache.to_csv(path)
-    mt5 = _bars("2026-09-05", 300, 1000.0)  # overlaps and extends past the cache
+    mt5 = full.iloc[96:].copy(); mt5["Volume"] = 1000.0  # overlaps and extends past the cache
     df, src = D.try_mt5_refresh("EURUSD", cfg, interval="1h", fetch=lambda p, n: mt5)
     assert src == D.SOURCE_MT5
     assert df.index.max() == mt5.index.max()

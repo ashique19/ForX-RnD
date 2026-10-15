@@ -652,8 +652,65 @@ def mt5_volume_ratio(existing: pd.DataFrame | None, mt5_bars: pd.DataFrame) -> t
     return float((j.c / j.m).median()), int(len(j))
 
 
+class MT5GuardError(RuntimeError):
+    """MT5 data failed a write guard; the cache must not be written (no fallback merge either)."""
+
+
+# Closed bars whose OHLC moves by more than this fraction of price on an MT5 merge are treated as
+# misaligned (wrong clock / tip stamped onto an old bar) and the write is refused.
+MT5_CLOSED_BAR_MAX_REL_DIFF = 0.003
+
+
+def expected_mt5_server_offset_hours(now_utc: pd.Timestamp | None = None) -> int:
+    """OANDA MT5 server clock = New York time + 7h (UTC+3 during US DST, UTC+2 otherwise)."""
+    from zoneinfo import ZoneInfo
+
+    now = pd.Timestamp.now(tz="UTC") if now_utc is None else pd.Timestamp(now_utc)
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    ny = now.tz_convert(ZoneInfo("America/New_York"))
+    return int(round(ny.utcoffset().total_seconds() / 3600.0)) + 7
+
+
+def validate_mt5_bars(
+    existing: pd.DataFrame | None,
+    bars: pd.DataFrame,
+    now_utc: pd.Timestamp | None = None,
+) -> None:
+    """Raise MT5GuardError when UTC-indexed MT5 bars are unsafe to merge into the cache."""
+    now = pd.Timestamp.now(tz="UTC").tz_localize(None) if now_utc is None else pd.Timestamp(now_utc)
+    if now.tzinfo is not None:
+        now = now.tz_convert("UTC").tz_localize(None)
+    if bars is None or bars.empty:
+        raise MT5GuardError("mt5 returned no bars")
+    idx = pd.DatetimeIndex(bars.index)
+    if idx.has_duplicates:
+        raise MT5GuardError("mt5 bars have duplicate timestamps")
+    cur_hour = now.floor("h")
+    if (idx > cur_hour).any():
+        raise MT5GuardError(f"mt5 bar timestamp in the future: {idx.max()} > {cur_hour} UTC (server->UTC conversion wrong?)")
+    if existing is None or existing.empty:
+        return
+    closed = [t for t in idx if t < cur_hour and t in existing.index]
+    if not closed:
+        return
+    a = existing.loc[closed, ["Open", "High", "Low", "Close"]].astype(float)
+    b = bars.loc[closed, ["Open", "High", "Low", "Close"]].astype(float)
+    rel = ((a - b).abs().max(axis=1) / a["Close"].abs().clip(lower=1e-12))
+    bad = rel[rel > MT5_CLOSED_BAR_MAX_REL_DIFF]
+    if len(bad):
+        raise MT5GuardError(
+            f"refusing to overwrite {len(bad)} closed bar(s) with diverging mt5 OHLC "
+            f"(first {bad.index.min()}, max rel diff {float(bad.max()):.4f})"
+        )
+
+
 def fetch_mt5_1h_utc(pair: str, count: int) -> pd.DataFrame:
-    """MT5 1h bars for ``pair`` indexed in naive UTC, Volume = tick_volume. Raises on failure."""
+    """MT5 1h bars for ``pair`` indexed in naive UTC, Volume = tick_volume. Raises on failure.
+
+    Server time is always converted to UTC with the expected OANDA offset; a fresh tick that
+    disagrees with that offset raises instead of silently writing server-time labels.
+    """
     from forex_lab import mt5_feed as F
 
     F.connect(require_demo=True)
@@ -662,7 +719,10 @@ def fetch_mt5_1h_utc(pair: str, count: int) -> pd.DataFrame:
         if not sym:
             raise RuntimeError(f"no MT5 symbol for {pair}")
         bars = F.bars_1h(sym, count)
-        off = F.server_offset_hours(sym)
+        off = expected_mt5_server_offset_hours()
+        tick_off = F.server_offset_hours(sym)
+        if tick_off not in (0, off):  # 0 = no/stale tick; anything else must agree
+            raise MT5GuardError(f"mt5 server offset mismatch: tick says UTC{tick_off:+d}, expected UTC{off:+d}")
     finally:
         F.shutdown()
     bars = bars[["Open", "High", "Low", "Close", "Volume"]].astype(float)
@@ -714,6 +774,7 @@ def try_mt5_refresh(
     *,
     incremental: bool = False,
     fetch=None,
+    now_utc: pd.Timestamp | None = None,
 ) -> tuple[pd.DataFrame | None, str]:
     """1h tip bars from the MT5 demo feed (read-only), merged into the cache. 1h only."""
     _ = period
@@ -736,10 +797,16 @@ def try_mt5_refresh(
     count = int(board.get("mt5_incremental_bars") or 72) if incremental else int(board.get("mt5_bootstrap_bars") or 2000)
     try:
         mt5_bars = (fetch or fetch_mt5_1h_utc)(pair, count)
+    except MT5GuardError as exc:
+        return None, f"mt5 guard: {exc}"
     except Exception as exc:  # noqa: BLE001 - fall back to the existing chain
         return None, f"mt5 unavailable ({exc})"
     if mt5_bars is None or mt5_bars.empty:
         return None, "mt5 empty"
+    try:
+        validate_mt5_bars(existing, mt5_bars, now_utc=now_utc)
+    except MT5GuardError as exc:
+        return None, f"mt5 guard: {exc}"
     ratio, n_overlap = mt5_volume_ratio(existing, mt5_bars)
     scaled = mt5_bars.copy()
     scaled["Volume"] = (pd.to_numeric(scaled["Volume"], errors="coerce") * ratio).round()
@@ -748,6 +815,9 @@ def try_mt5_refresh(
     df, flags = guard_tip_volume(df, refill=scaled)
     if len(df) < MIN_CACHE_BARS:
         return None, f"mt5 too few bars: {len(df)}"
+    _now = pd.Timestamp.now(tz="UTC").tz_localize(None) if now_utc is None else pd.Timestamp(now_utc)
+    if pd.DatetimeIndex(df.index).has_duplicates or (pd.DatetimeIndex(df.index) > _now.floor("h")).any():
+        return None, "mt5 guard: merged frame has duplicate or future bars"
     df.to_csv(out_path)
     write_cache_source(pair, cfg, iv, SOURCE_MT5)
     try:
@@ -774,6 +844,9 @@ def try_live_refresh(
     if fetched is not None:
         return fetched, tag
     mt5_reason = str(tag or "mt5 failed").strip()
+    if mt5_reason.startswith("mt5 guard:"):
+        # Bad MT5 data (future bars / clock / closed-bar overwrite): write nothing, no fallback merge.
+        return None, mt5_reason
     fetched, tag = try_dukascopy_refresh(
         pair, cfg, period=period, interval=interval, incremental=incremental
     )
