@@ -99,7 +99,7 @@ and a separate pre-registered replay; this log entry does not authorize one.
   (0.491->0.440), both below the 0.45 explore and 0.60 main floors -> no trade impact.
   Confidence moved on others (e.g. USDCHF 0.649->0.529, USDJPY 0.706->0.601, NZDUSD
   0.581->0.655, all HOLD). USDCAD's forming-bar 14:00 signal row is gone.
-- **Tests:** new `tests/test_partial_bar_heal.py` (10). Suite: 683 passed; the same 13 failures
+- **Tests:** new `tests/test_partial_bar_heal.py` (9). Suite: 683 passed; the same 13 failures
   exist at HEAD without this change (api_decision/board/daily_cache/learnings/workspace,
   pre-existing; untracked stale `tests/test_history_decode_fix.py` ignored).
 - **Open:** earlier explore/main entries may have been scored on partial tip bars before this
