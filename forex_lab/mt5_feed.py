@@ -107,6 +107,29 @@ def bars_1h(symbol: str, count: int = 500) -> pd.DataFrame:
     return df.rename(columns={"time": "Datetime_server", "open": "Open", "high": "High", "low": "Low", "close": "Close", "tick_volume": "Volume"}).set_index("Datetime_server")
 
 
+def bars_1h_synced(symbol: str, count: int = 500, retries: int = 6, wait_s: float = 1.0) -> tuple[pd.DataFrame, int, bool]:
+    """``bars_1h`` that waits for the terminal's H1 history to catch up with the live tick.
+
+    Right after a symbol is (re)selected, copy_rates can return the terminal's stale local
+    history: the newest bar lags the hour of the last tick and the bar before it is partial
+    (seen 2026-10-19: GBPUSD/EURGBP 13:00 bar returned half-filled at 14:16 and 14:42 UTC).
+    Re-request until the newest bar reaches the tick's hour. Returns (bars, retries_used, stale).
+    """
+    import time
+    mt5 = _mt5(); df = pd.DataFrame()
+    for attempt in range(max(0, int(retries)) + 1):
+        df = bars_1h(symbol, count)
+        t = mt5.symbol_info_tick(symbol)
+        if t is None or not getattr(t, "time", 0) or df.empty:
+            return df, attempt, False
+        tick_hour = pd.Timestamp(int(t.time), unit="s").floor("h")  # both in server time
+        if pd.Timestamp(df.index.max()) >= tick_hour:
+            return df, attempt, False
+        if attempt < retries:
+            time.sleep(wait_s)
+    return df, int(retries), True
+
+
 def server_offset_hours(symbol: str) -> int:
     """Broker server clock minus UTC, in whole hours (OANDA demo is UTC+3 in summer). Tick/bar times are server time."""
     mt5 = _mt5(); t = mt5.symbol_info_tick(symbol)

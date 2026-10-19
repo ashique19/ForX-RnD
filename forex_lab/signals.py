@@ -20,6 +20,13 @@ def generate_signals(
     interval: str | None = None,
 ) -> pd.DataFrame:
     iv = str(interval or cfg.get("interval") or "1h")
+    if iv == "1h":
+        # Defensive (2026-10-19): never score a bar whose hour has not closed.
+        from forex_lab.data import drop_forming_bars
+
+        df, n_forming = drop_forming_bars(df, "1h")
+        if n_forming:
+            safe_print(f"[signals] {pair.upper()} {iv}: ignored {n_forming} forming bar(s) (hour not closed)")
     # Score with the model trained for this bar size — never reuse another TF.
     model, feature_cols, mtype = load_model(pair, cfg, interval=iv)
     feats = build_features(df, cfg, pair=pair)

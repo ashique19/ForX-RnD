@@ -124,6 +124,8 @@ def fetch_ohlcv(
         if raw is None or raw.empty:
             raise RuntimeError("empty yfinance response")
         df = _normalize_ohlcv(raw)
+        if str(interval) == "1h":  # closed bars only (partial-bar fix 2026-10-19)
+            df, _ = drop_forming_bars(df, "1h")
         if len(df) < 100:
             raise RuntimeError(f"too few bars: {len(df)}")
         # Save before any caller prints — a console encoding error must not
@@ -199,6 +201,8 @@ def try_yfinance_refresh(
         if existing is not None and not existing.empty:
             df = pd.concat([existing, df])
             df = df[~df.index.duplicated(keep="last")].sort_index()
+        if str(interval) == "1h":  # closed bars only (partial-bar fix 2026-10-19)
+            df, _ = drop_forming_bars(df, "1h")
         if len(df) < min_bars:
             return None, f"too few bars: {len(df)}"
         df.to_csv(out_path)
@@ -563,6 +567,10 @@ def try_dukascopy_refresh(
     # Prefer denser OHLC + real volume when present (or joblib has vol_z).
     # Flatten only when the merged frame is all-zero volume (yfinance FX path).
     df = _align_live_volume_to_model(df, pair, cfg, iv, existing=existing)
+    if iv == "1h":  # closed bars only (partial-bar fix 2026-10-19)
+        df, _ = drop_forming_bars(df, "1h")
+        if df is None or df.empty:
+            return None, "dukascopy no closed bars"
     df.to_csv(out_path)
     source = SOURCE_DUKASCOPY if used_duka else SOURCE_YFINANCE_M1
     write_cache_source(pair, cfg, iv, source)
@@ -637,6 +645,86 @@ def _yfinance_m1_aggregate(
 MT5_RATIO_WINDOW = 500
 MT5_MIN_OVERLAP = 50
 TIP_GUARD_BARS = 3
+# Partial-bar heal (2026-10-19): every MT5 refresh re-fetches and overwrites the last
+# ``HEAL_CLOSED_BARS`` closed 1h bars, and no writer keeps a bar whose hour has not closed
+# (open + 1h > now). A bar saved mid-hour (e.g. one tick at hh:01) is replaced by the full
+# MT5 bar on the next refresh instead of surviving forever.
+HEAL_CLOSED_BARS = 3
+
+
+def _now_naive_utc(now_utc: pd.Timestamp | None = None) -> pd.Timestamp:
+    now = pd.Timestamp.now(tz="UTC") if now_utc is None else pd.Timestamp(now_utc)
+    if now.tzinfo is not None:
+        now = now.tz_convert("UTC").tz_localize(None)
+    return now
+
+
+def _interval_delta(interval: str | None) -> pd.Timedelta:
+    iv = str(interval or "1h").strip().lower()
+    if iv.endswith("m") and not iv.endswith("mo"):
+        return pd.Timedelta(minutes=int(iv[:-1] or 1))
+    if iv.endswith("h"):
+        return pd.Timedelta(hours=int(iv[:-1] or 1))
+    if iv.endswith("d"):
+        return pd.Timedelta(days=int(iv[:-1] or 1))
+    return pd.Timedelta(hours=1)
+
+
+def drop_forming_bars(
+    df: pd.DataFrame | None,
+    interval: str | None = "1h",
+    now_utc: pd.Timestamp | None = None,
+) -> tuple[pd.DataFrame | None, int]:
+    """Keep only CLOSED bars: bar open + interval <= now (UTC). Returns (frame, n_dropped).
+
+    Index is naive UTC (cache convention); a tz-aware index is compared in UTC.
+    """
+    if df is None or getattr(df, "empty", True) or not isinstance(df.index, pd.DatetimeIndex):
+        return df, 0
+    now = _now_naive_utc(now_utc)
+    idx = df.index
+    if idx.tz is not None:
+        idx = idx.tz_convert("UTC").tz_localize(None)
+    keep = (idx + _interval_delta(interval)) <= now
+    n = int((~keep).sum())
+    if n == 0:
+        return df, 0
+    return df.loc[keep].copy(), n
+
+
+def heal_window(now_utc: pd.Timestamp | None = None, n: int = HEAL_CLOSED_BARS) -> list[pd.Timestamp]:
+    """Open times (naive UTC) of the last ``n`` closed 1h bars, oldest first."""
+    cur = _now_naive_utc(now_utc).floor("h")
+    return [cur - pd.Timedelta(hours=k) for k in range(max(0, int(n)), 0, -1)]
+
+
+def heal_report(
+    before: pd.DataFrame | None,
+    after: pd.DataFrame | None,
+    now_utc: pd.Timestamp | None = None,
+    n: int = HEAL_CLOSED_BARS,
+) -> list[dict[str, Any]]:
+    """Which heal-window bars the refresh changed (OHLC moved or volume moved > 5%) or filled."""
+    out: list[dict[str, Any]] = []
+    if after is None or after.empty:
+        return out
+    for ts in heal_window(now_utc, n):
+        if ts not in after.index:
+            continue
+        a = after.loc[ts]
+        if before is None or before.empty or ts not in before.index:
+            out.append({"ts": str(ts), "action": "filled", "after_volume": float(a["Volume"])})
+            continue
+        b = before.loc[ts]
+        px = max(abs(float(b["Close"])), 1e-12)
+        moved = max(abs(float(a[c]) - float(b[c])) for c in ("Open", "High", "Low", "Close")) / px > 1e-7
+        bv, av = float(b["Volume"]), float(a["Volume"])
+        vol_moved = abs(av - bv) > 0.05 * max(av, bv, 1.0)
+        if moved or vol_moved:
+            out.append({"ts": str(ts), "action": "healed",
+                        "before": {c: float(b[c]) for c in REQUIRED_COLS},
+                        "after": {c: float(a[c]) for c in REQUIRED_COLS}})
+    return out
 
 
 def mt5_volume_ratio(existing: pd.DataFrame | None, mt5_bars: pd.DataFrame) -> tuple[float, int]:
@@ -676,8 +764,15 @@ def validate_mt5_bars(
     existing: pd.DataFrame | None,
     bars: pd.DataFrame,
     now_utc: pd.Timestamp | None = None,
+    heal_bars: int = HEAL_CLOSED_BARS,
 ) -> None:
-    """Raise MT5GuardError when UTC-indexed MT5 bars are unsafe to merge into the cache."""
+    """Raise MT5GuardError when UTC-indexed MT5 bars are unsafe to merge into the cache.
+
+    Inside the last ``heal_bars`` closed hours a cached bar may legitimately differ from MT5
+    when it was saved before its hour closed (partial bar). That overwrite is allowed only
+    when the cached bar's High/Low lie inside the MT5 bar's range (a partial bar is always a
+    sub-range of the full bar from the same feed); any other divergence still refuses.
+    """
     now = pd.Timestamp.now(tz="UTC").tz_localize(None) if now_utc is None else pd.Timestamp(now_utc)
     if now.tzinfo is not None:
         now = now.tz_convert("UTC").tz_localize(None)
@@ -699,6 +794,11 @@ def validate_mt5_bars(
     rel = ((a - b).abs().max(axis=1) / a["Close"].abs().clip(lower=1e-12))
     bad = rel[rel > MT5_CLOSED_BAR_MAX_REL_DIFF]
     if len(bad):
+        window = set(heal_window(now, heal_bars))
+        tol = a["Close"].abs() * 2e-5
+        subset = (a["High"] <= b["High"] + tol) & (a["Low"] >= b["Low"] - tol)
+        bad = bad[[not (t in window and bool(subset.get(t, False))) for t in bad.index]]
+    if len(bad):
         raise MT5GuardError(
             f"refusing to overwrite {len(bad)} closed bar(s) with diverging mt5 OHLC "
             f"(first {bad.index.min()}, max rel diff {float(bad.max()):.4f})"
@@ -718,7 +818,9 @@ def fetch_mt5_1h_utc(pair: str, count: int) -> pd.DataFrame:
         sym = F.resolve_symbols([pair]).get(pair.upper())
         if not sym:
             raise RuntimeError(f"no MT5 symbol for {pair}")
-        bars = F.bars_1h(sym, count)
+        bars, n_retry, stale = F.bars_1h_synced(sym, count)
+        if stale:  # terminal H1 history lags the live tick: newest bars may be partial; write nothing
+            raise RuntimeError(f"mt5 H1 history not synced for {sym} after {n_retry} retries")
         off = expected_mt5_server_offset_hours()
         tick_off = F.server_offset_hours(sym)
         if tick_off not in (0, off):  # 0 = no/stale tick; anything else must agree
@@ -807,24 +909,38 @@ def try_mt5_refresh(
         validate_mt5_bars(existing, mt5_bars, now_utc=now_utc)
     except MT5GuardError as exc:
         return None, f"mt5 guard: {exc}"
+    # Closed bars only: drop MT5's forming bar and any cached bar whose hour has not closed.
+    mt5_bars, n_forming_mt5 = drop_forming_bars(mt5_bars, "1h", now_utc)
+    n_forming_cache = 0
+    if existing is not None and not existing.empty:
+        existing, n_forming_cache = drop_forming_bars(existing, "1h", now_utc)
+    if mt5_bars is None or mt5_bars.empty:
+        return None, "mt5 empty (no closed bars)"
     ratio, n_overlap = mt5_volume_ratio(existing, mt5_bars)
     scaled = mt5_bars.copy()
     scaled["Volume"] = (pd.to_numeric(scaled["Volume"], errors="coerce") * ratio).round()
     parts = [p for p in (existing, scaled) if p is not None and not p.empty]
     df = _merge_live_ohlcv_parts(parts)
     df, flags = guard_tip_volume(df, refill=scaled)
+    healed = heal_report(existing, df, now_utc=now_utc)
     if len(df) < MIN_CACHE_BARS:
         return None, f"mt5 too few bars: {len(df)}"
-    _now = pd.Timestamp.now(tz="UTC").tz_localize(None) if now_utc is None else pd.Timestamp(now_utc)
-    if pd.DatetimeIndex(df.index).has_duplicates or (pd.DatetimeIndex(df.index) > _now.floor("h")).any():
-        return None, "mt5 guard: merged frame has duplicate or future bars"
+    _now = _now_naive_utc(now_utc)
+    _idx = pd.DatetimeIndex(df.index)
+    if _idx.has_duplicates or ((_idx + pd.Timedelta(hours=1)) > _now).any():
+        return None, "mt5 guard: merged frame has duplicate, future or forming bars"
+    if healed or n_forming_cache:
+        safe_print(f"[mt5_heal] {pair.upper()}: forming dropped cache={n_forming_cache} mt5={n_forming_mt5}; "
+                   f"heal-window changes={[(h['ts'], h['action']) for h in healed]}")
     df.to_csv(out_path)
     write_cache_source(pair, cfg, iv, SOURCE_MT5)
     try:
         import json as _json
         meta = {"pair": pair.upper(), "source": SOURCE_MT5, "volume_ratio_cache_over_mt5": ratio,
                 "ratio_overlap_bars": n_overlap, "mt5_bars": int(len(mt5_bars)),
-                "last_bar_utc": str(df.index.max()), "tip_flags": flags}
+                "last_bar_utc": str(df.index.max()), "tip_flags": flags,
+                "heal_window_bars": HEAL_CLOSED_BARS, "healed_bars": healed,
+                "forming_dropped": {"cache": n_forming_cache, "mt5": n_forming_mt5}}
         out_path.with_suffix(".mt5.json").write_text(_json.dumps(meta, indent=1), encoding="utf-8")
     except Exception:
         pass
