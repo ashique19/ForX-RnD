@@ -264,3 +264,88 @@ and a separate pre-registered replay; this log entry does not authorize one.
 - Tests: `tests/test_mt5_volume_anchor.py` (10), `tests/test_mt5_exec_errors.py` (6) and
   `tests/test_signal_bar_audit_views.py` (4). Full suite: 710 passed, plus the same 13 pre-existing
   failures (unchanged).
+## 2026-10-20 04:05 Asia/Dhaka: stop / payoff analysis (read-only)
+
+**Question:** do the losses come from stops not kept, stops too wide, time exits, or payoff?
+Script: `scripts/stop_payoff_analysis.py` (read-only; reads the journals and MT5 deal history only).
+Bars: `data/<PAIR>_1h.csv`, MT5 broker OHLC, finished bars only. `data/history` ends Oct 9-12, so it
+cannot cover these trades.
+
+- **Config:** `barrier.sl_atr 2.0`, `tp_atr 2.0`, horizon 8 bars, ATR14. The stop distance equals the
+  target distance (SL/TP = 1.0, R:R 1:1), so the stop is not set further than the target.
+  - Measured at entry: median SL 26.2 pips = median TP; SL 1.97 ATR (range 1.71-2.15).
+  - Median ATR 13.4 pips, median 1h range 11.4 pips, cost 1.4 pips (5% of TP).
+- **Explore, 33 reconciled closed trades:**
+  - Win rate 54.5%. Avg win +0.72R (+19.1 pips); avg loss -0.83R (-21.1 pips). Payoff 0.88, so the
+    breakeven win rate is 53.3%.
+  - Total +0.63R, +28.1 net pips, PF 1.05.
+  - Exits:
+
+    | Exit | Trades | Wins | R | Net pips |
+    |---|---|---|---|---|
+    | Target | 11 | 11 | +11.60 | +306 |
+    | Stop | 10 | 0 | -10.17 | -259 |
+    | Time | 12 | 7 | -0.80 | -19 |
+
+- **Closed-bar-valid subset (26):**
+  - Win rate 50.0%. Avg win +0.69R (+20.0 pips); avg loss -0.79R (-18.8 pips). Payoff 0.88.
+  - Total -1.28R, PF 0.875.
+  - Exits:
+
+    | Exit | Trades | R |
+    |---|---|---|
+    | Target | 8 | +7.88 |
+    | Stop | 8 | -8.03 |
+    | Time | 10 | -1.13 |
+
+- **Stops honored:** one loss beyond -1.1R. NZDUSD went -1.14R: its broker SL filled 2.2 pips beyond
+  plan at 21:05 UTC rollover.
+  - The other 7 broker SL fills slipped 0.00-0.38 pips.
+- **MT5 $ (27 mirrored trades):** total -$0.48 against $69.12 planned at the targets. 6 losses
+  exceeded the planned $ win:
+  - 4 are Oct 15 trades sent with the paper's absolute SL/TP while the fill was 1-3 pips off, so the
+    broker stop/target distance came out at 1.09-1.23:
+    - GBPUSD -$3.49 vs +$2.82 planned
+    - AUDUSD -$2.17 vs $1.95
+    - EURGBP -$1.72 vs $1.57
+    - NZDUSD -$1.89 vs $1.87
+  - Since the re-anchor fix, every mirror is at exactly 1.00.
+  - NZDUSD -$1.86 vs $1.60: rollover slippage.
+  - EURJPY -$2.76 vs $2.75: one cent of rounding.
+- **MAE/MFE:**
+  - Winners: median MAE 0.01R, worst 0.85R; 3/18 went past 0.5R against.
+  - Losers: median MFE 0.19R; 2/15 reached +0.5R, 0 reached +1R.
+  - Time exits: median MFE 0.61R, MAE 0.69R.
+- **SMALL-SAMPLE WHAT-IF (not a gate result).** Same 33 trades, same targets and horizon, finished
+  bars, SL wins a same-bar tie, 1.4-pip cost.
+  - The bar replay of the current setting gives -0.62R (PF 0.95), while the journal shows +0.63R:
+    3/33 exits differ because bars are bid only and broker fills differ.
+  - Results:
+
+    | Variant | Win rate | Total R | PF | Net pips | Note |
+    |---|---|---|---|---|---|
+    | Current (2.0 ATR = 1.0x TP, the user's stop <= target rule) | 48% | -0.62 | 0.95 | +20.5 | |
+    | Breakeven at +1R | | identical | | | +1R equals the target at 1:1 |
+    | Breakeven at +0.5R | 39% | -0.64 | 0.94 | | |
+    | 1.75 ATR | 45% | -3.00 | 0.80 | | |
+    | 1.5 ATR = 0.75x TP | 45% | -3.5 / -3.0 | 0.80 / 0.83 | | |
+    | 1.25 ATR | 45% | -1.04 | 0.94 | | |
+    | 1.0 ATR | 45% | +2.02 | 1.10 | | 6/33 stops inside the median 1h range |
+    | 0.5x TP | 45% | +2.75 | 1.14 | | +1.38R at a fixed lot; 12/33 stops inside the median 1h range |
+
+  - No variant put the stop inside 1.5x the spread.
+  - The ranking is not monotonic (0.75x is worse than both 1.0x and 0.5x), which reads as noise at
+    n=33. The earlier 1.75 ATR Replay (`tight_stop_175_dd`, EURUSD 2015-) was null on max drawdown
+    (-4.8% vs -2.3%).
+- **Main, 4 model fills:** SL = TP on all (1.7-2.1 ATR).
+  - EURJPY: time exit, -0.05R.
+  - NZDUSD: +1.0R.
+  - GBPUSD: excluded.
+  - USDCHF: no journaled close.
+- **Verdict:** stops are kept, and they are not wider than the targets. The problem is payoff:
+  - At 1:1, the costs and the small time-exit results pull the average win (+0.72R) below the average
+    loss (-0.83R).
+  - A 54.5% win rate only just clears the 53.3% breakeven, and the closed-bar subset (50%) does not.
+  - Time exits do not cause the losses (-0.8R over 12); they cap the winners.
+  - Tighter stops are not supported at this sample size. A change needs a pre-registered Replay; this
+    entry does not authorize one.
