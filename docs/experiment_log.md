@@ -150,3 +150,117 @@ and a separate pre-registered replay; this log entry does not authorize one.
   `exclude_from_stage2: false` (observe-only; totals unchanged). explore_sum_r.py would
   then add a "closed_bar_policy" view (verdict != would_not_fire). From 0641a94 on, new
   entries are closed-bar by construction. The book should be judged on post-fix entries.
+
+## 2026-10-20 00:35 Asia/Dhaka: MT5 volume anchor fix, signal_bar_audit annotations, MT5 exec refusals as errors
+
+**1. MT5 volume-rescale drift (fixed).**
+- **Root cause:** the PC was off from about Oct 15 evening, so the cache ended at Oct 15 19:00-20:00 UTC.
+  The next incremental MT5 refresh (72 bars, Oct 13 21:00 UTC onward) overlapped the cache on only
+  47-48 bars with volume on both sides. That is below `MT5_MIN_OVERLAP=50`, so `mt5_volume_ratio`
+  fell back to 1.0 and wrote raw MT5 tick volume. A later positive volume wins the merge, so this
+  replaced the scaled volume of every bar from Oct 13 21:00 UTC on.
+- Every later refresh then re-derived cache/MT5 from bars MT5 had already written: 1.0, now "confirmed"
+  over 70+ bars. The error kept itself going on 9 of 10 pairs. USDCHF was rewritten by a 2000-bar
+  bootstrap at 0.658 and was unaffected.
+- **Fix (`forex_lab/mt5_volume_anchor.py`, `try_mt5_refresh`):**
+  - One frozen factor per pair, stored in `data/mt5_volume_anchor.json` (gitignored data). The factor
+    is never re-derived from MT5-written bars.
+  - Factor = median(pre-MT5 cache Volume / MT5 tick_volume) over the last 500 overlapping bars. It
+    comes from the pre-MT5 cache snapshot `D:\ForX-backup\2026-10-14\pre_mt5_tip` (source
+    yfinance_1m/Dukascopy; 0 bars equal MT5 OHLC). That is the same window the first MT5 bootstrap
+    used, so it equals the factor already on the Jun 24 to Oct 13 MT5 bars and adds no new step.
+  - With no anchor and an overlap under 50, the write is refused (`mt5 guard: volume scale unknown`,
+    no fallback). It never silently writes 1.0.
+  - The meta file now records `volume_scale_source` and `volume_ratio_live_overlap`, for drift monitoring.
+  - For transparency, the all-overlap median and the data/history-file median are stored next to each
+    anchor. They differ noticeably on some pairs (USDCHF 0.40 / 0.37 vs 0.658; EURUSD 0.44 / 0.43 vs
+    0.358): a 500-bar median of a noisy ratio (p10-p90 about 0.2-0.7). That is not changed here,
+    because rewriting the Jun 24 to Oct 13 MT5 bars was out of scope.
+- **Repair:** backed up to `D:\ForX-backup\2026-10-20\pre_volume_fix\`.
+  `scripts/mt5_volume_anchor.py rewrite --since "2026-10-13 21:00" --apply` set Volume =
+  round(MT5 tick_volume x anchor) for the 93 bars from Oct 13 21:00 to Oct 19 17:00 UTC. It runs only
+  when every bar equals MT5 OHLC exactly; OHLC text in the CSV is byte-identical, checked.
+  - The desk, restarted 00:18 Dhaka with the new code, had already fixed the last ~71 bars through its
+    own anchored refresh. The script changed the remaining 22 per pair (8 rounding changes on USDCHF).
+- **Factor on bars since the seam (before -> after):**
+
+  | Pair | Before | After |
+  |---|---|---|
+  | AUDUSD | 1.0 | 0.2846 |
+  | EURGBP | 1.0 | 0.4389 |
+  | EURJPY | 1.0 | 0.3487 |
+  | EURUSD | 1.0 | 0.3582 |
+  | GBPJPY | 1.0 | 0.3551 |
+  | GBPUSD | 1.0 | 0.2540 |
+  | NZDUSD | 1.0 | 0.4864 |
+  | USDCAD | 1.0 | 0.3385 |
+  | USDCHF | 0.658 | 0.6579 |
+  | USDJPY | 1.0 | 0.5628 |
+
+- **Seam check** (median volume of 14 days after / before Oct 13 21:00; after = 93 bars):
+
+  | Pair | Before fix | After fix |
+  |---|---|---|
+  | AUDUSD | 3.74 | 1.06 |
+  | EURGBP | 2.33 | 1.02 |
+  | EURJPY | 2.81 | 0.97 |
+  | EURUSD | 3.18 | 1.13 |
+  | GBPJPY | 2.96 | 1.05 |
+  | GBPUSD | 4.27 | 1.08 |
+  | NZDUSD | 2.07 | 1.01 |
+  | USDCAD | 3.22 | 1.09 |
+  | USDCHF (control) | 1.14 | 1.14 |
+  | USDJPY | 1.90 | 1.07 |
+
+  Prices: all 1999 MT5 bars in the cache (from Jun 24 11:00) equal MT5 OHLC exactly. The 15 Friday
+  21:00 cache bars that MT5 lacks are untouched.
+- **Signals** (vol_z is a 20-bar rolling z-score, so only bars within 20 h of the seam can move):
+  - Backup vs fixed CSVs, Oct 13 21:00 to Oct 19 16:00 UTC, 92 bars per pair. **6 historical calls
+    changed, all on Oct 14 UTC:**
+    - AUDUSD 01:00: HOLD -> BUY 0.616
+    - EURGBP 02:00: BUY 0.620 -> HOLD
+    - EURGBP 06:00 and 08:00: HOLD -> SELL 0.605 / 0.628
+    - GBPJPY 06:00 and 07:00: SELL 0.618 / 0.636 -> HOLD
+  - The latest call is unchanged on all 10 pairs (HOLD). Regenerated per pair with
+    `python -m forex_lab signals --pair X`; all CSVs present, exit 0.
+- **Influence:** the live calls back then saw correctly scaled volume. The flip was written later, and
+  vol_z is scale-free once the window is past the seam. So past decisions are not affected; only the
+  retroactive history and any future training or replay on it were. That is now repaired and guarded.
+
+**2. signal_bar_audit annotations (applied, observe-only).**
+- Journals were backed up first to `...\pre_volume_fix\paper_shadow\` and `...\pre_annotation\`.
+- `scripts/apply_signal_bar_audit.py --apply` used the `audit_partial_bar_entries.py --json` output
+  (verdicts identical to the audit). It appended 84 explore + 4 main annotations (`partial_bar_audit_v1`,
+  `exclude_from_explore: false`, `exclude_from_stage2: false`).
+  - Verdicts across both books: still_fires 42, unverifiable 23, would_not_fire 16,
+    closed_bar_reproduced 7.
+  - Explore sum_r stays +1.7682 and main exclusions are unchanged (2/2). The script is idempotent.
+- `scripts/explore_sum_r.py` keeps every existing key, value and line. Two new keys come after
+  `reconciled`, so the only textual change is a comma on its closing brace, and the JSON still
+  parses whole:
+  - `post_fix_only` (opens after the 0641a94 commit, 2026-10-19 14:47:39 UTC): 0 entries so far,
+    sum_r null.
+  - `closed_bar_view` (excludes the would_not_fire entries): **-1.28R over 26 closed, PF 0.875,
+    +15.6 net pips** (68 entries, 16 excluded).
+
+**3. MT5 demo refusals are now errors (steering item).**
+- At 00:19 Dhaka the explore burst's demo closes were refused (retcode 10027, AutoTrading disabled by
+  client; tickets 43778885/43778886), yet the burst exited 0. The cause: close failures sat only in
+  `broker_exits.errors`, and the burst counted only exceptions.
+- Now `explore_paper_burst.record_exec_failures` copies every failed or refused open or close (with
+  retcode and ticket), plus any connect refusal, into `mt5_exec.errors` and `step_errors`, so the burst
+  exits 4.
+- `mt5_exec.trade_allowed_error` is a read-only pre-check. It logs `terminal_info().trade_allowed=False`
+  as an error in mirror and close_and_book (and in the reconcile result) before sending. It never
+  toggles the setting.
+- **Why Algo Trading was off:** the terminal journal shows "automated trading is disabled because
+  profile has been changed" at 2026-10-19 23:32:27 Dhaka. The chart profile files Default
+  (23:32:18) and Euro (23:33:10) were saved at that moment, i.e. someone switched the chart profile.
+  - That is a terminal UI action. The Python MetaTrader5 API (initialize, copy_rates, shutdown), which
+    is all the volume work used, cannot switch profiles or toggle Algo Trading.
+  - The terminal has not restarted since 13:27 Dhaka, and no account change was logged.
+  - It is still off now (`terminal_info().trade_allowed=False`, read-only check). Until it is turned
+    back on in the terminal, bursts with demo sends will exit 4.
+- Tests: `tests/test_mt5_volume_anchor.py` (10), `tests/test_mt5_exec_errors.py` (6) and
+  `tests/test_signal_bar_audit_views.py` (4). Full suite: 710 passed, plus the same 13 pre-existing
+  failures (unchanged).

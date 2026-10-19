@@ -61,6 +61,47 @@ def _step(result: dict, key: str, fn):
         return None
 
 
+def exec_failures(result: dict) -> list[dict]:
+    """Every refused/failed MT5 demo open or close (non-DONE retcode, connect refusal, Algo Trading off)."""
+    out: list[dict] = []
+    pre = (result.get("broker_reconcile") or {}).get("precheck") if isinstance(result.get("broker_reconcile"), dict) else None
+    for key, default_step in (("broker_exits", "mt5_close"), ("mt5_exec", "mt5_open")):
+        blk = result.get(key)
+        if not isinstance(blk, dict) or blk.get("enabled") is False:
+            continue
+        rows = list(blk.get("errors") or [])
+        for e in rows:
+            step = "mt5_precheck" if e.get("precheck") else ("mt5_close" if e.get("event") == "mt5_close" else default_step)
+            out.append({"step": step, "position_id": e.get("position_id"), "pair": e.get("pair"),
+                        "ticket": e.get("ticket"), "retcode": e.get("retcode"), "error": str(e.get("error") or "unknown")})
+        if blk.get("error") and not any(e.get("error") == blk["error"] for e in rows):
+            out.append({"step": default_step, "error": str(blk["error"])})
+    if pre and not any(f.get("step") == "mt5_precheck" for f in out):
+        out.append({"step": "mt5_precheck", "error": str(pre.get("error"))})
+    return out
+
+
+def record_exec_failures(result: dict) -> list[dict]:
+    """Copy MT5 failures into mt5_exec.errors (closes too) and step_errors, so the burst exits 4."""
+    fails = exec_failures(result)
+    if not fails:
+        return fails
+    me = result.get("mt5_exec")
+    if not isinstance(me, dict):
+        me = {"enabled": True, "errors": []}
+        result["mt5_exec"] = me
+    errs = me.setdefault("errors", [])
+    for f in fails:
+        if f["step"] != "mt5_open" and not any(isinstance(e, dict) and e.get("position_id") == f.get("position_id")
+                                               and e.get("error") == f["error"] for e in errs):
+            errs.append(dict(f))
+    for f in fails:
+        rc = f" retcode {f['retcode']}" if f.get("retcode") is not None else ""
+        tk = f" ticket {f['ticket']}" if f.get("ticket") else ""
+        result.setdefault("step_errors", []).append({"step": f["step"], "error": f"{f.get('pair') or ''}{tk}{rc}: {f['error']}".strip()})
+    return fails
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Exploration paper book pass (never Stage-2)")
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
@@ -133,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             result["broker_exits"] = _step(result, "close_and_book",
                                            lambda: close_and_book(out.get("pending_broker_exits") or []))
             result["mt5_exec"] = _step(result, "mirror", lambda: mirror(new_ids))
+            record_exec_failures(result)
     result.update(out)
     result["status"] = _step(result, "status", book_status)
     result["explore_events_after"] = len(load())

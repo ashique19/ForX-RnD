@@ -48,6 +48,27 @@ def assert_demo(mt5) -> dict[str, Any]:
     return {"trade_mode": int(acc.trade_mode), "server": getattr(acc, "server", None)}
 
 
+def trade_allowed_error(mt5) -> dict[str, Any] | None:
+    """Pre-check before any send: an error row when the terminal's Algo Trading button is off.
+
+    Read-only (terminal_info). Never toggles the setting. ``None`` = ok (or a mock without terminal_info).
+    Logged only: sends still go out and are refused with retcode 10027, which is also reported as an error.
+    """
+    fn = getattr(mt5, "terminal_info", None)
+    if fn is None:
+        return None
+    try:
+        ti = fn()
+    except Exception as exc:  # noqa: BLE001
+        return {"precheck": "terminal_info", "error": f"terminal_info failed: {exc}"}
+    if ti is None:
+        return {"precheck": "terminal_info", "error": f"terminal_info unavailable ({mt5.last_error()})"}
+    if getattr(ti, "trade_allowed", True) is False:
+        return {"precheck": "trade_allowed", "error": "MT5 terminal Algo Trading is disabled "
+                "(terminal_info().trade_allowed=False); demo orders will be refused (retcode 10027)"}
+    return None
+
+
 def _filling(mt5, info) -> int:
     fm = int(getattr(info, "filling_mode", 0) or 0)
     if fm & 1:
@@ -248,6 +269,9 @@ def close_and_book(pending: Iterable[dict[str, Any]], *, mt5=None, connect=None,
         if owns:
             mt5 = _owned_mt5(mt5, connect)
         assert_demo(mt5)
+        pre = trade_allowed_error(mt5)
+        if pre:
+            out["precheck"] = pre; out["errors"].append(pre)
     except Exception as exc:  # noqa: BLE001
         out.update({"error": str(exc), "errors": items})
         return out
@@ -263,7 +287,8 @@ def close_and_book(pending: Iterable[dict[str, Any]], *, mt5=None, connect=None,
             b = row.pop("_broker", None)
             eb.append({**row, **eb._stamps(now), "paper_exit_reason": p.get("paper_exit_reason")})
             if not row.get("ok"):
-                out["errors"].append({**p, "error": row.get("error"), "retcode": row.get("retcode")}); continue
+                out["errors"].append({**p, "event": "mt5_close", "ticket": row.get("ticket") or mo.get("ticket"),
+                                      "error": row.get("error") or "close failed", "retcode": row.get("retcode")}); continue
             if b is None:
                 try:
                     b = broker_state(mt5, int(mo["ticket"])) if hasattr(mt5, "history_deals_get") else {"state": "unknown"}
@@ -320,6 +345,9 @@ def reconcile_broker(*, mt5=None, connect=None, now=None) -> dict[str, Any]:
     try:
         if owns:
             mt5 = _owned_mt5(mt5, connect)
+        pre = trade_allowed_error(mt5)
+        if pre:
+            out["precheck"] = pre
     except Exception as exc:  # noqa: BLE001
         out.update({"hold": targets, "error": str(exc)})
         return out
@@ -418,6 +446,9 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
             mt5 = mt5_feed._mt5()
             resolve = resolve or mt5_feed.resolve_symbols
         out["account"] = assert_demo(mt5)
+        pre = trade_allowed_error(mt5)
+        if pre:
+            out["precheck"] = pre; out["errors"].append(pre)
     except Exception as exc:  # noqa: BLE001
         msg = str(exc)
         for pid in to_open:
@@ -461,4 +492,4 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
 
 
 __all__ = ["LOT", "MAGIC", "assert_demo", "broker_annotation", "broker_state", "close_and_book", "close_order", "mirror",
-           "open_order", "reconcile_broker", "server_to_utc"]
+           "open_order", "reconcile_broker", "server_to_utc", "trade_allowed_error"]

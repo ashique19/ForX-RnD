@@ -46,3 +46,6 @@ data/edge_check/
 # observe-only news calendar cache (scripts/fetch_news_calendar.py)
 data/calendar/
 data/backup/
+
+# Frozen MT5 volume scale anchors (data; regenerate with scripts/mt5_volume_anchor.py freeze)
+data/mt5_volume_anchor.json

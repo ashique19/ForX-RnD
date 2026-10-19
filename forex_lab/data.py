@@ -744,6 +744,29 @@ class MT5GuardError(RuntimeError):
     """MT5 data failed a write guard; the cache must not be written (no fallback merge either)."""
 
 
+def resolve_mt5_volume_scale(pair: str, cfg: dict[str, Any], existing: pd.DataFrame | None,
+                             mt5_bars: pd.DataFrame) -> tuple[float, int, str, float]:
+    """(factor, overlap_bars, source, live_overlap_ratio) for MT5 tick volume -> cache volume.
+
+    A frozen per-pair anchor (data/mt5_volume_anchor.json, from the pre-MT5 cache) always wins and is
+    never re-derived from MT5-written bars. Without an anchor the legacy overlap median is used only
+    with >= MT5_MIN_OVERLAP bars; a short overlap raises MT5GuardError instead of silently writing raw
+    tick volume (the 1.0 fallback that caused the 2026-10-13 21:00 UTC volume drift).
+    """
+    from forex_lab import mt5_volume_anchor as _va
+
+    live, n = mt5_volume_ratio(existing, mt5_bars)
+    rec = _va.load_anchor(pair, data_path(pair, cfg, "1h").parent)
+    if rec is not None:
+        return float(rec["factor"]), n, "anchor", live
+    if existing is None or existing.empty:
+        return 1.0, 0, "no_cache", live
+    if n < MT5_MIN_OVERLAP:
+        raise MT5GuardError(f"volume scale unknown: no frozen anchor ({_va.ANCHOR_FILE}) and overlap {n} < "
+                            f"{MT5_MIN_OVERLAP}; refusing to write raw tick volume")
+    return live, n, "overlap_median", live
+
+
 # Closed bars whose OHLC moves by more than this fraction of price on an MT5 merge are treated as
 # misaligned (wrong clock / tip stamped onto an old bar) and the write is refused.
 MT5_CLOSED_BAR_MAX_REL_DIFF = 0.003
@@ -916,7 +939,10 @@ def try_mt5_refresh(
         existing, n_forming_cache = drop_forming_bars(existing, "1h", now_utc)
     if mt5_bars is None or mt5_bars.empty:
         return None, "mt5 empty (no closed bars)"
-    ratio, n_overlap = mt5_volume_ratio(existing, mt5_bars)
+    try:
+        ratio, n_overlap, scale_src, live_ratio = resolve_mt5_volume_scale(pair, cfg, existing, mt5_bars)
+    except MT5GuardError as exc:
+        return None, f"mt5 guard: {exc}"
     scaled = mt5_bars.copy()
     scaled["Volume"] = (pd.to_numeric(scaled["Volume"], errors="coerce") * ratio).round()
     parts = [p for p in (existing, scaled) if p is not None and not p.empty]
@@ -937,7 +963,8 @@ def try_mt5_refresh(
     try:
         import json as _json
         meta = {"pair": pair.upper(), "source": SOURCE_MT5, "volume_ratio_cache_over_mt5": ratio,
-                "ratio_overlap_bars": n_overlap, "mt5_bars": int(len(mt5_bars)),
+                "ratio_overlap_bars": n_overlap, "volume_scale_source": scale_src,
+                "volume_ratio_live_overlap": live_ratio, "mt5_bars": int(len(mt5_bars)),
                 "last_bar_utc": str(df.index.max()), "tip_flags": flags,
                 "heal_window_bars": HEAL_CLOSED_BARS, "healed_bars": healed,
                 "forming_dropped": {"cache": n_forming_cache, "mt5": n_forming_mt5}}
