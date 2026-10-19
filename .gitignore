@@ -43,4 +43,5 @@ data/edge_check/
 
 # MT5 demo credentials (never commit)
 .env*
-
+# observe-only news calendar cache (scripts/fetch_news_calendar.py)
+data/calendar/

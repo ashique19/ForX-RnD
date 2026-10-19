@@ -133,6 +133,14 @@ def build_event(
     except Exception:  # noqa: BLE001 -- never block journal append
         row.setdefault("ba_available", False)
         row.setdefault("assumed_cost_pips", None)
+    if row["event"] == "open":
+        # Observe-only high-impact news tag; never a gate (fail-soft, FORX_NEWS_TAG=off disables).
+        try:
+            from forex_lab.news_tag import tag_fields
+
+            row.update(tag_fields(pair_u, now or datetime.now(timezone.utc)))
+        except Exception:  # noqa: BLE001
+            pass
     return row
 
 

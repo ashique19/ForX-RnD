@@ -388,6 +388,16 @@ def _cost_fields(pair: str) -> dict[str, Any]:
         return {"ba_available": False, "assumed_cost_pips": None}
 
 
+def _news_fields(pair: str, now: datetime) -> dict[str, Any]:
+    """Observe-only news tag (forex_lab.news_tag); never affects eligibility or sizing."""
+    try:
+        from forex_lab.news_tag import tag_fields
+
+        return tag_fields(pair, now)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _age_hours(open_row: dict[str, Any], now: datetime) -> float:
     try:
         t = datetime.fromisoformat(str(open_row.get("ts_utc")).replace("Z", "+00:00"))
@@ -631,6 +641,7 @@ def run_pass(
             "horizon_bars": int(horizon or row.get("horizon_bars") or c["default_horizon_bars"]),
             "entry_basis": "board_last_mid", "signal_bar_dhaka": row.get("last_signal_dhaka"),
             **_cost_fields(pair),
+            **_news_fields(pair, now),
         }
         append(open_row)
         if row.get("last_signal_dhaka"):
