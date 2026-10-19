@@ -349,3 +349,54 @@ cannot cover these trades.
   - Time exits do not cause the losses (-0.8R over 12); they cap the winners.
   - Tighter stops are not supported at this sample size. A change needs a pre-registered Replay; this
     entry does not authorize one.
+## 2026-10-20 04:15 Asia/Dhaka: daily-trend (higher-timeframe) alignment what-if (read-only)
+
+**Question:** would taking only hourly trades in the daily trend's direction help?
+Script: `scripts/daily_trend_alignment.py`, with tests.
+
+**1. Existing higher-timeframe information**
+- **Live models:** none use daily or 4h inputs. All 20 joblibs carry 36-37 hourly features; the longest
+  lookbacks are `ret_24`, `sma_50_ratio` and `range_pos_50` (24-50 hours).
+- **Off by default in `config/default.yaml`:**
+  - the daily/4h feature code (`feature_extras.higher_tf: []`, so no `tf_1D_*` / `tf_4h_*` columns)
+  - prior-day levels (`levels.enabled: false`)
+  - the hourly HTF trend filter (`signals.htf_trend_filter: null`)
+- **Badge only:** the desk shows a 4h `mtf_confirm` agreement badge (`conflict_flash: off`, not a gate).
+- **Tried before:** `reports/gate_screen.md`, EURUSD walk-forward. Gating on 4h trend agreement plus
+  min confidence lowered PF from 0.889 to 0.847, and to 0.793 at min confidence 0.50, so it was kept
+  off. A daily filter and daily features were never tested.
+- **Banned?** No explicit ban list names this family.
+
+**2. SMALL-SAMPLE WHAT-IF, not a gate result**
+- **Method:** daily bars resampled from finished 1h MT5 bars. The FX day ends 17:00 New York; days with
+  fewer than 12 bars are dropped. Only days completed before the entry count. Three definitions were
+  fixed in advance:
+  - A: daily close vs its 20-day SMA
+  - B: 20-day SMA vs 50-day SMA
+  - C: the prior day's close vs its open
+  - ALL: A, B and C agree
+- **Sample:** the 33 trades fall on only 11 distinct entry times, so there are far fewer independent
+  bets than trades.
+
+| Definition | 33 aligned | 33 counter | 26 closed-bar aligned | 26 closed-bar counter |
+|---|---|---|---|---|
+| A close vs SMA20 | 12 trades, 42% won, -1.71R, PF 0.70 | 21, 62%, +2.34R, PF 1.35 | 10, 50%, +0.44R, PF 1.12 | 16, 50%, -1.72R, PF 0.74 |
+| B SMA20 vs SMA50 | 13, 54%, +0.23R, PF 1.05 | 20, 55%, +0.40R, PF 1.05 | 12, 58%, +1.24R, PF 1.34 | 14, 43%, -2.52R, PF 0.62 |
+| C prior day body | 13, 46%, -2.02R, PF 0.72 | 20, 60%, +2.65R, PF 1.51 | 9, 44%, -1.05R, PF 0.79 | 17, 53%, -0.24R, PF 0.96 |
+| ALL agree | 5, 40%, -1.05R | 28, 57%, +1.68R | 4, 50%, -0.04R | 22, 50%, -1.24R |
+
+- **Main fills:**
+  - EURJPY SELL (-0.05R) and NZDUSD SELL (+1.0R) are aligned on A and B, counter on C.
+  - GBPUSD (excluded) is the same.
+  - USDCHF (no close) is counter on A and B.
+
+**Verdict: not promising.**
+- The sign flips between definitions and between the full set and the closed-bar subset.
+- On all 33 trades, counter-trend did better on A and C, and B showed no difference.
+- Only B on the 26-trade subset looks good, which is what one would expect to find by chance among
+  8 cuts of 11 clusters.
+- The one prior walk-forward test of a 4h gate lowered PF.
+
+**3. No hypothesis drafted.** That step was conditional on a promising result. A daily SMA20/50 filter
+or `tf_1D` features would need a pre-registered walk-forward over all 10 pairs on Dukascopy history
+before any live use; this entry does not authorize one.
