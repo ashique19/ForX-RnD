@@ -10,11 +10,18 @@ Hard rules:
   and spread at send. Credentials are never logged.
 * When the paper explore position closes, the matching MT5 position is closed.
 * FORX_MT5_EXEC=off disables it (tests set this unless an mt5 module is injected).
+* Broker truth: before paper applies its own exit to a mirrored position,
+  ``reconcile_broker`` reads MT5 deal history (read-only). If the broker
+  already closed it (SL/TP/manual), the paper close is recorded at the
+  broker's real price/time/reason. Paper exits only positions still open at
+  the broker, and ``mirror`` then closes them at the broker too.
 """
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 from forex_lab import explore_book as eb
 
@@ -108,13 +115,189 @@ def open_order(mt5, symbol: str, open_row: dict[str, Any]) -> dict[str, Any]:
             "entry_mid_paper": open_row.get("entry_mid")}
 
 
+_NY = ZoneInfo("America/New_York")
+DEAL_ENTRY_IN = 0
+DEAL_ENTRY_OUT = (1, 3)  # OUT, OUT_BY
+# MT5 DEAL_REASON_*: CLIENT/MOBILE/WEB = manual, EXPERT = our own script close.
+DEAL_REASONS = {0: "manual", 1: "manual", 2: "manual", 3: "expert", 4: "sl", 5: "tp", 6: "stop_out"}
+
+
+def server_to_utc(server_epoch: float) -> datetime:
+    """MT5 deal/tick epochs are the broker wall clock (New York time + 7h:
+    UTC+3 in summer, UTC+2 in winter). Convert to real UTC."""
+    wall = datetime(1970, 1, 1) + timedelta(seconds=float(server_epoch))
+    return (wall - timedelta(hours=7)).replace(tzinfo=_NY).astimezone(timezone.utc)
+
+
+def _iso(t: datetime) -> str:
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def broker_state(mt5, ticket: int) -> dict[str, Any]:
+    """Read-only: {'state': 'closed', exit fields} | {'state': 'open'} | {'state': 'unknown'}."""
+    t = int(ticket)
+    deals = mt5.history_deals_get(position=t)
+    if deals is None:
+        if mt5.positions_get(ticket=t):
+            return {"state": "open"}
+        return {"state": "unknown", "error": f"history_deals_get None ({mt5.last_error()})"}
+    deals = list(deals)
+    ins = [d for d in deals if int(getattr(d, "entry", -1)) == DEAL_ENTRY_IN]
+    outs = [d for d in deals if int(getattr(d, "entry", -1)) in DEAL_ENTRY_OUT]
+    v_in = sum(float(d.volume) for d in ins)
+    v_out = sum(float(d.volume) for d in outs)
+    if outs and v_out > 0 and (not ins or v_out + 1e-9 >= v_in):
+        last = max(outs, key=lambda d: (int(getattr(d, "time_msc", 0) or 0), int(getattr(d, "time", 0) or 0)))
+        tms = int(getattr(last, "time_msc", 0) or 0)
+        when = server_to_utc(tms / 1000.0 if tms else float(last.time))
+        money = sum(float(getattr(d, k, 0.0) or 0.0) for d in deals for k in ("profit", "commission", "swap", "fee"))
+        code = int(getattr(last, "reason", -1))
+        return {
+            "state": "closed",
+            "exit_price": sum(float(d.price) * float(d.volume) for d in outs) / v_out,
+            "exit_time_utc": _iso(when),
+            "exit_reason": DEAL_REASONS.get(code, f"reason_{code}"),
+            "deal_reason_code": code,
+            "exit_deal_ticket": int(getattr(last, "ticket", 0) or 0),
+            "entry_price_broker": (sum(float(d.price) * float(d.volume) for d in ins) / v_in) if v_in else None,
+            "profit_usd": round(money, 2),
+        }
+    if mt5.positions_get(ticket=t):
+        return {"state": "open"}
+    return {"state": "unknown", "error": "no exit deal and no live position"}
+
+
+def _broker_sl(mopen: dict[str, Any], pos: dict[str, Any] | None) -> float | None:
+    """SL the broker actually carried: re-anchored SL when the modify succeeded, else the one sent."""
+    keys = ("sl_sent", "sl") if mopen.get("sltp_modified") is False else ("sl", "sl_sent")
+    for k in keys:
+        v = eb._f(mopen.get(k))
+        if v is not None:
+            return v
+    return eb._f((pos or {}).get("sl"))
+
+
+def broker_pnl(side: str, pair: str, entry: float, sl: float | None, exit_price: float) -> dict[str, Any]:
+    direction = 1.0 if str(side).upper() == "BUY" else -1.0
+    pnl = (exit_price - entry) * direction
+    risk = abs(entry - sl) if sl is not None else 0.0
+    return {"pnl_price": round(pnl, 8), "pnl_r": round(pnl / risk, 4) if risk else None,
+            "pnl_pips": round(pnl / eb.pip_size(pair), 2)}
+
+
+def broker_close_row(pid: str, pos: dict[str, Any], mopen: dict[str, Any], b: dict[str, Any], now=None) -> dict[str, Any]:
+    """Paper close at the broker's real exit (price/time/reason), R off the real fill and broker SL."""
+    entry = eb._f(b.get("entry_price_broker")) or eb._f(mopen.get("fill_price")) or eb._f(pos.get("entry_mid"))
+    sl = _broker_sl(mopen, pos)
+    pnl = broker_pnl(str(pos.get("side")), str(pos.get("pair")), float(entry), sl, float(b["exit_price"]))
+    when = datetime.fromisoformat(b["exit_time_utc"].replace("Z", "+00:00"))
+    return {
+        "event": "close", **eb._stamps(now), "pair": pos.get("pair"), "side": pos.get("side"), "position_id": pid,
+        "entry_mid": entry, "exit_mid": float(b["exit_price"]), "exit_reason": b["exit_reason"], **pnl,
+        "exit_basis": "mt5_broker", "price_basis": "broker_fill_bid_ask", "risk_sl": sl,
+        "exit_time_utc": b["exit_time_utc"], "exit_time_dhaka": when.astimezone(eb.DHAKA).strftime("%Y-%m-%d %H:%M:%S Asia/Dhaka"),
+        "exit_bar_utc": None, "mt5_ticket": int(mopen["ticket"]), "mt5_exit_deal": b.get("exit_deal_ticket"),
+        "mt5_profit_usd": b.get("profit_usd"),
+    }
+
+
+def broker_annotation(close_row: dict[str, Any], mopen: dict[str, Any], b: dict[str, Any], now=None,
+                      reason: str = "broker_closed_first", pos: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Append-only supersede of a paper close by the broker's real close (never rewrites the close row)."""
+    entry = eb._f(b.get("entry_price_broker")) or eb._f(mopen.get("fill_price")) or eb._f(close_row.get("entry_mid"))
+    sl = _broker_sl(mopen, pos)
+    pnl = broker_pnl(str(close_row.get("side") or mopen.get("side")), str(close_row.get("pair")), float(entry), sl,
+                     float(b["exit_price"]))
+    return {
+        "event": "annotation", **eb._stamps(now), "annotation_type": "broker_reconcile", "reason": reason,
+        "ref_position_id": close_row.get("position_id"), "ref_close_ts_utc": close_row.get("ts_utc"),
+        "original_pnl_r": close_row.get("pnl_r"), "original_exit_reason": close_row.get("exit_reason"),
+        "original_exit_mid": close_row.get("exit_mid"), "original_entry_mid": close_row.get("entry_mid"),
+        "corrected_exit_reason": b["exit_reason"], "corrected_exit_mid": float(b["exit_price"]),
+        "corrected_exit_time_utc": b["exit_time_utc"], "corrected_entry": entry, "corrected_sl": sl,
+        "corrected_pnl_r": pnl["pnl_r"], "corrected_pnl_pips": pnl["pnl_pips"],
+        "mt5_ticket": int(mopen["ticket"]), "mt5_exit_deal": b.get("exit_deal_ticket"),
+        "mt5_profit_usd": b.get("profit_usd"), "exclude_from_stage2": True,
+        "notes": "MT5 demo position was already closed at the broker when paper tried to close it; broker fill is the truth",
+    }
+
+
+def _owned_mt5(mt5, connect):
+    from forex_lab import mt5_feed
+
+    (connect or mt5_feed.connect)(require_demo=True)
+    return mt5_feed._mt5()
+
+
+def reconcile_broker(*, mt5=None, connect=None, now=None) -> dict[str, Any]:
+    """Before paper exits: close paper positions the broker already closed (read-only to MT5).
+
+    Returns ``hold``: mirrored positions whose broker state is unknown; paper
+    must not apply its own exit to those this pass.
+    """
+    if mt5 is None and os.environ.get("FORX_MT5_EXEC", "on").lower() == "off":
+        return {"enabled": False, "reason": "FORX_MT5_EXEC=off", "hold": []}
+    events = eb.load()
+    openp = eb.open_positions(events)
+    m_open = {k: v for k, v in _ok_rows(events, "mt5_open").items() if v.get("ok") and v.get("ticket")}
+    targets = [pid for pid in openp if pid in m_open]
+    out: dict[str, Any] = {"enabled": True, "checked": len(targets), "closed": [], "live": [], "hold": [], "errors": []}
+    if not targets:
+        return out
+    owns = mt5 is None
+    try:
+        if owns:
+            mt5 = _owned_mt5(mt5, connect)
+    except Exception as exc:  # noqa: BLE001
+        out.update({"hold": targets, "error": str(exc)})
+        return out
+    try:
+        for pid in targets:
+            mo = m_open[pid]
+            try:
+                b = broker_state(mt5, int(mo["ticket"]))
+            except Exception as exc:  # noqa: BLE001
+                b = {"state": "unknown", "error": str(exc)}
+            if b["state"] == "open":
+                out["live"].append(pid)
+            elif b["state"] == "closed":
+                row = broker_close_row(pid, openp[pid], mo, b, now)
+                eb.append(row)
+                eb.append({"event": "mt5_close", **eb._stamps(now), "pair": mo.get("pair"), "symbol": mo.get("symbol"),
+                           "position_id": pid, "ticket": int(mo["ticket"]), "ok": True, "already_closed": True,
+                           "broker_truth": True, "fill_price": b["exit_price"], "exit_reason": b["exit_reason"],
+                           "exit_time_utc": b["exit_time_utc"], "deal_ticket": b.get("exit_deal_ticket"),
+                           "profit_usd": b.get("profit_usd"), "pnl_pips": row["pnl_pips"]})
+                out["closed"].append({"position_id": pid, "pair": row["pair"], "exit_reason": row["exit_reason"],
+                                      "pnl_r": row["pnl_r"], "profit_usd": b.get("profit_usd")})
+            else:
+                out["hold"].append(pid)
+                out["errors"].append({"position_id": pid, **b})
+    finally:
+        if owns:
+            try:
+                mt5.shutdown()
+            except Exception:  # noqa: BLE001
+                pass
+    return out
+
+
 def close_order(mt5, mopen: dict[str, Any]) -> dict[str, Any]:
     symbol = str(mopen["symbol"]); pair = str(mopen["pair"]).upper(); side = str(mopen["side"]).upper()
     ticket = int(mopen["ticket"])
     base = {"event": "mt5_close", "pair": pair, "symbol": symbol, "position_id": mopen["position_id"], "ticket": ticket}
     live = mt5.positions_get(ticket=ticket) or ()
     if not live:
-        return {**base, "ok": True, "already_closed": True, "note": "position not open at broker (SL/TP hit or closed)"}
+        row = {**base, "ok": True, "already_closed": True, "note": "position not open at broker (SL/TP hit or closed)"}
+        try:
+            b = broker_state(mt5, ticket) if hasattr(mt5, "history_deals_get") else {"state": "unknown"}
+        except Exception:  # noqa: BLE001
+            b = {"state": "unknown"}
+        if b.get("state") == "closed":
+            row.update({"broker_truth": True, "fill_price": b["exit_price"], "exit_reason": b["exit_reason"],
+                        "exit_time_utc": b["exit_time_utc"], "deal_ticket": b.get("exit_deal_ticket"),
+                        "profit_usd": b.get("profit_usd"), "_broker": b})
+        return row
     p = live[0]; tick = mt5.symbol_info_tick(symbol); info = mt5.symbol_info(symbol)
     if tick is None or info is None:
         return {**base, "ok": False, "error": f"no tick ({mt5.last_error()})"}
@@ -174,7 +357,11 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
         pairs = sorted({str(opens[p]["pair"]).upper() for p in to_open} | {str(m_open[p]["pair"]).upper() for p in to_close})
         symbols = resolve(pairs) if resolve else {p: p for p in pairs}
         for pid in to_close:
-            row = close_order(mt5, m_open[pid]); eb.append({**row, **eb._stamps(now)})
+            row = close_order(mt5, m_open[pid]); b = row.pop("_broker", None)
+            eb.append({**row, **eb._stamps(now)})
+            if b:
+                # Raced: broker closed it before paper's close reached MT5 -> supersede (append-only).
+                eb.append(broker_annotation(closes[pid], m_open[pid], b, now))
             (out["closed"] if row.get("ok") else out["errors"]).append(row)
         for pid in to_open:
             o = opens[pid]; sym = symbols.get(str(o["pair"]).upper())
@@ -201,4 +388,5 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
     return out
 
 
-__all__ = ["LOT", "MAGIC", "assert_demo", "close_order", "mirror", "open_order"]
+__all__ = ["LOT", "MAGIC", "assert_demo", "broker_annotation", "broker_state", "close_order", "mirror",
+           "open_order", "reconcile_broker", "server_to_utc"]

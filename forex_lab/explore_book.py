@@ -130,18 +130,55 @@ def open_positions(events: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]
     return opened
 
 
-def closed_r(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+# Annotation types added by the 2026-10-19 broker-truth reconcile.
+RECONCILE_TYPES = ("broker_reconcile", "duplicate_entry")
+
+
+def pip_size(pair: object) -> float:
+    return 0.01 if str(pair or "").upper().endswith("JPY") else 0.0001
+
+
+def _cost_pips(open_row: dict[str, Any] | None) -> float:
+    o = open_row or {}
+    for k in ("assumed_cost_pips", "measured_cost_pair"):
+        v = _f(o.get(k))
+        if v is not None:
+            return v
+    return 0.0
+
+
+def closed_r(
+    events: Iterable[dict[str, Any]],
+    *,
+    use_annotations: bool = True,
+    ignore_types: Iterable[str] = (),
+) -> list[dict[str, Any]]:
     """THE single definition of closed exploration R (used by status / monitor).
 
-    One entry per closed position_id (first close row wins). The latest
-    annotation for that position overrides: ``exclude_from_explore`` drops the
-    trade; a numeric ``corrected_pnl_r`` replaces the close row's pnl_r.
+    One entry per closed position_id (first close row wins). Annotations for
+    that position (append-only rows, never rewrites): any ``exclude_from_explore``
+    drops the trade; the latest numeric ``corrected_pnl_r`` replaces the close
+    row's pnl_r. ``use_annotations=False`` gives the raw journal; ``ignore_types``
+    skips annotations of the listed ``annotation_type`` (e.g. RECONCILE_TYPES).
+
+    Pips: gross = price move / pip. Net subtracts the open row's assumed
+    round-trip cost, except for broker-truth exits (real bid/ask fills, so
+    the spread is already inside the prices).
     """
     ev = list(events)
-    ann: dict[str, dict[str, Any]] = {}
-    for a in ev:
-        if a.get("event") == "annotation":
-            ann[str(a.get("ref_position_id"))] = a
+    ignore = set(ignore_types)
+    opens = {str(e.get("position_id")): e for e in ev if e.get("event") == "open"}
+    ann_corr: dict[str, dict[str, Any]] = {}
+    excluded: set[str] = set()
+    if use_annotations:
+        for a in ev:
+            if a.get("event") != "annotation" or str(a.get("annotation_type") or "") in ignore:
+                continue
+            ref = str(a.get("ref_position_id"))
+            if a.get("exclude_from_explore"):
+                excluded.add(ref)
+            if isinstance(a.get("corrected_pnl_r"), (int, float)):
+                ann_corr[ref] = a
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for c in ev:
@@ -151,21 +188,48 @@ def closed_r(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         if pid in seen:
             continue
         seen.add(pid)
-        a = ann.get(pid)
-        if a and a.get("exclude_from_explore"):
+        if pid in excluded:
             continue
-        corrected = a is not None and isinstance(a.get("corrected_pnl_r"), (int, float))
-        r = a.get("corrected_pnl_r") if corrected else c.get("pnl_r")  # type: ignore[union-attr]
-        if isinstance(r, (int, float)):
-            out.append({"position_id": pid, "pair": c.get("pair"), "pnl_r": float(r), "annotated": corrected})
+        a = ann_corr.get(pid)
+        pip = pip_size(c.get("pair"))
+        direction = 1.0 if c.get("side") == "BUY" else -1.0
+        broker = c.get("exit_basis") == "mt5_broker"
+        if a is not None:
+            r = a.get("corrected_pnl_r")
+            gross = _f(a.get("corrected_pnl_pips"))
+            if gross is None:
+                ex, en = _f(a.get("corrected_exit_mid")), _f(a.get("corrected_entry")) or _f(c.get("entry_mid"))
+                gross = (ex - en) * direction / pip if ex is not None and en is not None else None
+            broker = a.get("annotation_type") == "broker_reconcile"
+        else:
+            r = c.get("pnl_r")
+            pp = _f(c.get("pnl_price"))
+            gross = pp / pip if pp is not None else None
+        if not isinstance(r, (int, float)):
+            continue
+        cost = 0.0 if broker else _cost_pips(opens.get(pid))
+        out.append({"position_id": pid, "pair": c.get("pair"), "pnl_r": float(r), "annotated": a is not None,
+                    "pips_gross": None if gross is None else round(gross, 2),
+                    "pips_net": None if gross is None else round(gross - cost, 2), "broker_truth": broker})
     return out
 
 
-def sum_r(events: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
-    rows = closed_r(load() if events is None else events)
+def sum_r(
+    events: Iterable[dict[str, Any]] | None = None,
+    *,
+    use_annotations: bool = True,
+    ignore_types: Iterable[str] = (),
+) -> dict[str, Any]:
+    rows = closed_r(load() if events is None else events, use_annotations=use_annotations, ignore_types=ignore_types)
+    wins = [r["pnl_r"] for r in rows if r["pnl_r"] > 0]
+    losses = [-r["pnl_r"] for r in rows if r["pnl_r"] < 0]
     return {"sum_r": round(sum(r["pnl_r"] for r in rows), 4) if rows else None, "closed_counted": len(rows),
             "annotated": sum(1 for r in rows if r["annotated"]),
-            "definition": "sum of pnl_r over closed explore positions; annotation corrected_pnl_r overrides, exclude_from_explore drops"}
+            "broker_truth": sum(1 for r in rows if r["broker_truth"]),
+            "wins": len(wins), "pf_r": round(sum(wins) / sum(losses), 3) if losses else None,
+            "pips_gross": round(sum(r["pips_gross"] or 0.0 for r in rows), 1) if rows else None,
+            "pips_net_after_costs": round(sum(r["pips_net"] or 0.0 for r in rows), 1) if rows else None,
+            "definition": "sum of pnl_r over closed explore positions; latest annotation corrected_pnl_r overrides, any exclude_from_explore drops; net pips subtract assumed cost except broker-truth fills"}
 
 
 def status(events: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -359,10 +423,17 @@ def path_exit(pos: dict[str, Any], bars, now: datetime, cfg: dict[str, Any]) -> 
     start = t0.floor("h") + pd.Timedelta(hours=hours)
     expiry = t0 + pd.Timedelta(hours=float(pos.get("horizon_bars") or cfg["default_horizon_bars"]) * hours)
     sl, tp, side = _f(pos.get("sl")), _f(pos.get("tp")), pos.get("side")
+    prev_end = start
+    stale = nowt - expiry > pd.Timedelta(hours=float(cfg.get("gap_defer_max_hours", 48)))
     for ts, (_, bar) in zip(idx, bars.iterrows()):
         end = ts + pd.Timedelta(hours=hours)
         if ts < start or end > nowt:
             continue
+        if not stale and _market_hours_missing(prev_end, ts) > 0:
+            # A completed FX hour is missing (PC off / refresh not run yet):
+            # the barrier may have been touched inside the hole, so don't guess.
+            return {"defer": True, "reason": "bars_missing", "missing_from_utc": prev_end}
+        prev_end = max(prev_end, end)
         hi, lo, cl = _f(bar.get("High")), _f(bar.get("Low")), _f(bar.get("Close"))
         if hi is None or lo is None:
             continue
@@ -379,6 +450,24 @@ def path_exit(pos: dict[str, Any], bars, now: datetime, cfg: dict[str, Any]) -> 
         if end >= expiry and cl is not None:
             return {"reason": "duration", "price": cl, "bar_utc": ts}
     return None
+
+
+def _fx_closed_hour(t) -> bool:
+    """FX weekend in UTC: Fri 21:00 -> Sun 21:00."""
+    wd, h = t.weekday(), t.hour
+    return wd == 5 or (wd == 4 and h >= 21) or (wd == 6 and h < 21)
+
+
+def _market_hours_missing(prev_end, ts) -> int:
+    """Whole FX-open hours between the end of the last seen bar and ``ts``."""
+    import pandas as pd
+
+    n, t = 0, prev_end.floor("h")
+    while t < ts and n < 1000:
+        if not _fx_closed_hour(t):
+            n += 1
+        t = t + pd.Timedelta(hours=1)
+    return n
 
 
 def _exit_reason(pos: dict[str, Any], last: float, now: datetime, cfg: dict[str, Any]) -> str | None:
@@ -407,20 +496,35 @@ def run_pass(
     now: datetime | None = None,
     barrier_fn=board_barriers,
     bars_fn=board_bars,
+    hold_ids: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    """One exploration pass over board rows: mark-to-close, then open."""
+    """One exploration pass over board rows: mark-to-close, then open.
+
+    ``hold_ids``: positions whose MT5 demo state could not be confirmed (broker
+    unreachable / unknown). Paper must not apply its own exit to those; the
+    broker-truth reconcile (mt5_exec.reconcile_broker) runs first and closes
+    the ones the broker already closed.
+    """
     c = {**EXPLORE_CONFIG, **(cfg or {})}
     now = now or _now()
     by_pair = {str(r.get("pair") or "").upper(): r for r in rows if isinstance(r, dict)}
     events = load()
     out: dict[str, Any] = {"closes": [], "decisions": [], "fills_added": 0, "journal": str(explore_journal_path())}
+    hold = {str(x) for x in (hold_ids or ())}
+    if hold:
+        out["held_for_broker"] = sorted(hold)
 
-    # 1) exits (mark-based at pass time; not intrabar)
+    # 1) exits: first SL/TP touch on completed 1h bars (intrabar), else mark at pass time
     for pid, pos in open_positions(events).items():
+        if pid in hold:
+            continue
         row = by_pair.get(str(pos.get("pair") or "").upper())
         last = _f((row or {}).get("last"))
         hit = path_exit(pos, bars_fn(str(pos.get("pair") or "").upper()) if bars_fn else None, now, c)
         basis = "bar_path_barrier"
+        if hit and hit.get("defer"):
+            out.setdefault("deferred", []).append({"position_id": pid, "reason": hit["reason"]})
+            continue
         if hit:
             reason, last = hit["reason"], float(hit["price"])
         else:
@@ -519,6 +623,8 @@ __all__ = [
     "load",
     "open_positions",
     "closed_r",
+    "pip_size",
+    "RECONCILE_TYPES",
     "sum_r",
     "run_pass",
     "status",

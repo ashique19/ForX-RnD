@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -81,11 +82,23 @@ def main() -> int:
         return 3
     rows = [r for r in (board.get("rows") or []) if isinstance(r, dict)]
     before_ids = {str(e.get("position_id")) for e in load() if e.get("event") == "open"}
-    out = run_pass(rows)
+    exec_on = not args.no_mt5_exec and os.environ.get("FORX_MT5_EXEC", "on").lower() != "off"
+    hold: list[str] = []
+    if exec_on:
+        # Broker truth first: positions the MT5 demo already closed are booked at
+        # the broker's real exit; unknown ones are held (paper won't exit them).
+        from forex_lab.mt5_exec import reconcile_broker  # noqa: PLC0415
+
+        rec = reconcile_broker()
+        result["broker_reconcile"] = rec
+        hold = list(rec.get("hold") or [])
+    else:
+        result["broker_reconcile"] = {"enabled": False, "reason": "mt5 exec off; paper-only exits"}
+    out = run_pass(rows, hold_ids=hold)
     result.update(out)
     new_ids = [str(e.get("position_id")) for e in load() if e.get("event") == "open" and str(e.get("position_id")) not in before_ids]
-    if args.no_mt5_exec:
-        result["mt5_exec"] = {"enabled": False, "reason": "--no-mt5-exec"}
+    if not exec_on:
+        result["mt5_exec"] = {"enabled": False, "reason": "--no-mt5-exec" if args.no_mt5_exec else "FORX_MT5_EXEC=off"}
     else:
         from forex_lab.mt5_exec import mirror  # noqa: PLC0415
 
