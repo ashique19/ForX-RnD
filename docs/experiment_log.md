@@ -400,3 +400,25 @@ Script: `scripts/daily_trend_alignment.py`, with tests.
 **3. No hypothesis drafted.** That step was conditional on a promising result. A daily SMA20/50 filter
 or `tf_1D` features would need a pre-registered walk-forward over all 10 pairs on Dukascopy history
 before any live use; this entry does not authorize one.
+## 2026-10-20 04:12-04:45 Asia/Dhaka - Pre-registered 15-variant study: daily trend, flip exit, trend holds, profit-lock, dynamic target (research only)
+- Prereg commits came first, before any run or result:
+  - 85b657b, 53c2322, 9ac69ea, 701e799, 8eaecd9 (final: 15 variants, Bonferroni 0.05/15).
+- Code: `research/htf/` and tests.
+- Harness: champion recipe walk-forward (`walk_forward_backtest`) on data/history for 10 pairs.
+  - Run serially at BelowNormal priority. In-memory `compare_logistic=false`. Yaml untouched.
+  - Holdout cutoff 2025-10-01 enforced. Measured p90 costs. Swap 1 pip per rollover (Wednesday x3) for the hold family.
+- Code check:
+  - There is no flip, opposite-signal or trailing exit anywhere. Every engine exits on TP, SL or the 8-bar horizon only (see PREREG_FLIP_EXIT / PREREG_TREND_HOLD for the file lines).
+  - exit_hold=3 and horizon 6 were not flip exits.
+- In-sample results (afea42b, written before the holdout): the baseline is 23,723 trades, PF 0.760, -2,607R.
+  - Only H120_TP4 passed its own bar plus Bonferroni (PF 0.804).
+  - The F1/F2 monthly-R gains come only from trading less.
+- Holdout, scored once: 0 of 15 pass. H120_TP4 PF was 0.736 vs 0.716.
+  - The baseline loses on all 10 pairs (PF 0.72 at p90, 0.87 at p50).
+- Full tables: `research/htf/RESULTS_20261020.md`. Outputs are in ignored data/edge_check/htf_20261020/.
+- Verdict: no edge from any of these ideas. No rule or live change.
+- Side note, read-only:
+  - Hourly RSI14 (`rsi`) is live in all 10 champions. No daily RSI exists.
+  - `vol_z` (20-bar z of tick volume) is live in 9/10 champions, not in EURUSD.
+  - `volatility` and `vol_regime` are return-based, not volume-based.
+  - No RSI or volume family has been tested or banned.
