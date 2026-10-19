@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from forex_lab.explore_book import EXPLORE_CONFIG, explore_journal_path, load, run_pass  # noqa: E402
+from forex_lab.explore_book import EXPLORE_CONFIG, explore_journal_path, load, run_pass, status  # noqa: E402
 from forex_lab.paper_shadow import fill_count, journal_path  # noqa: E402
 
 DHAKA = ZoneInfo("Asia/Dhaka")
@@ -84,6 +84,7 @@ def main() -> int:
     before_ids = {str(e.get("position_id")) for e in load() if e.get("event") == "open"}
     exec_on = not args.no_mt5_exec and os.environ.get("FORX_MT5_EXEC", "on").lower() != "off"
     hold: list[str] = []
+    live: list[str] = []
     if exec_on:
         # Broker truth first: positions the MT5 demo already closed are booked at
         # the broker's real exit; unknown ones are held (paper won't exit them).
@@ -92,9 +93,16 @@ def main() -> int:
         rec = reconcile_broker()
         result["broker_reconcile"] = rec
         hold = list(rec.get("hold") or [])
+        live = list(rec.get("live") or [])
     else:
         result["broker_reconcile"] = {"enabled": False, "reason": "mt5 exec off; paper-only exits"}
-    out = run_pass(rows, hold_ids=hold)
+    out = run_pass(rows, hold_ids=hold, broker_exit_ids=live)
+    if exec_on:
+        # Demo close goes out in this same pass; paper close is booked at the real fill.
+        from forex_lab.mt5_exec import close_and_book  # noqa: PLC0415
+
+        result["broker_exits"] = close_and_book(out.get("pending_broker_exits") or [])
+        out["status"] = status()
     result.update(out)
     new_ids = [str(e.get("position_id")) for e in load() if e.get("event") == "open" and str(e.get("position_id")) not in before_ids]
     if not exec_on:

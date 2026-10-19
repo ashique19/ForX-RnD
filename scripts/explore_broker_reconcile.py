@@ -89,6 +89,31 @@ def broker_annotations(ev: list[dict], mt5, now=None) -> tuple[list[dict], list[
     return out, skipped
 
 
+def demo_fill_annotations(ev: list[dict], mt5, now=None) -> tuple[list[dict], list[dict]]:
+    """Paper exits that the demo then closed at market ("expert" close): restate at the real demo fill."""
+    done = {str(a.get("ref_position_id")) for a in ev
+            if a.get("event") == "annotation" and a.get("annotation_type") in eb.BROKER_FILL_TYPES}
+    closes: dict[str, dict] = {}
+    for e in ev:
+        if e.get("event") == "close":
+            closes.setdefault(str(e.get("position_id")), e)
+    m_open = {str(e.get("position_id")): e for e in ev if e.get("event") == "mt5_open" and e.get("ok") and e.get("ticket")}
+    out, skipped = [], []
+    for mc in [e for e in ev if e.get("event") == "mt5_close" and e.get("ok") and not e.get("already_closed")]:
+        pid = str(mc.get("position_id"))
+        c = closes.get(pid)
+        if pid in done or c is None or c.get("exit_basis") in ("mt5_broker", "mt5_fill") or pid not in m_open:
+            continue
+        b = mx.broker_state(mt5, int(m_open[pid]["ticket"]))
+        if b.get("state") != "closed":
+            skipped.append({"position_id": pid, "ticket": m_open[pid]["ticket"], **b})
+            continue
+        out.append(mx.broker_annotation(c, m_open[pid], b, now, reason="paper_exit_booked_at_demo_fill",
+                                        annotation_type="demo_fill"))
+        done.add(pid)
+    return out, skipped
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
@@ -102,14 +127,20 @@ def main() -> int:
     mt5 = mt5_feed._mt5()
     try:
         broker, skipped = broker_annotations(ev, mt5)
+        fills, skipped2 = demo_fill_annotations(ev, mt5)
+        skipped += skipped2
     finally:
         mt5.shutdown()
     dups = duplicate_annotations(ev, a.before_utc)
     if a.apply:
-        for row in broker + dups:
+        for row in broker + dups + fills:
             eb.append(row)
     print(json.dumps({"applied": a.apply, "broker_reconcile": len(broker), "duplicate_entry": len(dups),
-                      "skipped": skipped,
+                      "demo_fill": len(fills), "skipped": skipped,
+                      "fill_rows": [{k: r.get(k) for k in ("ref_position_id", "mt5_ticket", "original_exit_reason",
+                                                           "original_pnl_r", "corrected_pnl_r", "original_exit_mid",
+                                                           "corrected_exit_mid", "corrected_exit_time_utc",
+                                                           "mt5_profit_usd")} for r in fills],
                       "broker_rows": [{k: r.get(k) for k in ("ref_position_id", "mt5_ticket", "original_exit_reason",
                                                              "original_pnl_r", "corrected_exit_reason", "corrected_pnl_r",
                                                              "corrected_exit_time_utc", "mt5_profit_usd")} for r in broker],

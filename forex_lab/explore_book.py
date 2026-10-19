@@ -131,7 +131,10 @@ def open_positions(events: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]
 
 
 # Annotation types added by the 2026-10-19 broker-truth reconcile.
-RECONCILE_TYPES = ("broker_reconcile", "duplicate_entry")
+RECONCILE_TYPES = ("broker_reconcile", "duplicate_entry", "demo_fill")
+# Annotation / exit bases whose prices are real MT5 demo fills (spread already inside).
+BROKER_FILL_TYPES = ("broker_reconcile", "demo_fill")
+BROKER_FILL_BASES = ("mt5_broker", "mt5_fill")
 
 
 def pip_size(pair: object) -> float:
@@ -193,14 +196,14 @@ def closed_r(
         a = ann_corr.get(pid)
         pip = pip_size(c.get("pair"))
         direction = 1.0 if c.get("side") == "BUY" else -1.0
-        broker = c.get("exit_basis") == "mt5_broker"
+        broker = c.get("exit_basis") in BROKER_FILL_BASES
         if a is not None:
             r = a.get("corrected_pnl_r")
             gross = _f(a.get("corrected_pnl_pips"))
             if gross is None:
                 ex, en = _f(a.get("corrected_exit_mid")), _f(a.get("corrected_entry")) or _f(c.get("entry_mid"))
                 gross = (ex - en) * direction / pip if ex is not None and en is not None else None
-            broker = a.get("annotation_type") == "broker_reconcile"
+            broker = a.get("annotation_type") in BROKER_FILL_TYPES
         else:
             r = c.get("pnl_r")
             pp = _f(c.get("pnl_price"))
@@ -497,6 +500,7 @@ def run_pass(
     barrier_fn=board_barriers,
     bars_fn=board_bars,
     hold_ids: Iterable[str] | None = None,
+    broker_exit_ids: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     """One exploration pass over board rows: mark-to-close, then open.
 
@@ -504,6 +508,11 @@ def run_pass(
     unreachable / unknown). Paper must not apply its own exit to those; the
     broker-truth reconcile (mt5_exec.reconcile_broker) runs first and closes
     the ones the broker already closed.
+
+    ``broker_exit_ids``: mirrored positions confirmed open at the MT5 demo.
+    Paper still DECIDES their exit here, but does not book it: the decision is
+    returned in ``pending_broker_exits`` and mt5_exec.close_and_book closes the
+    demo position in the same pass and books the paper close at the real fill.
     """
     c = {**EXPLORE_CONFIG, **(cfg or {})}
     now = now or _now()
@@ -511,6 +520,8 @@ def run_pass(
     events = load()
     out: dict[str, Any] = {"closes": [], "decisions": [], "fills_added": 0, "journal": str(explore_journal_path())}
     hold = {str(x) for x in (hold_ids or ())}
+    via_broker = {str(x) for x in (broker_exit_ids or ())}
+    out["pending_broker_exits"] = []
     if hold:
         out["held_for_broker"] = sorted(hold)
 
@@ -534,6 +545,13 @@ def run_pass(
             basis = "board_last_at_pass"
             if not reason:
                 continue
+        if pid in via_broker:
+            out["pending_broker_exits"].append({
+                "position_id": pid, "pair": pos.get("pair"), "side": pos.get("side"), "paper_exit_reason": reason,
+                "paper_exit_price": last, "paper_exit_basis": basis,
+                "paper_exit_bar_utc": hit["bar_utc"].strftime("%Y-%m-%dT%H:%M:%SZ") if hit else None,
+            })
+            continue
         entry = _f(pos.get("entry_mid")) or last
         risk = abs(entry - (_f(pos.get("sl")) or entry)) or None
         direction = 1.0 if pos.get("side") == "BUY" else -1.0
@@ -625,6 +643,7 @@ __all__ = [
     "closed_r",
     "pip_size",
     "RECONCILE_TYPES",
+    "BROKER_FILL_TYPES",
     "sum_r",
     "run_pass",
     "status",
