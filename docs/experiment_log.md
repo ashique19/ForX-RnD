@@ -104,3 +104,49 @@ and a separate pre-registered replay; this log entry does not authorize one.
   pre-existing; untracked stale `tests/test_history_decode_fix.py` ignored).
 - **Open:** earlier explore/main entries may have been scored on partial tip bars before this
   fix; not re-audited here.
+
+### Audit: entries decided on forming/partial 1h bars (2026-10-19 23:53 Dhaka, read-only)
+- **Why:** after the partial-bar fix (0641a94) - were past main/explore calls scored on
+  incomplete bars, and does that change the scorecard? Read-only: no journal, data, model
+  or yaml change. Script `scripts/audit_partial_bar_entries.py` (+7 tests).
+- **Method:** signal bar per entry from the open row / matching explore decision. Truth =
+  fresh read-only MT5 H1 (cache == MT5 OHLC on 699/699 overlap bars per pair). Each entry
+  re-scored with the frozen models (unchanged since 2026-10-09 17:27 Dhaka) twice: on the
+  closed bar, and "as used" (forming bar rebuilt from MT5 M1 up to the entry minute; for a
+  stale tip, the earliest M1 cut-off that reproduces the journal). A verdict is only given
+  when the replay reproduces the journaled side and conf within 0.02 ("faithful").
+- **Control:** replaying decisions against later CSV snapshots matched only where data
+  was stable (pre_mt5_tip 53/55, 2026-10-17 weekend 63/67 on bars >= 75 min old). Other
+  snapshots did not match, and that exposed a **second data bug (not fixed here):** the
+  MT5 volume rescale is self-referential. The cache's volume scale flipped from
+  cache/MT5 ~0.25-0.56 to 1.0 for bars from 2026-10-14 onward on 9 of 10 pairs (USDCHF
+  stays 0.658). The flip happened between the 2026-10-17 02:13 and 2026-10-19 20:16
+  snapshots, so the cache now has a 2-4x volume step that feeds vol features.
+- **Findings, exploration (84 entries):** 43 were scored on a FORMING bar (entry 3-60 min
+  into the hour). 41 were on a "stale tip" (bar closed, but it was still the newest bar,
+  so the cache had not been refreshed). Of those 41, 33 reproduce only with a partial bar
+  cut at minute 1-12 (27 or 39 for 3; a 59-cut search, so a chance match is possible),
+  7 reproduce on the full closed bar, and 1 is unverifiable. **Affected: 77 of 84; zero
+  closed (counted) trades were on a verified-complete bar.** Faithful verdicts: 40 still
+  fire on the closed bar, 16 would not, 21 unverifiable.
+- **R (reconciled demo-fill basis, same as explore_sum_r.py; 32 closed):** all 32 counted
+  trades are affected; total +1.77R, PF 1.16, +46.3 net pips. Would not fire on the closed
+  bar: 6 trades, +3.05R. Still fire: 15 trades, -0.75R, PF 0.87. Unverifiable: 11 trades,
+  -0.53R. Without the would-not-fire trades: 26 trades, -1.28R, PF 0.88. **Scorecard
+  impact:** the positive exploration total comes entirely from calls the closed-bar policy
+  would not take. As a test of the policy the desk now runs (closed bars only), the book
+  shows no edge (-0.75R on the 15 verified trades). Pre-fix R stays a valid record of what
+  was traded, but it is not evidence for the closed-bar policy.
+- **Main (4 model fills):** all 4 were on forming bars. NZDUSD (+1.0R) still fires on the
+  closed bar (faithful). GBPUSD (already excluded, retrain) still fires. EURJPY (-0.05R)
+  and USDCHF are unverifiable; USDCHF's closed bar scores HOLD 0.556. No main verdict
+  changes a gate. Stage-2 stays far from 4 green weeks.
+- **Exits:** 31 bar-path paper exits re-run on true MT5 bars: 0 differ (reason and bar).
+- **Proposed, NOT applied (needs the user's OK):** one append-only annotation per explore
+  and main position: `annotation_type: "signal_bar_audit"`, `audit_version:
+  "partial_bar_audit_v1"`, `bar_status` (forming / stale_tip / closed), `partial_proven`,
+  `verdict` (still_fires / would_not_fire / unverifiable / closed_bar_reproduced),
+  `closed_bar_raw`/`closed_bar_conf`, `as_used_conf`, `exclude_from_explore: false`,
+  `exclude_from_stage2: false` (observe-only; totals unchanged). explore_sum_r.py would
+  then add a "closed_bar_policy" view (verdict != would_not_fire). From 0641a94 on, new
+  entries are closed-bar by construction. The book should be judged on post-fix entries.
