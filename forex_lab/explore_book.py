@@ -111,9 +111,15 @@ def load(path: Path | None = None) -> list[dict[str, Any]]:
     return rows
 
 
+# Annotation types that take an open position out of the paper book without a priced close
+# (e.g. an open journaled but never sent to the demo: not scoreable on demo fills).
+NOT_OPEN_TYPES = ("excluded_no_demo_fill",)
+
+
 def open_positions(events: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     opened: dict[str, dict[str, Any]] = {}
-    for e in events:
+    events_list = list(events)
+    for e in events_list:
         pid = str(e.get("position_id") or "")
         if not pid:
             continue
@@ -127,6 +133,9 @@ def open_positions(events: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]
             opened[pid]["entry_basis"] = e.get("basis") or "rebase"
         elif e.get("event") == "close":
             opened.pop(pid, None)
+    for e in events_list:
+        if e.get("event") == "annotation" and e.get("annotation_type") in NOT_OPEN_TYPES:
+            opened.pop(str(e.get("ref_position_id") or ""), None)
     return opened
 
 
@@ -643,6 +652,7 @@ __all__ = [
     "closed_r",
     "pip_size",
     "RECONCILE_TYPES",
+    "NOT_OPEN_TYPES",
     "BROKER_FILL_TYPES",
     "sum_r",
     "run_pass",
