@@ -518,3 +518,23 @@ before any live use; this entry does not authorize one.
   - A dry run of the new pass on a copy of the backup gives the identical exits and writes both Stage-2 close rows.
   - Not fixed here, pending the user's decision: the test isolation, and whether to backfill the 2 Stage-2 close rows.
 - No yaml change, no retrain, no journal or data committed.
+
+## 2026-10-20 14:33-14:40 Asia/Dhaka - Stage-2 close backfill (2 rows) and test isolation of the live paper book
+- **Backup.** Taken first: `D:\ForX-backup\2026-10-20\pre_close_backfill\` holds `journal.jsonl` (sha256 7EE999DB3402FF15..., 29 rows) and `paper_broker.json`.
+- **Backfill (append only).** 2 close rows were appended to `data/paper_shadow/journal.jsonl`, for 29 -> 31 rows.
+  - The first 20,722 bytes are byte-identical to the backup.
+  - The fields are the ones the all-pairs exits pass (33ca84b) produced on the backup copy, plus `backfill: true`, `annotation: true`, `exit_bar_utc`, and a `backfill_note` naming the pytest leak. `ts_utc` is the backfill time, not the exit time.
+  - `pos_a53ced76524b` AUDUSD SELL: exit_mid 0.69951669541977 (sl), exit bar 2026-10-20 06:00 UTC, fill_id fill_d0959eac8b91.
+  - `pos_7d5f7c2915bb` NZDUSD SELL: exit_mid 0.5676673963010844 (sl), exit bar 2026-10-20 03:00 UTC, fill_id fill_2ef89516d51b.
+- **Test isolation (`tests/conftest.py`).** An autouse fixture now:
+  - redirects the default paper store (`data/paper_broker.json`, as resolved by `forex_lab.broker.make_broker`) to a tmp file;
+  - makes `PaperBroker._flush` raise if it would write the live file.
+  - This closes the leak where `test_desk_qa` rendered `streamlit_app.py`, which ran `refresh_from_ohlcv` on the live book.
+  - New `tests/test_paper_book_isolation.py` checks both, and never calls a real flush.
+- **Verification.** A full suite run (744 passed, 13 known failures; the Streamlit test now passes in the full run) left these 4 files unchanged in hash, size and mtime from before to after the run:
+  - `paper_broker.json` D86D0C50A26B9166
+  - `journal.jsonl` 14FD954C250C7342
+  - `explore_journal.jsonl` D470D6EDED66622E
+  - `calls.jsonl` 75D79378F06D6B93
+- No yaml change, no journal or data committed.
+
