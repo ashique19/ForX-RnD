@@ -462,3 +462,31 @@ before any live use; this entry does not authorize one.
   - **NZDUSD carries the same old segment.** It runs 2024-10-13 -> 2026-06, with 21 months more than 1 pip off history and 5 months with a median gap over 1 pip.
     It passes the guard today only narrowly (0.668), so it is still bad data. Not changed; the same splice would fix it if approved.
 - No yaml edits. No data CSV committed.
+## 2026-10-20 10:14-10:22 Asia/Dhaka - EURUSD splice persists after refresh; NZDUSD old segment spliced the same way
+- **EURUSD persistence.** The first hourly refresh after the splice ran at 10:14:44 (late; usually :10). It kept the spliced bars:
+  - 12,776 rows (one new bar);
+  - guard median 0.10 pip;
+  - the 10,670 pre-seam bars are identical to data/history;
+  - the seam is unchanged.
+  - `try_mt5_refresh` merges only the last 72 MT5 bars into the existing cache, so no code fix was needed.
+- **NZDUSD.** The same tool was used (`scripts/splice_history_segment.py`, cdd5dbf), with seam **2026-06-19 02:00 UTC**. That is where the desk bars switch from about 2-3 pips off history to about 0.5 pip.
+  - **Backup:** `D:\ForX-backup\2026-10-20\pre_nzdusd_csv_fix\` holds:
+    - the 09:15 snapshot;
+    - the exact pre-swap file `NZDUSD_1h.csv` read at 10:15;
+    - the `.mt5.json` meta and `.source` files;
+    - the signals snapshot.
+  - **Swap:** atomic, at 10:15:12, right after the 10:14 refresh. 10,413 old bars (2024-10-13 23:00 -> 2026-06-19 01:00) were replaced by 10,445 validated history bars.
+    - The volume is already the same as the history tick volume (ratio 1.00).
+    - 223 hours were present only in history; 191 were present only in the old file.
+  - **Verification:**
+    - Guard median 0.668 -> 0.10 pip; wickless share 0.27%.
+    - 12,552 rows, no duplicates.
+    - All bars from the seam on are identical to the pre-swap file. So the open main NZDUSD SELL (from 07:05) and the exploration positions see unchanged bars.
+    - Seam: 01:00 Close 0.57460 -> 02:00 Open 0.57465, a 0.5 pip gap (the usual MT5-vs-Dukascopy bid offset).
+    - Gaps: 104 weekends, plus holiday/DST gaps. There are also holes in the validated history that were left unfilled, not synthesized:
+      - single hours on 2024-11-05;
+      - 2024-11-08 15:00 -> the weekend;
+      - 2024-11-20 17:00-00:00;
+      - 2025-12-25 01:00 and 04:00.
+    - Signals: the last 64 NZDUSD signals are identical before and after. The desk's `latest_signals.csv` overlaps on 63 rows with 0 differences.
+- No retrain, no yaml change, no data CSV committed.
