@@ -422,3 +422,43 @@ before any live use; this entry does not authorize one.
   - `vol_z` (20-bar z of tick volume) is live in 9/10 champions, not in EURUSD.
   - `volatility` and `vol_regime` are return-based, not volume-based.
   - No RSI or volume family has been tested or banned.
+## 2026-10-20 08:14-09:12 Asia/Dhaka - EURUSD desk CSV: old yfinance segment replaced with validated history; W43 gate rerun (report-only)
+
+- **Trigger.** The W43 weekly gate (08:14) was refused by the bar-quality guard: median |Open - prev Close| was 1.09 pips (limit 1.0).
+- **Diagnosis.** The bad segment of `data/EURUSD_1h.csv` is **2024-09-30 20:00 -> 2026-06-19 01:00 UTC (10,565 bars)**, not just to 2025-10.
+  - Monthly median gap was 1.06-1.39 pips. Prices were long yfinance floats, offset about 3-4 pips from Dukascopy bid.
+  - From 2026-06-19 02:00 the desk bars agree with data/history within 0.2-0.3 pip, with a median gap of 0.0-0.1.
+  - Volume in the bad segment already equals the Dukascopy tick volume exactly (ratio 1.00). That comes from the earlier tip-volume repair.
+- **Option chosen: splice, not trim.**
+  - Retrain has no data-dir option. Pointing it at data/history would need a yaml or config change, and the history ends 2026-10-12, missing the latest week.
+  - Trimming the bad segment would leave only about 2,100 bars, roughly one training window.
+  - The splice fixes the file every desk and gate path already reads. The weekly gate will not fail again on this file.
+- **Tool.** `scripts/splice_history_segment.py` (cdd5dbf, with tests):
+  - Bars at or after the seam are kept as byte-identical text lines.
+  - Bars before the seam are taken verbatim from data/history (validated 2026-10-15; bid OHLC, Dukascopy tick volume). No synthesized prices.
+  - It waits for a desk refresh write, then builds a temp file and swaps it with `os.replace`, but only if the source mtime did not change.
+- **Backup.** `D:\ForX-backup\2026-10-20\pre_eurusd_csv_fix\` holds:
+  - `EURUSD_1h.csv`, the exact pre-swap file read at 09:10;
+  - `EURUSD_1h.csv.snapshot_0820`;
+  - the `.mt5.json` meta and `.source` files;
+  - `latest_signals_before_0820.csv`.
+- **Swap.** Atomic, at 09:10:27 Dhaka, right after the 09:10 desk refresh. The result has 12,775 rows. 10,670 history bars replaced 10,565 old ones:
+  - 229 hours were present only in history (mostly hours yfinance missed);
+  - 124 hours were present only in the old file (mostly yfinance Friday 21:00 after-close stubs).
+- **Verification.**
+  - The guard passes: median gap 0.10 pip, wickless share 0.2%.
+  - No duplicate hours. All bars after the seam are identical to the pre-swap file.
+  - Seam: 01:00 Close 1.14531 -> 02:00 Open 1.14533, a 0.2 pip gap.
+  - Gaps: 107 normal weekends, plus 6 holiday/DST gaps (Christmas, New Year, DST Sunday). There are also 5 small holes in the validated history on 2026-05-12 and 2026-05-22, 2-4 h each. They were left unfilled, not synthesized.
+  - Signals: generate_signals on the pre-swap and post-swap frames gives an identical last 64 EURUSD rows. The 09:10:55 desk `latest_signals.csv` overlaps the 08:11 snapshot on 63 rows with 0 differences.
+- **W43 gate**, `python -m forex_lab retrain --json`, report-only, no --promote:
+  - Verdict **null, keep champion**.
+  - Challenger walk-forward: PF 0.906, return -4.26%, max DD -5.90%, 547 trades.
+  - Champion record: PF 0.926, return -6.67%, max DD -8.35%, 1,089 trades.
+  - The PF did not improve, and it fails the 1.05 floor.
+  - Not promotable. Champion not written, nothing trained. Only `data/champion/EURUSD_challenger.json` and the history line were written.
+- **Other 9 desk CSVs (read-only).**
+  - 8 of them (USDJPY, GBPUSD, AUDUSD, USDCAD, USDCHF, EURJPY, EURGBP, GBPJPY) start 2026-06-19 and are clean: guard median 0.0-0.1 pip.
+  - **NZDUSD carries the same old segment.** It runs 2024-10-13 -> 2026-06, with 21 months more than 1 pip off history and 5 months with a median gap over 1 pip.
+    It passes the guard today only narrowly (0.668), so it is still bad data. Not changed; the same splice would fix it if approved.
+- No yaml edits. No data CSV committed.
