@@ -66,8 +66,10 @@ def journal(tmp_path, monkeypatch):
 
 
 def _open(pid="exp_abc", side="BUY"):
+    # SELL gets mirrored stops (SL above, TP below): broker-valid since the 2026-10-21 stops pre-check.
+    sl, tp = (1.0980, 1.1040) if side == "BUY" else (1.1040, 1.0980)
     eb.append({"event": "open", "pair": "EURUSD", "side": side, "position_id": pid, "entry_mid": 1.10006,
-               "sl": 1.0980, "tp": 1.1040, "ts_utc": "2026-10-14T10:00:00Z"})
+               "sl": sl, "tp": tp, "ts_utc": "2026-10-14T10:00:00Z"})
 
 
 def test_refuses_non_demo(journal):

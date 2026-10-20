@@ -552,3 +552,36 @@ before any live use; this entry does not authorize one.
 - **Takeaway.** Skipping trades whose cost exceeds 0.10R is the one consistent improvement (holdout DD -45R vs -314R). But what remains still loses (p50 holdout PF 0.981). The recipe has no positive entry edge after costs.
 - Full tables: `research/entry_edge/RESULTS_ENTRY_EDGE_20261020.md`. Outputs are in ignored `data/edge_check/entry_edge_20261020/`. No rule, yaml, promote or live change.
 
+## 2026-10-21 03:15-03:30 Asia/Dhaka - Explore MT5 mirror 10016 "Invalid stops" (NZDUSD exp_99d6a7d32c6b): stops pre-check
+
+**Incident.** Burst at 03:15:48 Dhaka (21:15:48 UTC) opened paper NZDUSD SELL exp_99d6a7d32c6b at entry_mid 0.56847
+(entry_basis board_last_mid = close of the prior H1 bar), SL 0.5697367, TP 0.5672033 (SL distance 12.67 pips).
+The mirror sent SELL 0.01 at bid 0.56733 with a journaled spread of 17.5 pips; MT5 answered retcode 10016 "Invalid stops"; burst exit 4.
+
+**Root cause (verified from the journal row, MT5 symbol_info and ticks).** NZDUSD: digits 5, point 1e-5,
+trade_stops_level 5 pts, trade_freeze_level 0. The send fell in the NY-17:00 rollover (ticks 14-17-pip spread,
+5-min medians 13.0/16.1/9.75 pips). open_order keeps the paper SL/TP *distances* and re-anchors them on the
+traded price, so SL = 0.56733 + 0.00127 = 0.56860, which is BELOW the ask 0.56908. MT5 judges a SELL's SL against
+the Ask (>= stops_level points above it), so the SL sat inside the spread. stops_level/freeze_level were not the
+binding limit; spread > SL distance was. SL/TP were not computed from the board mid (only the distances are);
+the board mid 0.56847 was ~11 pips above the tradable bid.
+
+**Fix (forex_lab/mt5_exec.py).** New `stops_precheck(info, tick, side, sl, tp)`: BUY SL/TP vs Bid, SELL SL/TP vs Ask,
+each >= max(trade_stops_level, trade_freeze_level, 1) points on the correct side. `open_order` runs it before
+`order_send`; if invalid it does NOT send and returns ok False, sent False, precheck invalid_stops, bid/ask,
+limits, distances and error `invalid_stops_precheck: ...`. Stops are never widened/adjusted, so paper SL/TP and
+R are unchanged. Still one attempt per position (no retry); the burst still reports it in step_errors (exit 4).
+Tests: tests/test_mt5_stops_precheck.py (incident replay refused before send, normal spread sends identical
+distances, SELL/BUY rules, freeze level, zero level). tests/test_mt5_exec.py `_open(side="SELL")` fixture now
+uses SELL-shaped stops (it previously sent a SELL with SL below entry, which a broker would reject).
+Full suite: 753 passed, 13 failed (the same 13 known unrelated failures); live explore journal hash unchanged by the run.
+
+**Orphan.** Not mirrored late: ~6 min had passed, the rollover spread was still wide, a late fill would rebase the
+paper entry onto a different price (not a mirror), and 2 NZDUSD SELL demo positions were already open; precedent
+`excluded_no_demo_fill` (2026-10-19, exp_be5db708ffd2). Backup D:\ForX-backup\2026-10-21\pre_unmirrored_annotation\explore_journal.jsonl
+(SHA256 8A7B1F48...06FF, equal to source), then appended ONE annotation (03:21:31 Dhaka): annotation_type
+excluded_no_demo_fill, reason mt5_invalid_stops_10016_rollover_spread, ref_position_id exp_99d6a7d32c6b,
+exclude_from_explore/stage2 true, closes_position true, priced false, unmirrored true. It is out of open_positions;
+explore_sum_r after: sum_r -14.6147, closed_counted 108, open 7 (no close row existed, so no R was removed).
+No MT5 order placed, no settings touched, no yaml edits.
+

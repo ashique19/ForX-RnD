@@ -88,6 +88,33 @@ def _find_position(mt5, symbol: str, comment: str, order_ticket: int | None):
     return None
 
 
+def stops_precheck(info, tick, side: str, sl: float, tp: float) -> dict[str, Any] | None:
+    """Broker stop rules checked BEFORE order_send (None = valid).
+
+    MT5 judges a BUY's SL/TP against the Bid and a SELL's against the Ask, each at least
+    max(trade_stops_level, trade_freeze_level) points away (and strictly on the right side).
+    When the live spread is wider than the paper SL distance (e.g. NY-17:00 rollover) the
+    re-anchored SL lands inside the spread and the broker answers 10016 "Invalid stops".
+    We never widen the stops to make them fit (that would change paper R): the order is not sent.
+    """
+    point = float(getattr(info, "point", 0) or 0) or 10.0 ** -int(getattr(info, "digits", 5))
+    level = max(int(getattr(info, "trade_stops_level", 0) or 0), int(getattr(info, "trade_freeze_level", 0) or 0))
+    bid, ask = float(tick.bid), float(tick.ask)
+    if str(side).upper() == "BUY":
+        sl_pts, tp_pts = round((bid - sl) / point), round((tp - bid) / point)
+        ref, sl_lim, tp_lim = "bid", round(bid - level * point, 8), round(bid + level * point, 8)
+    else:
+        sl_pts, tp_pts = round((sl - ask) / point), round((ask - tp) / point)
+        ref, sl_lim, tp_lim = "ask", round(ask + level * point, 8), round(ask - level * point, 8)
+    need = max(level, 1)
+    bad = [k for k, v in (("sl", sl_pts), ("tp", tp_pts)) if v < need]
+    if not bad:
+        return None
+    return {"precheck": "invalid_stops", "invalid": bad, "stops_ref": ref, "bid": bid, "ask": ask,
+            "stops_level_points": level, "sl_dist_points": int(sl_pts), "tp_dist_points": int(tp_pts),
+            "sl_limit": sl_lim, "tp_limit": tp_lim}
+
+
 def open_order(mt5, symbol: str, open_row: dict[str, Any]) -> dict[str, Any]:
     pid = str(open_row["position_id"]); pair = str(open_row["pair"]).upper(); side = str(open_row["side"]).upper()
     base = {"event": "mt5_open", "pair": pair, "symbol": symbol, "side": side, "position_id": pid, "volume": LOT,
@@ -110,10 +137,16 @@ def open_order(mt5, symbol: str, open_row: dict[str, Any]) -> dict[str, Any]:
         "deviation": DEVIATION_POINTS, "magic": MAGIC, "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC, "type_filling": _filling(mt5, info),
     }
-    assert_demo(mt5)  # re-checked immediately before the send
-    res = mt5.order_send(request)
     row = {**base, "requested_price": req_price, "spread_price": round(spread, 8),
            "spread_pips": round(spread / _pip(pair), 3), "comment": comment}
+    bad = stops_precheck(info, tick, side, request["sl"], request["tp"])
+    if bad is not None:
+        # Not sent (no 10016 round-trip, no widened stops): the paper fill stays unmirrored.
+        return {**row, **bad, "ok": False, "sent": False, "sl_req": request["sl"], "tp_req": request["tp"],
+                "error": f"invalid_stops_precheck: {'/'.join(bad['invalid'])} inside spread+stops_level "
+                         f"(spread {round(spread / _pip(pair), 1)} pips, stops_level {bad['stops_level_points']} pts)"}
+    assert_demo(mt5)  # re-checked immediately before the send
+    res = mt5.order_send(request)
     if res is None:
         return {**row, "ok": False, "error": f"order_send returned None ({mt5.last_error()})"}
     if int(res.retcode) != int(mt5.TRADE_RETCODE_DONE):
@@ -492,4 +525,4 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
 
 
 __all__ = ["LOT", "MAGIC", "assert_demo", "broker_annotation", "broker_state", "close_and_book", "close_order", "mirror",
-           "open_order", "reconcile_broker", "server_to_utc", "trade_allowed_error"]
+           "open_order", "reconcile_broker", "server_to_utc", "stops_precheck", "trade_allowed_error"]
