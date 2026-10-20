@@ -34,3 +34,38 @@ Per-pair PF at p90 (trades in brackets):
 
 **In-sample reading.** Only H1 clears its in-sample bar. Its PF is still 0.867, so it loses less but still loses: cutting costly trades helps without creating a positive edge.
 H2 adds nothing: the model does not use the cross-currency information to improve entries. H3 lowers PF, so the USD trades it skips were, if anything, slightly better than the ones kept.
+
+## Holdout (entries 2025-10-01 -> 2026-10-12), scored ONCE after 45ed364. p90 costs, R units.
+
+| Variant | Trades | PF | Total R | Max DD R | Win rate | Daily t p (one-sided, alpha 0.0167) | Holdout bar |
+|---|---|---|---|---|---|---|---|
+| baseline | 2,462 | 0.724 | -309 | -314 | 47.1% | - | - |
+| H1 cost gate | 727 | 0.896 | -30 | -45 | 49.9% | 0.90 | FAIL (PF < 1, p not significant) |
+| H2 currency strength | 2,523 | 0.769 | -256 | -260 | 49.1% | 1.00 | FAIL (PF < 1) |
+| H3 USD de-dup | 1,413 | 0.666 | -217 | -220 | 45.2% | 1.00 | FAIL (PF < 1 and below baseline) |
+
+p50: baseline 0.869, H1 0.981, H2 0.921, H3 0.826. No variant reaches PF 1 at either cost level.
+
+Per-pair holdout PF at p90 (trades in brackets):
+
+| Pair | baseline | H1 | H2 | H3 |
+|---|---|---|---|---|
+| EURUSD | 0.878 (375) | 0.913 (357) | 0.955 (362) | 0.771 (168) |
+| USDJPY | 0.955 (134) | 0.945 (120) | 0.824 (194) | 0.917 (45) |
+| GBPUSD | 0.847 (261) | 0.618 (86) | 0.876 (257) | 1.077 (97) |
+| AUDUSD | 0.913 (246) | 1.164 (51) | 0.847 (274) | 0.938 (99) |
+| NZDUSD | 0.623 (149) | 5.585 (11) | 0.731 (152) | 0.582 (50) |
+| USDCAD | 0.690 (253) | 0.538 (6) | 0.757 (257) | 0.697 (91) |
+| USDCHF | 0.724 (271) | 2.397 (10) | 0.688 (247) | 0.629 (90) |
+| EURJPY | 0.747 (212) | 0.707 (79) | 1.013 (191) | 0.747 (212) |
+| EURGBP | 0.467 (343) | - (0) | 0.507 (330) | 0.467 (343) |
+| GBPJPY | 0.629 (218) | 3.770 (7) | 0.692 (259) | 0.629 (218) |
+
+The H1 per-pair figures above 1 rest on 6-11 trades, which is noise.
+
+**Verdict: 0 of 3 pass.** H1 (skip trades whose p90 cost exceeds 0.10R) is the only rule that improves the losing recipe in both windows: PF 0.760 -> 0.867 in-sample and 0.724 -> 0.896 on the holdout, with DD far smaller.
+It still loses after costs, and on the holdout it is not significant (p 0.90). On the holdout it keeps mostly EURUSD and USDJPY trades.
+That says cost is a large part of the loss, but the model has no positive entry edge to keep once costs are cut. H2 gave the model cross-currency information it did not use (in-sample PF 0.756).
+Its holdout PF of 0.769 is above the baseline but below 1. H3 lowers PF. One USD bet at a time cuts exposure and DD in proportion to trades, but does not lift quality.
+No rule, yaml or live change. A FAIL produces no proposal. Trials N = 131.
+

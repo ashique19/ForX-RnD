@@ -538,3 +538,17 @@ before any live use; this entry does not authorize one.
   - `calls.jsonl` 75D79378F06D6B93
 - No yaml change, no journal or data committed.
 
+## 2026-10-20 22:40-23:20 Asia/Dhaka - Pre-registered entry-edge round: H1 cost gate, H2 currency strength, H3 USD de-dup (research only)
+- **Prereg** 06dc692 (`research/entry_edge/PREREG_ENTRY_EDGE_20261020.md`), committed and pushed before any run. 3 hypotheses, so N = 128 + 3 = 131.
+  - In-sample bar: PF >= baseline + 0.05, DD no worse, >= 500 trades, one-sided Welch p < 0.05/131.
+  - Holdout bar: PF > 1.00 at p90, PF > baseline, DD no worse, >= 100 trades, daily-R t-test p < 0.05/3.
+- **Code and tests** 2dc0c8c (`research/entry_edge/entry_edge_20261020.py`, `tests/test_entry_edge_20261020.py`, 4 passed).
+- **Run** 22:48-23:04 Dhaka at BelowNormal priority. The desk and routines were untouched.
+  - Baseline from the saved HTF fold predictions, re-simulated. It reproduced the HTF baseline exactly on all 10 pairs (count and total R, p90 and p50).
+  - H2 re-ran the walk-forward with 9 in-memory currency-strength features. Prediction bar counts were identical to the baseline.
+  - Holdout cutoff enforced. Yaml untouched (in-memory `compare_logistic=false`).
+- **In-sample** 45ed364, written before the holdout. p90 PF: baseline 0.760, H1 0.867 (PASS in-sample, Welch p 8e-15), H2 0.756 FAIL, H3 0.729 FAIL.
+- **Holdout**, scored once. p90 PF: baseline 0.724 (2,462 trades), H1 0.896 (727), H2 0.769 (2,523), H3 0.666 (1,413). None reaches PF 1, so **0 of 3 pass**.
+- **Takeaway.** Skipping trades whose cost exceeds 0.10R is the one consistent improvement (holdout DD -45R vs -314R). But what remains still loses (p50 holdout PF 0.981). The recipe has no positive entry edge after costs.
+- Full tables: `research/entry_edge/RESULTS_ENTRY_EDGE_20261020.md`. Outputs are in ignored `data/edge_check/entry_edge_20261020/`. No rule, yaml, promote or live change.
+
