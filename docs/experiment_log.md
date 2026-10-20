@@ -490,3 +490,31 @@ before any live use; this entry does not authorize one.
       - 2025-12-25 01:00 and 04:00.
     - Signals: the last 64 NZDUSD signals are identical before and after. The desk's `latest_signals.csv` overlaps on 63 rows with 0 differences.
 - No retrain, no yaml change, no data CSV committed.
+
+## 2026-10-20 14:14-14:40 Asia/Dhaka - Main paper book: exits now run for every open position, not only the active pair
+- **Bug.** Main-book exits (`_auto_one` -> `_bar_path_exit`) ran only for the active watchlist pair (`deskdata.board_payload` line 784; `_watch_rows` when `rows=None`), and not at all while auto was paused. The shadow burst opens on every pair, so positions on non-active pairs never closed. With `active: EURJPY`, AUDUSD SELL and NZDUSD SELL sat past their stops, marked -1.10R / -1.89R at the last close.
+- **Evidence (desk CSV = MT5 bars, server UTC+3).**
+  - NZDUSD SELL, entry 0.56643, SL 0.5676674. 03:00 UTC bar (09:00 Dhaka) High 0.56769. First MT5 ask >= SL at 03:58 UTC (09:58 Dhaka), 0.56768.
+  - AUDUSD SELL, entry 0.69823, SL 0.6995167. 06:00 UTC bar (12:00 Dhaka) High 0.69977. First ask >= SL at 06:39 UTC (12:39 Dhaka), 0.69952.
+  - Neither gapped.
+- **Fix (`api/paperdesk.py`).** New `_exit_all_open_on_bars` runs in `run_auto_paper` before the auto-enabled check, over every open position:
+  - It loads the cached bars, drops any bar still forming (`_completed_bars`), and calls `_bar_path_exit`.
+  - On a hit it calls `broker.close` at the barrier price, stamped at the exit bar, then `_shadow_safe_close`.
+  - Inactive pairs get no live-price, clock-duration, or opposite-signal fallback. Opening is still active-pair only.
+- **Tests.** `tests/test_mainbook_exits_all_pairs.py` covers a non-active pair:
+  - stop hit, with auto on and with auto paused;
+  - target hit;
+  - time exit at the horizon bar close;
+  - no touch stays open;
+  - a touch on a forming bar is ignored.
+- **Test results.**
+  - The new file plus `test_main_bar_path_exit` and `test_portfolio`: 40 passed.
+  - Full suite: 741 passed, 14 failed: the 13 known failures plus `test_desk_qa::test_streamlit_stale_row...`, which passes alone (2/2).
+- **Backup.** `D:\ForX-backup\2026-10-20\pre_mainbook_exit_fix\` holds `paper_broker.json` and `paper_shadow\*`, taken before any run.
+- **What actually booked the two closes: a test leak.** The full pytest run, at about 14:28, booked both closes before the API restart.
+  - `test_desk_qa::test_streamlit_stale_row_disables_buy_sell_and_keeps_dhaka` renders `streamlit_app.py` against the REAL `data/paper_broker.json`. The board render calls `refresh_from_ohlcv`, which bar-walks and closes.
+  - The resulting closes match the rule: AUDUSD sl @ 0.6995167, stamped 2026-10-20 06:00 UTC; NZDUSD sl @ 0.5676674, stamped 03:00 UTC.
+  - Their Stage-2 close rows went to the pytest tmp journal (conftest override), so `data/paper_shadow/journal.jsonl` has no close rows for `pos_a53ced76524b` or `pos_7d5f7c2915bb`.
+  - A dry run of the new pass on a copy of the backup gives the identical exits and writes both Stage-2 close rows.
+  - Not fixed here, pending the user's decision: the test isolation, and whether to backfill the 2 Stage-2 close rows.
+- No yaml change, no retrain, no journal or data committed.

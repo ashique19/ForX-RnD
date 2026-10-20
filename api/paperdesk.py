@@ -1153,6 +1153,64 @@ def _auto_one(
     return events
 
 
+def _completed_bars(frame: Any, interval: str, now: datetime) -> Any:
+    """Bars whose full interval has ended by ``now`` (drops a forming bar, if any)."""
+    if frame is None or getattr(frame, "empty", True):
+        return frame
+    import pandas as pd
+
+    secs = int(INTERVAL_SECONDS.get(interval) or 3600)
+    idx = pd.to_datetime(frame.index, utc=True)
+    keep = (idx + pd.Timedelta(seconds=secs)) <= pd.Timestamp(_as_utc(now))
+    return frame[keep]
+
+
+def _exit_all_open_on_bars(broker: PaperBroker, cfg: dict[str, Any], now: datetime | None) -> list[str]:
+    """Exits-only pass over EVERY open main-book position, whatever the active pair.
+
+    Uses the cached completed 1h bars after the entry bar: first SL/TP touch, or
+    the horizon close (``_bar_path_exit``). Books the barrier price stamped at the
+    exit bar. No live-price, duration-by-clock, or opposite-signal fallback here:
+    those still need a built board row and stay with the active-pair pass. Runs
+    even when auto is paused. Never opens anything.
+    """
+    clock = _as_utc(now)
+    events: list[str] = []
+    for pos in list(broker.list_positions()):
+        try:
+            symbol = str(pos.get("pair") or "").upper()
+            if not symbol:
+                continue
+            interval = str(pos.get("timeframe") or cfg.get("interval") or "1h")
+            frame = _completed_bars(load_cached_ohlcv(symbol, cfg, interval), interval, clock)
+            if frame is None or frame.empty:
+                continue
+            hit = _bar_path_exit(pos, frame, cfg)
+            if hit is None:
+                continue
+            reason, exit_px, exit_when = hit
+            fill = broker.close(str(pos["id"]), price=exit_px, reason=reason, timestamp=exit_when)
+            _shadow_safe_close(
+                pair=symbol,
+                side=str(pos.get("side") or "CLOSE"),
+                conf=pos.get("confidence"),
+                entry_mid=pos.get("entry_price"),
+                exit_mid=exit_px,
+                sl=pos.get("sl"),
+                tp=pos.get("tp"),
+                source="desk",
+                position_id=str(pos.get("id") or ""),
+                fill_id=str((fill or {}).get("id") or ""),
+                exit_reason=reason,
+                notes=f"bar-path exit at {exit_when} (all-pairs exits pass)",
+                now=clock,
+            )
+            events.append(_book_event(symbol, f"close {reason}", book_id(pos)))
+        except Exception:  # noqa: BLE001 - one bad pair must not block the others
+            continue
+    return events
+
+
 def run_auto_paper(
     cfg: dict[str, Any] | None = None,
     *,
@@ -1188,6 +1246,8 @@ def run_auto_paper(
         auto = broker.read_auto()
         min_confidence = int(auto["min_confidence"])
         champion = normalize_champion(auto.get("champion"))
+        # Exits for every open position first (any pair, auto on or paused).
+        exit_events = _exit_all_open_on_bars(broker, cfg, now)
         if rows is None:
             rows = _watch_rows(cfg)
         notices: list[str] = []
@@ -1212,7 +1272,7 @@ def run_auto_paper(
                 except Exception as exc:
                     errors.append({"pair": pair.upper(), "error": str(exc)})
             return {
-                "events": [],
+                "events": exit_events,
                 "errors": errors,
                 "auto_enabled": False,
                 "blocks": blocks,
@@ -1220,7 +1280,7 @@ def run_auto_paper(
             }
         seen = {key: dict(value) for key, value in auto["seen"].items()}
         original = {key: dict(value) for key, value in seen.items()}
-        events: list[str] = []
+        events: list[str] = list(exit_events)
         errors = []
         blocks = []
         for row in rows:
