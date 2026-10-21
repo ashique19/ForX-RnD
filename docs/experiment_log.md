@@ -604,3 +604,16 @@ No MT5 order placed, no settings touched, no yaml edits.
 - No case met PF >= 1.10 plus recovery >= 1 plus p < 3.42e-4, so per the prereg the holdout was not scored. All 15 variants are banned.
 - Results: `research/new_families/RESULTS_20261022.md`. Outputs are in the ignored `data/edge_check/new_families_20261022/`.
 
+## 2026-10-21 23:58 - 2026-10-22 00:10 Asia/Dhaka - Low-frequency round F1-F3 (4h/daily): 0/8 pass in-sample, holdout not run
+- Prereg 0fd7527, with a causality clarification before the run in 29fa5eb (F2 weekly decision = Friday close). Script plus 10 no-lookahead tests: 29fa5eb.
+  Full suite: 771 passed, 13 failed (the same 13 known unrelated failures).
+- **Bars:** resampled from 1h; day = 21:00->21:00 UTC (Fri stub joins Friday); 4h bins from 21:00 UTC.
+- **Costs:** p90, plus financing = BIS policy-rate differential (data.bis.org WS_CBPOL bulk, free; extracted to `data/research/bis/`, not committed) minus a 1 pip/rollover markup.
+- **Trials:** N = 154.
+- **Ran:** 3 Idle-priority processes at 00:04-00:05 Dhaka; the desk, journals, MT5 and yaml were not touched.
+- **In-sample PF (p90 + financing):**
+  - F1 squeeze: 4h EURUSD 0.82/0.84, USDJPY 0.80/0.97; daily 0.54-0.67 (n 43-69).
+  - F2 carry: top3 1.52 but n = 20 < 30, p = 0.27; top5 0.60.
+  - F3 TSMOM: L20 0.65 EURUSD / 0.95 USDJPY; L120 1.03 / 0.93 (1.58 / 1.28 without financing), pooled 0.52.
+- No case passed, so the holdout was not scored. All 8 are banned. Results: `research/lowfreq/RESULTS_LOWFREQ_20261022.md`.
+
