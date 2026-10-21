@@ -656,3 +656,24 @@ No MT5 order placed, no settings touched, no yaml edits.
     - F2_top3: 4.12 (+46.6R, n 20 < 30, p 0.028).
   - No primary pass, so no holdout. Results: `research/lowfreq/RESULTS_SWAP_RETEST_20261022.md`.
 
+## 2026-10-22 00:16-00:35 Asia/Dhaka - Forward paper shadow tracker (MOM120, CARRY3): frozen, scheduled, day 0 recorded
+- **Rules frozen** in `research/forward_shadow/FROZEN_RULES_20261022.md` (88be2e3): 3 primary cases (MOM120 EURUSD, MOM120 USDJPY, CARRY3 pooled).
+  - Interim review at 6 months (descriptive only). Final at 12 months, or once there are >= 6 closed trades, capped at 24 months.
+  - PASS: closed-trade PF > 1.10, net R > 0, daily mark-to-market t-test p < 0.0167, and max DD <= 1.5x the in-sample max DD (kill switch).
+  - No parameter changes allowed: a change means a new tracker and a new trial.
+- **Code:** `forex_lab/forward_shadow.py` (pure, event-sourced, keyed rows) and `scripts/forward_shadow_lowfreq.py` (IO).
+  - Data: hourly `data/history` plus the desk tip cache, only after history's end. History ends 2026-10-12 18:00; the tip overlap check gave median diffs of 0.2-0.9 pips.
+  - Bars: closed 21:00 UTC daily bars.
+  - Swaps: a read-only MT5 symbol_info snapshot each run.
+  - Rates: BIS policy rates refreshed from the free bulk zip when older than 72 h.
+  - Output: its own journal `data/forward_shadow/forward_journal.jsonl` (gitignored; added to the nightly age-encrypted ForX-DataBackup daily set).
+  - No MT5 orders, no desk trading endpoints, no main/explore journal access.
+- **Tests:** tests/test_forward_shadow.py (8): init-only day 0, no backfill before init, fills at a real next-bar Open, catch-up == daily runs, idempotent rerun, no lookahead, missing-pair wait, Wednesday-triple swaps.
+  Full suite 795 passed, 13 failed (the same 13 known unrelated failures).
+- **Scheduled task** `\ForX-ForwardShadow`: daily 03:20 Asia/Dhaka, StartWhenAvailable, 30 min limit, user Ashique (Interactive, Limited). A manual Start-ScheduledTask run returned result 0.
+- **Day 0** (init 2026-10-21 18:23:55 UTC = 00:23:55 Dhaka; last closed daily bar 2026-10-20 21:00 UTC): state only, no trades booked.
+  - MOM120 targets: EURUSD -1, USDJPY +1, GBPUSD -1, AUDUSD -1, NZDUSD -1, USDCAD +1, USDCHF +1, EURJPY -1, EURGBP -1, GBPJPY -1.
+  - CARRY3 at the last Friday close (2026-10-16): long USDJPY, USDCHF, GBPJPY (BIS rates last published 2026-10-13).
+  - First forward decision: the 2026-10-21 21:00 UTC close (MOM120) and the 2026-10-23 Friday close (CARRY3). Fills at the following daily Open.
+  - Reruns append nothing (journal: swap_snapshot, init, run).
+

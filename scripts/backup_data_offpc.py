@@ -42,7 +42,7 @@ LOG = ROOT / "data" / "backup" / "backup.log"
 KEEP_DAILY = 7
 SPLIT_BYTES = 90 * 1024 * 1024
 SETS = {
-    "daily": ["data/paper_shadow/**", "data/paper_broker.json", "data/*_1h.csv", "data/costs/**", "data/calendar/**",
+    "daily": ["data/paper_shadow/**", "data/paper_broker.json", "data/*_1h.csv", "data/costs/**", "data/calendar/**", "data/forward_shadow/**",
               "models/**", "data/champion/**", "config/watchlist.yaml", "docs/experiment_log.md"],
     "history": ["data/history/**"],
 }

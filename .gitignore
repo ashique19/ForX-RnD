@@ -52,3 +52,4 @@ data/mt5_volume_anchor.json
 
 # research downloads / snapshots (BIS rates, swap snapshots, FRED) - never committed
 data/research/
+data/forward_shadow/
