@@ -49,3 +49,6 @@ data/backup/
 
 # Frozen MT5 volume scale anchors (data; regenerate with scripts/mt5_volume_anchor.py freeze)
 data/mt5_volume_anchor.json
+
+# research downloads / snapshots (BIS rates, swap snapshots, FRED) - never committed
+data/research/
