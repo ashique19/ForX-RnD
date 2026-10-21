@@ -88,6 +88,67 @@ def _find_position(mt5, symbol: str, comment: str, order_ticket: int | None):
     return None
 
 
+# Max age of the last tick before the broker market is treated as closed. Liquid FX ticks every few
+# seconds; outside session breaks no gap > 150 s was seen (2026-10-13..21). Breaks seen on
+# OANDA_Global-Demo-1: all pairs 20:59-21:05 UTC (NY rollover), NZDUSD also 17:59-18:05 UTC.
+MAX_TICK_AGE_S = 120
+TRADE_MODE_FULL, TRADE_MODE_LONGONLY, TRADE_MODE_SHORTONLY = 4, 1, 2
+
+
+def market_closed_reason(mt5, symbol: str, side: str | None = None, now: datetime | None = None,
+                         max_tick_age_s: float = MAX_TICK_AGE_S) -> str | None:
+    """Read-only pre-send check (None = open). The MT5 Python API has no session table, so 'open'
+    means: trade_mode allows this side AND the last tick is fresh (a session break leaves it stale)."""
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return f"no symbol_info ({mt5.last_error()})"
+    tm = getattr(info, "trade_mode", None)
+    if tm is not None:
+        tm = int(tm); sd = str(side or "").upper()
+        ok = tm == TRADE_MODE_FULL or (tm == TRADE_MODE_LONGONLY and sd == "BUY") or (tm == TRADE_MODE_SHORTONLY and sd == "SELL")
+        if not ok:
+            return f"trade_mode={tm} does not allow {sd or 'opening'}"
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None or not getattr(tick, "bid", 0) or not getattr(tick, "ask", 0):
+        return "no tick"
+    t = getattr(tick, "time", None)
+    if t:
+        now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        age = (now_utc - server_to_utc(float(t))).total_seconds()
+        if age > max_tick_age_s:
+            return f"stale tick: last {age:.0f}s ago > {max_tick_age_s:.0f}s (broker session break / market closed)"
+    return None
+
+
+def market_status(pairs: Iterable[str], *, mt5=None, connect=None, resolve=None, now=None) -> dict[str, str]:
+    """{pair: reason} for pairs whose broker market is closed right now (read-only; DEMO enforced)."""
+    pairs = sorted({str(p).upper() for p in pairs if p})
+    if not pairs:
+        return {}
+    owns = mt5 is None
+    if owns:
+        from forex_lab import mt5_feed
+        (connect or mt5_feed.connect)(require_demo=True)
+        mt5 = mt5_feed._mt5()
+        resolve = resolve or mt5_feed.resolve_symbols
+    try:
+        assert_demo(mt5)
+        symbols = resolve(pairs) if resolve else {p: p for p in pairs}
+        out = {}
+        for p in pairs:
+            sym = symbols.get(p)
+            why = market_closed_reason(mt5, sym, None, now) if sym else "symbol not found"
+            if why:
+                out[p] = why
+        return out
+    finally:
+        if owns:
+            try:
+                mt5.shutdown()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def stops_precheck(info, tick, side: str, sl: float, tp: float) -> dict[str, Any] | None:
     """Broker stop rules checked BEFORE order_send (None = valid).
 
@@ -115,10 +176,14 @@ def stops_precheck(info, tick, side: str, sl: float, tp: float) -> dict[str, Any
             "sl_limit": sl_lim, "tp_limit": tp_lim}
 
 
-def open_order(mt5, symbol: str, open_row: dict[str, Any]) -> dict[str, Any]:
+def open_order(mt5, symbol: str, open_row: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
     pid = str(open_row["position_id"]); pair = str(open_row["pair"]).upper(); side = str(open_row["side"]).upper()
     base = {"event": "mt5_open", "pair": pair, "symbol": symbol, "side": side, "position_id": pid, "volume": LOT,
             "sl": open_row.get("sl"), "tp": open_row.get("tp"), "magic": MAGIC}
+    closed = market_closed_reason(mt5, symbol, side, now)
+    if closed is not None:
+        # Not sent (no 10018 round-trip): broker market closed / session break.
+        return {**base, "ok": False, "sent": False, "precheck": "market_closed", "error": f"market_closed_precheck: {closed}"}
     info = mt5.symbol_info(symbol); tick = mt5.symbol_info_tick(symbol)
     if info is None or tick is None or not tick.bid or not tick.ask:
         return {**base, "ok": False, "error": f"no symbol/tick ({mt5.last_error()})"}
@@ -505,7 +570,7 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
                 row = {"event": "mt5_open", "position_id": pid, "pair": o.get("pair"), "ok": False, "error": "symbol not found"}
             else:
                 try:
-                    row = open_order(mt5, sym, o)
+                    row = open_order(mt5, sym, o, now)
                 except Exception as exc:  # noqa: BLE001
                     row = {"event": "mt5_open", "position_id": pid, "pair": o.get("pair"), "ok": False, "error": str(exc)}
             eb.append({**row, **eb._stamps(now)})
@@ -525,4 +590,4 @@ def mirror(new_position_ids: Iterable[str], *, mt5=None, connect=None, resolve=N
 
 
 __all__ = ["LOT", "MAGIC", "assert_demo", "broker_annotation", "broker_state", "close_and_book", "close_order", "mirror",
-           "open_order", "reconcile_broker", "server_to_utc", "stops_precheck", "trade_allowed_error"]
+           "market_closed_reason", "market_status", "open_order", "reconcile_broker", "server_to_utc", "stops_precheck", "trade_allowed_error"]

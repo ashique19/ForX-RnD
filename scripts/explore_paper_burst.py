@@ -158,9 +158,19 @@ def main(argv: list[str] | None = None) -> int:
 
         mirrored = {str(e.get("position_id")) for e in load() if e.get("event") == "mt5_open" and e.get("ok")}
         hold = [pid for pid in open_positions(load()) if pid in mirrored]
+    blocked: dict = {}
+    if exec_on:
+        # Broker market closed (session break) -> no new paper fill for that pair (it could not be mirrored).
+        try:
+            from forex_lab.mt5_exec import market_status  # noqa: PLC0415
+
+            blocked = market_status([r.get("pair") for r in rows])
+            result["broker_market_closed"] = blocked
+        except Exception as exc:  # noqa: BLE001  - mirror's own pre-send check still guards
+            result["market_check_error"] = f"{type(exc).__name__}: {exc}"
     out: dict = {}
     try:
-        out = run_pass(rows, hold_ids=hold, broker_exit_ids=live)
+        out = run_pass(rows, hold_ids=hold, broker_exit_ids=live, entry_blocked=blocked)
     finally:
         # Whatever happens after the pass, new opens are mirrored in THIS pass (no orphans).
         new_ids = [str(e.get("position_id")) for e in load()

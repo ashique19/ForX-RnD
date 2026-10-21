@@ -520,6 +520,7 @@ def run_pass(
     bars_fn=board_bars,
     hold_ids: Iterable[str] | None = None,
     broker_exit_ids: Iterable[str] | None = None,
+    entry_blocked: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """One exploration pass over board rows: mark-to-close, then open.
 
@@ -532,7 +533,12 @@ def run_pass(
     Paper still DECIDES their exit here, but does not book it: the decision is
     returned in ``pending_broker_exits`` and mt5_exec.close_and_book closes the
     demo position in the same pass and books the paper close at the real fill.
+
+    ``entry_blocked``: {pair: reason} where the broker market is closed right now
+    (mt5_exec.market_status). No new paper fill is booked for those pairs (it could
+    not be mirrored); exits are unaffected.
     """
+    blocked = {str(k).upper(): str(v) for k, v in (entry_blocked or {}).items()}
     c = {**EXPLORE_CONFIG, **(cfg or {})}
     now = now or _now()
     by_pair = {str(r.get("pair") or "").upper(): r for r in rows if isinstance(r, dict)}
@@ -616,6 +622,8 @@ def run_pass(
                 reason = "max_positions_per_pair"
             elif opens >= int(c["max_opens_per_pass"]):
                 reason = "max_opens_per_pass"
+            elif pair in blocked:
+                reason = f"broker_market_closed: {blocked[pair]}"
             else:
                 take = True
         decision = {

@@ -617,3 +617,26 @@ No MT5 order placed, no settings touched, no yaml edits.
   - F3 TSMOM: L20 0.65 EURUSD / 0.95 USDJPY; L120 1.03 / 0.93 (1.58 / 1.28 without financing), pooled 0.52.
 - No case passed, so the holdout was not scored. All 8 are banned. Results: `research/lowfreq/RESULTS_LOWFREQ_20261022.md`.
 
+## 2026-10-22 00:06-00:20 Asia/Dhaka - Explore 10018 'Market closed' (NZDUSD exp_6876c3254d4a): broker session break + market-open guard
+- **Incident.** The paper open was journaled at 18:02:04 UTC (00:02:04 Dhaka). The mirror sent SELL 0.01 at bid 0.57012 at 18:02:07 UTC, and OANDA_Global-Demo-1 answered retcode 10018 "Market closed".
+- **Cause (verified, read-only MT5).** NZDUSD trade_mode = 4 (FULL), swap_mode 5, stops_level 5, so the symbol itself was tradable.
+  - The MT5 Python API has no session table (no SymbolInfoSessionTrade), so the breaks were inferred from the tick stream.
+  - NZDUSD had **no ticks from server 20:58:58 to 21:05:00 every weekday 2026-10-13..21** (= 17:59-18:05 UTC, 23:59-00:05 Dhaka).
+  - All 10 pairs also share a 20:59-21:05 UTC break (NY rollover).
+  - The 00:02 Dhaka burst therefore hit NZDUSD's daily break. trade_mode does not change during it, so only tick freshness reveals it.
+- **Fix.**
+  - `mt5_exec.market_closed_reason` (read-only): trade_mode must allow the side, and the last tick must be <= 120 s old.
+    No gap > 150 s was seen outside the break windows across 9 days and 10 pairs.
+  - `open_order` runs it first. If closed, it does not send and logs an mt5_open with ok False, sent False, precheck market_closed (same design as the add46e6 stops pre-check).
+  - `mt5_exec.market_status(pairs)`: the burst calls it before `run_pass`, and `run_pass(entry_blocked=...)` books **no paper fill** for a closed pair.
+    The decision row is logged with reason `broker_market_closed: ...`; exits are unaffected.
+    If the check itself errors, it is recorded as `market_check_error`, and the pre-send check still guards.
+  - One attempt per position as before (no retries).
+- **Tests:** tests/test_mt5_market_guard.py (13: incident replay, fresh tick sends, trade_mode matrix, 120 s boundary, market_status, run_pass blocked/unblocked).
+  Full suite 784 passed, 13 failed (the same 13 known unrelated failures). A live read-only market_status at 18:12 UTC returned {} (all open).
+- **Orphan.**
+  - Backup: D:\ForX-backup\2026-10-22\pre_10018_annotation\explore_journal.jsonl (SHA256 5FE05D06...FAB3, equal to source).
+  - Appended one annotation at 00:11:33 Dhaka: excluded_no_demo_fill, reason mt5_market_closed_10018, ref exp_6876c3254d4a (closes_position, priced false).
+  - It is no longer open, and it was never retried (single mt5_open row).
+- `.gitignore`: data/research/ is added (BIS rates and swap snapshots are never committed).
+
