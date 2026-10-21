@@ -90,3 +90,8 @@ Longer holds make the round-trip cost a smaller share of each trade.
 Daily and weekly variants have few trades and are expected to be under-powered. A fail there means "not shown", not "shown zero".
 
 A PASS produces only a written report to Ashiqul. It is not wired anywhere. Failed variants join the banned list.
+
+## Implementation clarification (added before any run, while writing the no-lookahead tests)
+- "Last daily bar of the week" cannot be known causally: on a Tuesday it is not yet known whether more bars will follow that week.
+  The F2 weekly decision is therefore the **Friday daily bar close** (the Friday bar includes the 21:00 stub hour and closes 22:00 UTC). Weeks without a Friday bar skip the rebalance.
+  No other rule changed.
