@@ -640,3 +640,19 @@ No MT5 order placed, no settings touched, no yaml edits.
   - It is no longer open, and it was never retried (single mt5_open row).
 - `.gitignore`: data/research/ is added (BIS rates and swap snapshots are never committed).
 
+## 2026-10-22 00:12-00:30 Asia/Dhaka - MT5 swap snapshot + swap re-test (F3_L120, F2_top3): 0 pass in-sample, holdout not run
+- **Swaps:** a read-only symbol_info snapshot of 10 pairs at 18:13 UTC (`data/research/swaps/`, not committed).
+  - Every symbol uses swap_mode 5 (interest on current price). The formula price x % / 360 was verified against 18 real one-night demo charges.
+  - swap_rollover3days = 7 is undocumented, so Wednesday x3 is assumed.
+  - The table is in `research/lowfreq/SWAPS_20261022.md` (95c0ab3), with pips/night and R/night at 2 x daily ATR. Examples:
+    - EURUSD long -1.10 / short +0.47 pips/night.
+    - USDJPY long +1.40 / short -2.28.
+    - USDCHF short -1.30.
+- **Re-test:** prereg 95c0ab3, script and tests f75b177. N = 156.
+  - In-sample PF at p90 + swaps:
+    - F3_L120 EURUSD: 1.435 (+14.1R, DD -10.9, n 72, p 0.23).
+    - F3_L120 USDJPY: 1.152 (+7.1R, DD -16.6, n 95, p 0.41).
+    - 10-pair: 0.685.
+    - F2_top3: 4.12 (+46.6R, n 20 < 30, p 0.028).
+  - No primary pass, so no holdout. Results: `research/lowfreq/RESULTS_SWAP_RETEST_20261022.md`.
+
