@@ -585,3 +585,22 @@ exclude_from_explore/stage2 true, closes_position true, priced false, unmirrored
 explore_sum_r after: sum_r -14.6147, closed_counted 108, open 7 (no close row existed, so no R was removed).
 No MT5 order placed, no settings touched, no yaml edits.
 
+## 2026-10-21 23:46-23:58 Asia/Dhaka - New entry families A-D (pre-registered): 0/15 pass in-sample, holdout not run
+- Prereg `research/new_families/PREREG_20261022.md` (4e8e168) was committed before any run.
+  Primary tests: EURUSD and USDJPY, each on its own; the 10 pairs are a robustness label only.
+- Trials N = 146 (131 + 15). Costs 2 x p90 measured. Split: holdout cutoff 2025-10-01.
+- Script plus no-lookahead tests: be70687 (8 tests). Full suite: 761 passed, 13 failed (the same 13 known unrelated failures).
+- Ran as 4 parallel Idle-priority processes (A/B/C/D) at 23:52-23:53 Dhaka. They finished in about 1 min, and the desk, journals and MT5 were not touched.
+- Families:
+  - A: session-open fade of a >= 2/3 ATR day move at 07:00 or 13:00 UTC.
+  - B: ATR-squeeze (<= 10/20th pct of 500 bars) N=12/24 breakout in 07-15 UTC.
+  - C: event-bar reaction cont/fade (k 0.5/1.0 ATR) on the real PIT calendar (rich, n=933: NFP/UR/CPI/PCE/GDP/FOMC/ECB).
+  - D: no re-entry for K = 8/24/48 bars after an SL on the saved champion walk-forward preds. The baseline reproduced HTF exactly, pooled IS PF 0.760.
+- In-sample PF at p90, EURUSD / USDJPY / pooled:
+  - A: 0.60-0.79 / 0.66-0.76 / 0.65-0.69.
+  - B: 0.77-0.85 / 0.85-1.03 (best: B_N24_q20 USDJPY PF 1.026, +10.9R, p 0.38) / 0.67-0.71.
+  - C: 0.54-0.70 / 0.56-0.62 / 0.50-0.56.
+  - D: 0.94-0.98 / 0.79-0.80 / 0.77-0.78, against base 0.948 / 0.803 / 0.760.
+- No case met PF >= 1.10 plus recovery >= 1 plus p < 3.42e-4, so per the prereg the holdout was not scored. All 15 variants are banned.
+- Results: `research/new_families/RESULTS_20261022.md`. Outputs are in the ignored `data/edge_check/new_families_20261022/`.
+
