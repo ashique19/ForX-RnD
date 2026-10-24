@@ -677,3 +677,32 @@ No MT5 order placed, no settings touched, no yaml edits.
   - First forward decision: the 2026-10-21 21:00 UTC close (MOM120) and the 2026-10-23 Friday close (CARRY3). Fills at the following daily Open.
   - Reruns append nothing (journal: swap_snapshot, init, run).
 
+## 2026-10-24 10:30-11:00 Asia/Dhaka - FX weekend gate moved to New York 17:00 (DST-aware); weekend MT5 offset guard; USDCHF close annotation; forward-shadow catch-up
+- **Bug:** `scripts/shadow_paper_burst.py` and `scripts/explore_paper_burst.py` decided "weekend" by the Asia/Dhaka weekday. Friday evening UTC (= Saturday in Dhaka) was treated as closed while FX was still trading.
+- **Fix:** one shared helper, `forex_lab.freshness.fx_session_open`. It converts to America/New_York (zoneinfo) and treats Fri >= 17:00 NY through Sun < 17:00 NY as closed.
+  - Summer (EDT) cut = 21:00Z; winter (EST, from 2026-11-01) cut = 22:00Z.
+  - It accepts naive-UTC or tz-aware input (Dhaka-aware works).
+  - Callers routed to it: both burst gates (explore still also checks `mt5_exec.market_status`), `scripts/refresh_if_gap.py::fx_open`, `scripts/mt5_spread_sampler.py::fx_open`, and `forex_lab/explore_book.py::_fx_closed_hour`. Those three were already UTC-based, but hard-coded 21Z.
+- **Desk cache stopped at Fri 2026-10-23 17:00Z bar (last refresh 18:02Z).** Two causes:
+  1. The monitor routine's cron is weekdays-only in Dhaka, so it stops at Sat 00:00 Dhaka = Fri 18:00Z. Routines are owner-managed and were not changed here (recommendation below).
+  2. On the weekend the last MT5 tick is stale, so `server_offset_hours` reads -5. That tripped the guard in `forex_lab/data.py::fetch_mt5_1h_utc` ("tick says UTC-5, expected UTC+3"), so POST /refresh returned fetch_failed.
+     - Fix: when `fx_session_open()` is false, the tick-derived offset is ignored and the DST-aware expected NY+7 offset is used. In session, a mismatching fresh tick is still refused.
+     - The running desk keeps the old code until its next restart. It was not restarted.
+  - `refresh_if_gap.py`: `latest_closed_bar_open` now walks back to the last in-session bar (Fri 20:00Z summer / 21:00Z winter). It no longer returns `fx_closed` within 3 h after the Friday cut, so a run just after the close still fetches the final bar.
+- **Weekend cache catch-up (standalone, new guard code):** backup `data/backup/tipcache_pre_weekend_refresh_20261024` (20 files). Then `try_mt5_refresh(pair, interval=1h, incremental=True)` ran for the 10 pairs. All now end at the real 2026-10-23 20:00Z MT5 bar. Data was not committed.
+- **Recommended monitor routine schedule (Asia/Dhaka cron):** keep `*/15 * * * 1-5` and add `*/15 0-4 * * 6` (Sat 00:00-04:59 Dhaka = Fri 18:00-22:59Z). That covers the summer 21:00Z and winter 22:00Z Friday cuts.
+  - The scripts self-gate, so extra runs are no-ops.
+  - Monday open (Sun 21:00Z summer = Mon 03:00 Dhaka; winter Mon 04:00) is already inside 1-5.
+  - The run at 03:00-03:15 Dhaka (summer) is what feeds the 03:20 ForX-ForwardShadow task.
+  - In winter the Friday cut is 04:00 Dhaka Sat, after 03:20. The Friday daily bar then lands in the next day's run via catch-up.
+- **Main-book pos_d9ae9b5f2b10 (USDCHF):** its exits did fire. `data/paper_broker.json` holds it in `closed` at TP: close fill `fill_40cde82c8c0f`, bar 2026-10-14 18:00Z.
+  - The close ran in a process loaded before 396b28b (Stage-2 close row), so no journal close row was written. The Oct 20 exits pass only scans open broker positions, so it never revisited it. This was a one-off, not a current bug.
+  - Journal backup: `data/backup/journal.jsonl.bak_pre_usdchf_close_20261024`. Then one annotation was appended (ts 2026-10-24T04:48:37Z): reason `close_not_journaled`, ref_fill_id fill_fa6125ed9246, corrected_exit_reason tp, corrected_pnl_r 1.0, corrected_exit_bar_utc 2026-10-14T18:00:00Z.
+  - Prices: bar O 0.83615 H 0.8363 L 0.83407 C 0.83454, with low <= TP and high < SL 0.839717.
+  - Price source: the MT5 desk cache `data/USDCHF_1h.csv`, because `data/history/USDCHF_1h.csv` ends 2026-10-12 18:00. This is recorded in the annotation. No rows were invented.
+- **Forward shadow:** the runner is idempotent with catch-up. Backup: `data/backup/forward_journal.jsonl.bak_pre_catchup_20261024`.
+  - Run at 2026-10-24 10:52 Dhaka appended 20 rows; an immediate rerun appended 0.
+  - The 2026-10-23 21:00Z daily bar is now in. MOM120 USDJPY's first closed trade: r -0.716. CARRY3's first decisions: long USDJPY, USDCHF, GBPJPY (fill pending at the next daily Open).
+- **Tests:** new `tests/test_fx_session_ny.py` (summer Oct 23-25 and winter Nov 6-8 cases, DST switch, burst gates, refresh_if_gap weekend target) and `tests/test_mt5_weekend_offset_guard.py`. 36 passed.
+  - Full suite: 830 passed, 14 failed. That is the 13 known unrelated failures plus `test_api_decision::test_board_limits_generation_and_auto_to_the_active_pair`, which is order-dependent: it passes alone and in its own file, with and without these changes.
+- No yaml, cost/risk/min_conf/session, MT5-setting, /pipeline or /model/train changes.

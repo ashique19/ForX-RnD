@@ -20,6 +20,10 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 JOURNAL = ROOT / "data" / "paper_shadow" / "journal.jsonl"
 DHAKA = ZoneInfo("Asia/Dhaka")
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from forex_lab.freshness import fx_session_open  # noqa: E402
 DEFAULT_MIN_CONF = 0.60
 
 
@@ -124,9 +128,9 @@ def main() -> int:
         "attempts": [],
         "fills_added": 0,
     }
-    # Dhaka Saturday/Sunday is a hard stop. No endpoint calls and no synthetic rows.
-    if now_dhaka.weekday() >= 5:
-        result.update({"ok": True, "market_closed": True, "reason": "weekend Asia/Dhaka; no paper calls attempted"})
+    # FX weekend (Fri 17:00 -> Sun 17:00 New York, DST-aware) is a hard stop. No endpoint calls and no synthetic rows.
+    if not fx_session_open(now_dhaka):
+        result.update({"ok": True, "market_closed": True, "reason": "FX weekend (Fri 17:00 -> Sun 17:00 America/New_York); no paper calls attempted"})
         result["journal_after"] = journal_count()
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0

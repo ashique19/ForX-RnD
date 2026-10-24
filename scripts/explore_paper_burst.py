@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 
 from forex_lab.explore_book import EXPLORE_CONFIG, explore_journal_path, load, run_pass  # noqa: E402
 from forex_lab.explore_book import status as book_status  # noqa: E402
+from forex_lab.freshness import fx_session_open  # noqa: E402
 from forex_lab.paper_shadow import fill_count, journal_path  # noqa: E402
 
 DHAKA = ZoneInfo("Asia/Dhaka")
@@ -122,8 +123,9 @@ def main(argv: list[str] | None = None) -> int:
         "main_journal_sha_before": _hash(main_j),
         "main_stage2_fills_before": fill_count(),
     }
-    if now_dhaka.weekday() >= 5:
-        result.update({"ok": True, "market_closed": True, "reason": "weekend Asia/Dhaka; no exploration pass"})
+    # FX week is Sun 17:00 -> Fri 17:00 New York (DST-aware), not the Dhaka calendar day.
+    if not fx_session_open(now_dhaka):
+        result.update({"ok": True, "market_closed": True, "reason": "FX weekend (Fri 17:00 -> Sun 17:00 America/New_York); no exploration pass"})
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
     health_status, health = http_json(args.base_url, "GET", "/health")

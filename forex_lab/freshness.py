@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -52,6 +53,9 @@ FX_CLOSE_WEEKDAY = 4  # Friday
 FX_CLOSE_HOUR_UTC = 21
 FX_OPEN_WEEKDAY = 6  # Sunday
 FX_OPEN_HOUR_UTC = 21
+# Authoritative cut: 17:00 New York (DST-aware); the *_UTC hours above are the summer values only.
+FX_NY = ZoneInfo("America/New_York")
+FX_CUT_HOUR_NY = 17
 
 DEFAULT_STALE_BARS = 2.0
 YF_MIN_INTERVAL_S = 60
@@ -126,15 +130,19 @@ def fmt_ts(ts: object, *, seconds: bool = False) -> str:
 
 
 def fx_session_open(now: datetime | None = None) -> bool:
-    """True when spot FX is typically trading (24/5), in naive UTC."""
-    t = now_utc(now)
-    wd = t.weekday()
-    hour = t.hour + t.minute / 60.0
-    if wd == 5:  # Saturday
+    """True when spot FX is trading (24/5): Sun 17:00 -> Fri 17:00 America/New_York.
+
+    The cut is evaluated in New York wall time (zoneinfo), so US DST is handled:
+    Fri close / Sun open = 21:00 UTC in summer (EDT), 22:00 UTC in winter (EST).
+    ``now`` may be naive UTC or tz-aware (e.g. Asia/Dhaka); never naive Dhaka wall time.
+    """
+    t = now_utc(now).replace(tzinfo=timezone.utc).astimezone(FX_NY)
+    wd, hour = t.weekday(), t.hour + t.minute / 60.0
+    if wd == 5:  # Saturday (NY)
         return False
-    if wd == FX_CLOSE_WEEKDAY and hour >= FX_CLOSE_HOUR_UTC:
+    if wd == FX_CLOSE_WEEKDAY and hour >= FX_CUT_HOUR_NY:
         return False
-    if wd == FX_OPEN_WEEKDAY and hour < FX_OPEN_HOUR_UTC:
+    if wd == FX_OPEN_WEEKDAY and hour < FX_CUT_HOUR_NY:
         return False
     return True
 

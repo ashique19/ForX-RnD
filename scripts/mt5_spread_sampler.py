@@ -30,9 +30,10 @@ def beat(state: str):
 
 
 def fx_open(now: datetime) -> bool:
-    """FX week in UTC: Sun 21:00 -> Fri 21:00."""
-    wd, h = now.weekday(), now.hour
-    return not (wd == 5 or (wd == 4 and h >= 21) or (wd == 6 and h < 21))
+    """FX week: Sun 17:00 -> Fri 17:00 America/New_York (shared DST-aware helper)."""
+    from forex_lab.freshness import fx_session_open
+
+    return fx_session_open(now)
 
 
 def sample(syms):

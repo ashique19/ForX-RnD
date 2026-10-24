@@ -475,9 +475,10 @@ def path_exit(pos: dict[str, Any], bars, now: datetime, cfg: dict[str, Any]) -> 
 
 
 def _fx_closed_hour(t) -> bool:
-    """FX weekend in UTC: Fri 21:00 -> Sun 21:00."""
-    wd, h = t.weekday(), t.hour
-    return wd == 5 or (wd == 4 and h >= 21) or (wd == 6 and h < 21)
+    """FX weekend: Fri 17:00 -> Sun 17:00 America/New_York (DST-aware; naive t = UTC)."""
+    from forex_lab.freshness import fx_session_open
+
+    return not fx_session_open(t)
 
 
 def _market_hours_missing(prev_end, ts) -> int:

@@ -26,19 +26,30 @@ from zoneinfo import ZoneInfo
 
 DHAKA = ZoneInfo("Asia/Dhaka")
 ROOT = Path(__file__).resolve().parents[1]
+FRIDAY_GRACE_H = 3
 
 
 def fx_open(now: datetime) -> bool:
-    now = now.astimezone(timezone.utc)
-    wd, h = now.weekday(), now.hour
-    if wd == 5 or (wd == 4 and h >= 21) or (wd == 6 and h < 21):
-        return False
-    return True
+    """Shared DST-aware FX session (Sun 17:00 -> Fri 17:00 America/New_York)."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from forex_lab.freshness import fx_session_open
+
+    return fx_session_open(now)
 
 
 def latest_closed_bar_open(now: datetime) -> datetime:
-    """Open time (UTC) of the most recent fully closed 1h bar."""
-    return now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    """Open time (UTC) of the most recent fully closed in-session 1h bar.
+
+    Over the FX weekend this is the last bar before the Friday 17:00 New York close
+    (Fri 20:00Z in summer, 21:00Z in winter), not a Saturday hour that never trades.
+    """
+    t = now.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    for _ in range(80):  # weekend is <= 49 h
+        if fx_open(t):
+            return t
+        t -= timedelta(hours=1)
+    return t
 
 
 def parse_bar(value: object) -> datetime | None:
@@ -135,7 +146,9 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     res: dict = {"now_dhaka": now.astimezone(DHAKA).strftime("%Y-%m-%d %H:%M Asia/Dhaka"),
                  "latest_closed_bar_utc": latest_closed_bar_open(now).strftime("%Y-%m-%dT%H:%MZ")}
-    if not fx_open(now):
+    # Keep a 3 h grace after the Friday close so the last session bar (closes AT the cut) is still
+    # fetched by a run just after the close; deeper into the weekend do nothing.
+    if not fx_open(now) and not fx_open(now - timedelta(hours=FRIDAY_GRACE_H)):
         res.update({"ok": True, "fx_closed": True, "refreshed": []})
         print(json.dumps(res, indent=2)); return 0
     st, board = _http(a.base_url, "GET", "/board")

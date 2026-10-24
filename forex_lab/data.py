@@ -845,7 +845,12 @@ def fetch_mt5_1h_utc(pair: str, count: int) -> pd.DataFrame:
         if stale:  # terminal H1 history lags the live tick: newest bars may be partial; write nothing
             raise RuntimeError(f"mt5 H1 history not synced for {sym} after {n_retry} retries")
         off = expected_mt5_server_offset_hours()
-        tick_off = F.server_offset_hours(sym)
+        from forex_lab.freshness import fx_session_open
+
+        # FX weekend (Fri 17:00 -> Sun 17:00 New York): the last tick is hours old, so
+        # "tick time - now" is not a clock offset (Sat ~05Z reads UTC-5). Use the documented
+        # NY+7 offset only; during the session a fresh tick must still agree.
+        tick_off = F.server_offset_hours(sym) if fx_session_open() else 0
         if tick_off not in (0, off):  # 0 = no/stale tick; anything else must agree
             raise MT5GuardError(f"mt5 server offset mismatch: tick says UTC{tick_off:+d}, expected UTC{off:+d}")
     finally:
