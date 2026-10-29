@@ -33,19 +33,22 @@ def _fmt(x: float) -> str:
     return repr(float(x))
 
 
-def build_spliced_text(desk_text: str, hist: pd.DataFrame, seam: pd.Timestamp) -> tuple[str, dict]:
+def build_spliced_text(desk_text: str, hist: pd.DataFrame, seam: pd.Timestamp,
+                       start: pd.Timestamp | None = None) -> tuple[str, dict]:
     lines = desk_text.splitlines()
     header, body = lines[0], [ln for ln in lines[1:] if ln.strip()]
     ts = pd.to_datetime([ln.split(",", 1)[0] for ln in body])
     keep = [ln for ln, t in zip(body, ts) if t >= seam]
-    start = ts.min()
+    desk_start = ts.min()
+    # optional backfill: history bars before the desk file's first bar (never a synthesized price)
+    start = desk_start if start is None else min(pd.Timestamp(start), desk_start)
     h = hist.loc[(hist.index >= start) & (hist.index < seam), ["Open", "High", "Low", "Close", "Volume"]]
     if h.isna().any().any():
         raise ValueError("history segment has NaNs")
     new_rows = [f"{t:%Y-%m-%d %H:%M:%S},{_fmt(r.Open)},{_fmt(r.High)},{_fmt(r.Low)},{_fmt(r.Close)},{_fmt(r.Volume)}"
                 for t, r in h.iterrows()]
     old_seg = ts[ts < seam]
-    info = {"desk_start": str(start), "seam": str(seam), "old_rows_replaced": int(len(old_seg)), "history_rows_in": int(len(h)),
+    info = {"desk_start": str(desk_start), "start": str(start), "seam": str(seam), "old_rows_replaced": int(len(old_seg)), "history_rows_in": int(len(h)),
             "kept_rows": int(len(keep)), "hours_only_in_old": int(len(old_seg.difference(h.index))),
             "hours_only_in_history": int(len(h.index.difference(old_seg)))}
     return "\n".join([header] + new_rows + keep) + "\n", info
@@ -74,6 +77,7 @@ def main() -> int:
     ap.add_argument("--pair", default="EURUSD")
     ap.add_argument("--seam", required=True, help="first desk bar (UTC) to keep, e.g. '2026-06-19 02:00'")
     ap.add_argument("--backup-dir", required=True)
+    ap.add_argument("--start", default=None, help="optional: also backfill history bars from this UTC time when it is earlier than the desk file's first bar")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--wait-refresh-s", type=int, default=1200, help="max wait for the next desk write before giving up")
     ap.add_argument("--settle-s", type=int, default=20)
@@ -92,7 +96,7 @@ def main() -> int:
         time.sleep(a.settle_s)
     m_read = desk.stat().st_mtime
     text = desk.read_text(encoding="utf-8")
-    new_text, info = build_spliced_text(text, hist, seam)
+    new_text, info = build_spliced_text(text, hist, seam, pd.Timestamp(a.start) if a.start else None)
     tmp = desk.with_name(desk.name + ".tmp_splice")
     tmp.write_text(new_text, encoding="utf-8", newline="\n")
     new_df = pd.read_csv(tmp, index_col=0, parse_dates=True)

@@ -38,3 +38,21 @@ def test_check_frame_weekend_vs_hole():
     df = _hist(idx)
     r = S.check_frame(df, "EURUSD", {}, idx[5])
     assert r["weekend_gaps"] == 1 and r["n_non_weekend_gaps"] == 1 and r["duplicates"] == 0
+
+
+def test_splice_backfills_before_desk_start_when_start_given():
+    idx = pd.date_range("2025-01-06", periods=48, freq="h")
+    seam = idx[30]
+    desk_lines = ["Datetime,Open,High,Low,Close,Volume"] + [f"{t:%Y-%m-%d %H:%M:%S},1.2,1.3,1.1,1.25,7.0" for t in idx[:30]] \
+        + [f"{t:%Y-%m-%d %H:%M:%S},1.10301,1.10333,1.10290,1.10311,55.0" for t in idx[30:]]
+    hist = _hist(pd.date_range("2025-01-01", periods=400, freq="h"))
+    start = pd.Timestamp("2025-01-03")
+    out, info = S.build_spliced_text("\n".join(desk_lines) + "\n", hist, seam, start)
+    df = pd.read_csv(pd.io.common.StringIO(out), index_col=0, parse_dates=True)
+    assert df.index.min() == start and not df.index.duplicated().any() and df.index.is_monotonic_increasing
+    assert out.splitlines()[-18:] == desk_lines[-18:]
+    pd.testing.assert_series_equal(df.loc[:idx[29], "Close"], hist.loc[start:idx[29], "Close"], check_names=False, check_freq=False)
+    assert info["history_rows_in"] == len(df.loc[:idx[29]]) and info["old_rows_replaced"] == 30
+    # a start later than the desk start never trims the desk segment
+    out2, _ = S.build_spliced_text("\n".join(desk_lines) + "\n", hist, seam, pd.Timestamp("2025-02-01"))
+    assert pd.read_csv(pd.io.common.StringIO(out2), index_col=0, parse_dates=True).index.min() == idx[0]

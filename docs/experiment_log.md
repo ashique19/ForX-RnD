@@ -719,3 +719,22 @@ No MT5 order placed, no settings touched, no yaml edits.
   - EURUSD (12,936 bars) and NZDUSD (12,712 bars) were spliced with validated history on 10-20; the other 8 desk CSVs start 2026-06-19 and have the same limit. That includes EURJPY, which was not run.
   - Fix would be the same history splice (`scripts/splice_history_segment.py`). It changes a desk data CSV, so it was not done without approval. Data history ends 2026-10-12, so the splice would also not cover the last 2.5 weeks without the desk tip.
 - Outputs (ignored, not committed): `data/_retrain_W44_{EURUSD,USDJPY}_20261029.json`. No yaml, data, model or journal committed.
+
+## 2026-10-29 22:08-23:30 Asia/Dhaka - USDJPY desk CSV backfilled from validated history (owner approved); USDJPY W44 gate rerun (report-only)
+- **Why:** the 19:40 W44 gate for USDJPY produced no walk-forward folds. `data/USDJPY_1h.csv` had only 2,259 bars (2026-06-19 02:00 -> 2026-10-29 15:00 UTC), against the 2,000-bar train + 250-bar test window.
+- **Tool change:** `scripts/splice_history_segment.py` gets an optional `--start`. It also prepends validated history bars from before the desk file's first bar. Without it the tool only replaced bars from the desk start onward, so it could not backfill. Without `--start` the behavior is unchanged. A test was added (3 pass).
+- **Splice (applied 2026-10-29 23:12:07 Dhaka, right after a desk write, atomic):** `--pair USDJPY --seam "2026-09-25 00:00" --start "2024-09-30 20:00"`.
+  - Start chosen to match the EURUSD file (2024-09-30 20:00). Before: 2,259 rows. After: 12,914 rows, 2024-09-30 20:00 -> 2026-10-29 16:00 UTC, 0 duplicates, sorted.
+  - Bars before the seam are taken verbatim from `data/history` (Dukascopy bid OHLC + tick volume). Bars from the seam on are kept as byte-identical desk text (the check is true). No price was synthesized.
+  - Seam choice: `data/history` has no 2026-09-25 bars at all (missing day), and its October rows have Volume 0. The desk has real MT5 bars for all of 09-25, so the seam is 2026-09-25 00:00. Only 4 old desk hours were dropped: Friday after-close stubs on 07-31 21:00, 08-14 21:00, 08-21 22:00, 09-18 21:00.
+  - Checks: seam open gap 0.30 pip, median open gap 0.10 pip (limit 1.0), wickless share 0.07%, desk volume / history volume median 1.02.
+  - Remaining gaps are non-weekend holes already in the sources, not created by the splice: 12 gaps, e.g. 2024-10-22 9 h, holiday gaps, and a desk gap 2026-10-23 20:00 -> 10-26 14:00 (weekend desk outage). They were not filled.
+  - Backups: `D:\ForX-backup\2026-10-29\pre_USDJPY_csv_fix\` (csv + mt5.json + .source, taken immediately before the swap) and `data/backup/pre_USDJPY_csv_fix_20261029` (hash-identical to the pre-splice file).
+- **Interruption:** the first agent run was interrupted while the splice was still waiting for a desk write. On resume the CSV was untouched and not corrupted (2,259 rows, 0 duplicates, hash equal to the backup), so no restore was needed. The waiting splice process completed the apply.
+- **USDJPY gate**, `python -m forex_lab retrain --pair USDJPY --json`, no --promote, run at 23:12:34:
+  - Challenger walk-forward after costs (1.0 pip): PF 1.0995, return +2.39%, max DD -3.19%, 257 trades, win rate 52.9%, 44 folds.
+  - No USDJPY champion exists. Verdict `seed`: "no saved champion - first walk-forward seeds the slot (not a promotion)". `champion_written` false, `promotion_blocked` true, `trained` false. Nothing was seeded or promoted.
+  - Gate floors: the PF floor passes at 1.0995 (>= 1.05). The challenger still has no champion to beat. Walk-forward on cached bars is not a live edge.
+  - Seeding or promotion needs `--promote` by the owner.
+- **ForX-WeekendShutdown:** a one-time task (trigger 2026-10-17 03:05, no repetition, no next run). It already ran once; its action is `scripts/weekend_shutdown_once.ps1` (stop sampler, close MT5, `shutdown /s /t 300`). It will not run again, so it was left alone and not disabled.
+- No yaml, MT5, journal or model change; nothing from data/ committed.
