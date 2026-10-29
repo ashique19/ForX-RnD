@@ -706,3 +706,16 @@ No MT5 order placed, no settings touched, no yaml edits.
 - **Tests:** new `tests/test_fx_session_ny.py` (summer Oct 23-25 and winter Nov 6-8 cases, DST switch, burst gates, refresh_if_gap weekend target) and `tests/test_mt5_weekend_offset_guard.py`. 36 passed.
   - Full suite: 830 passed, 14 failed. That is the 13 known unrelated failures plus `test_api_decision::test_board_limits_generation_and_auto_to_the_active_pair`, which is order-dependent: it passes alone and in its own file, with and without these changes.
 - No yaml, cost/risk/min_conf/session, MT5-setting, /pipeline or /model/train changes.
+
+## 2026-10-29 19:39-19:50 Asia/Dhaka - W44 weekly champion/challenger gate (run early on the owner's go-ahead), report-only
+- Run: `python -m forex_lab retrain --pair <PAIR> --json`, never `--promote`. Desk CSVs end 2026-10-29 12:00 UTC. HEAD was 01cc003 and origin/main had nothing newer. Champion directory backed up first to `data/backup/champion_pre_W44_20261029`.
+- **EURUSD:** verdict **null, keep champion**. Walk-forward after costs (1.0 pip spread):
+  - Challenger: PF 0.8972, return -4.71%, max DD -5.90%, 556 trades, 44 folds.
+  - Champion record (2026-09-24): PF 0.9256, return -6.67%, max DD -8.35%, 1,089 trades, 41 folds.
+  - PF delta -0.028 (needs > 0). The PF floor of 1.05 also fails. Drawdown and return are smaller, but only because it trades about half as often.
+  - Not promotable. The champion was not written and nothing was trained. Only the challenger report and history line were written.
+- **USDJPY:** the gate **could not run**: "walk-forward failed (Walk-forward produced no folds - not enough data)". Verdict `keep`, nothing written to the champion.
+  - Cause: `data/USDJPY_1h.csv` has only 2,256 hourly bars (2026-06-19 02:00 -> 2026-10-29 12:00 UTC). Walk-forward needs train_bars 2000 + test_bars 250, so no fold fits after feature warm-up.
+  - EURUSD (12,936 bars) and NZDUSD (12,712 bars) were spliced with validated history on 10-20; the other 8 desk CSVs start 2026-06-19 and have the same limit. That includes EURJPY, which was not run.
+  - Fix would be the same history splice (`scripts/splice_history_segment.py`). It changes a desk data CSV, so it was not done without approval. Data history ends 2026-10-12, so the splice would also not cover the last 2.5 weeks without the desk tip.
+- Outputs (ignored, not committed): `data/_retrain_W44_{EURUSD,USDJPY}_20261029.json`. No yaml, data, model or journal committed.
