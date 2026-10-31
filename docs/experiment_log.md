@@ -749,3 +749,8 @@ No MT5 order placed, no settings touched, no yaml edits.
   - `python -m forex_lab retrain|replay ... --cost-model <m>` or `--cost-pips <x>`: replaces the round-trip cost for that run only, in memory (`spread_pips` = round trip, `replay.slippage_pips` = 0 so slippage is not double counted). The walk-forward only reads `spread_pips`, never `slippage_pips`. Without the flags nothing changes.
 - **Tests:** `tests/test_cost_model.py`, 7 pass (ok-only fills, max rule, missing pair, unknown model, in-memory override, committed table loads, CLI flags parse).
 - No yaml, journal, MT5, model or data change; no /pipeline or /model/train call.
+
+## 2026-10-31 11:40 Asia/Dhaka - (B) Pre-registration of the 4h/daily research round (committed before any run)
+- `research/new_families/PREREG_20261031.md`: daily first-class; F1 squeeze 4h/D (re-test), F1 daily with weekly-trend filter (2 new), F2_top3 and F3_L120 (re-tests, rules frozen), and a long-term trend family LT1 SMA200, LT2 Donchian 55/20-exit, LT3 MA50/200 (3 new).
+- Declared: the re-tests cannot differ in price cost from 2026-10-22 (the conservative cost equals the Duka p90 round trip on all pairs), F2_top3 cannot pass (20 < 30 trades), and LT/weekly variants are expected to be underpowered. Overlap with banned Donchian 55, TSMOM and the frozen MOM120 is stated.
+- **Trials: 11 new, N = 156 + 11 = 167. Alpha = 2.99e-4.** Pass rules: PF >= 1.10 at the conservative cost with measured swaps, min trades per variant, |DD| <= net R and <= 20R, >= 3/5 positive calendar folds, p < alpha, then a single holdout look (cutoff 2025-10-01) for in-sample passes only.
