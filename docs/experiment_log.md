@@ -739,7 +739,7 @@ No MT5 order placed, no settings touched, no yaml edits.
 - **ForX-WeekendShutdown:** a one-time task (trigger 2026-10-17 03:05, no repetition, no next run). It already ran once; its action is `scripts/weekend_shutdown_once.ps1` (stop sampler, close MT5, `shutdown /s /t 300`). It will not run again, so it was left alone and not disabled.
 - No yaml, MT5, journal or model change; nothing from data/ committed.
 
-## 2026-10-31 11:10 Asia/Dhaka - (A) Research-only measured MT5 cost table and `--cost-model` option (owner approved, pt540u)
+## 2026-10-31 11:07 Asia/Dhaka - (A) Research-only measured MT5 cost table and `--cost-model` option (owner approved, pt540u)
 - **Table:** `research/costs/mt5_measured_costs_20261031.json` (+ `.md`), built by `scripts/build_mt5_cost_table.py` from real samples only. It is read by research and the CLI override, not by any yaml, the desk or the paper books (`assumed_cost_pips` stays 1.4).
   - Spread: `data/costs/mt5_spreads.csv`, 17,660 rows = 1,766 five-minute samples x 10 pairs, 2026-10-14 05:38Z -> 10-30 20:56Z (gaps: Oct 16-19, Oct 23 20:55Z -> Oct 29 13:24Z). The snapshot `spread_pips` is used. The 5-minute tick medians for NZDUSD/USDCAD/USDCHF (0.3 pips) disagree with the snapshot (1.5/1.5/1.4) and with order-time spreads, so they are stored but not used.
   - Slippage: explore mirror `mt5_open`/`mt5_close` rows with ok=true, 523 fills (+ = adverse; per pair 43-60 fills, so per-pair values are used). Pooled adverse mean 0.025 pips, p90 0.1, signed median 0.0.
@@ -750,16 +750,21 @@ No MT5 order placed, no settings touched, no yaml edits.
 - **Tests:** `tests/test_cost_model.py`, 7 pass (ok-only fills, max rule, missing pair, unknown model, in-memory override, committed table loads, CLI flags parse).
 - No yaml, journal, MT5, model or data change; no /pipeline or /model/train call.
 
-## 2026-10-31 11:40 Asia/Dhaka - (B) Pre-registration of the 4h/daily research round (committed before any run)
+## 2026-10-31 11:08 Asia/Dhaka - (B) Pre-registration of the 4h/daily research round (committed before any run)
 - `research/new_families/PREREG_20261031.md`: daily first-class; F1 squeeze 4h/D (re-test), F1 daily with weekly-trend filter (2 new), F2_top3 and F3_L120 (re-tests, rules frozen), and a long-term trend family LT1 SMA200, LT2 Donchian 55/20-exit, LT3 MA50/200 (3 new).
 - Declared: the re-tests cannot differ in price cost from 2026-10-22 (the conservative cost equals the Duka p90 round trip on all pairs), F2_top3 cannot pass (20 < 30 trades), and LT/weekly variants are expected to be underpowered. Overlap with banned Donchian 55, TSMOM and the frozen MOM120 is stated.
 - **Trials: 11 new, N = 156 + 11 = 167. Alpha = 2.99e-4.** Pass rules: PF >= 1.10 at the conservative cost with measured swaps, min trades per variant, |DD| <= net R and <= 20R, >= 3/5 positive calendar folds, p < alpha, then a single holdout look (cutoff 2025-10-01) for in-sample passes only.
 
-## 2026-10-31 12:10 Asia/Dhaka - (B) Round harness committed before the run; sanity reproduction passed
+## 2026-10-31 11:10 Asia/Dhaka - (B) Round harness committed before the run; sanity reproduction passed
 - `research/new_families/round_20261031.py` + `tests/test_round_20261031.py` (10 tests pass: trial accounting, weekly filter causal and strictly before the decision bar, SMA targets causal, Donchian 55/20 causal + exit-bar reversal, folds and pass rules, cost table has no missing pair and equals Duka p90).
 - Sanity (not a trial, legacy settings: Duka p90, BIS + 1 pip markup, +30 days): F1_4h_q20 USDJPY 361 trades PF 0.9657 (2026-10-22: 361, 0.966); F3_L120 EURUSD 72, PF 1.0322 (72, 1.032); F2_top3 pooled 20, PF 1.5201 (20, 1.520). All three match, so the harness reproduces the 2026-10-22 numbers.
 
-## 2026-10-31 12:25 Asia/Dhaka - (B) Round results (in-sample only; holdout not run, nothing passed). Trial count 167
+## 2026-10-31 11:12 Asia/Dhaka - (B) Round results (in-sample only; holdout not run, nothing passed). Trial count 167
 - Ran `round_20261031.py --phase insample` (33 s): 11 variants, judged cost mt5_measured (= Duka p90 on all ten pairs) with measured MT5 swaps, 10-pair label, secondary financing/cost columns. Results: `research/new_families/RESULTS_20261031.md`.
 - No primary case passed (PF >= 1.10 with min trades, DD cap, p < 2.99e-4, folds >= 3/5). All single-pair LT cases and F2/F3 are UNDERPOWERED (MDE > 0.5R), so those fails mean "not shown". The 10-pair baskets for F1, F3, LT1, LT2 are powered and clearly negative (PF 0.58-0.84). Weekly-trend filter made F1_D worse (PF 0.43-0.50 vs 0.57-0.71).
 - Holdout (post-2025-10-01) was not run because no in-sample pass. Swap snapshot caveat recorded (single 2026-10 snapshot applied to 2015-2025 flatters carry-like rules). Trial count N = 167 (156 + 11).
+## 2026-10-31 11:15 Asia/Dhaka - (C) USDJPY gate rerun at higher costs (report-only, no --promote, models read-only)
+- Note: the timestamps of the three earlier 2026-10-31 entries were corrected on this commit to the real commit times (box clock, Asia/Dhaka); they had been written ahead of the clock.
+- Backed up data/champion to data/backup/champion_pre_costrerun_20261031 and MD5-hashed models/ before; after both runs the model hashes are unchanged. etrain --pair USDJPY --json ran twice, never with --promote: `champion_written` false, `trained` false, `allow_promote` false, verdict `seed` (no USDJPY champion exists). As usual the gate appended the challenger report and a history line in data/champion (ignored, report-only).
+- Cost applied via the new research-only option (no yaml change): `--cost-pips 1.4` and `--cost-model mt5_measured` (= 2.4 pips round trip for USDJPY, equals Duka p90). Same 44 folds.
+- Results vs the 1.0-pip seed (PF 1.0995, return +2.39%, max DD -3.19%, 257 trades, win 52.9%): 1.4 pips: PF 1.0583, return +1.40%, max DD -3.46%, 258 trades, win 52.7%. 2.4 pips (mt5_measured): PF 0.9912, return -0.30%, max DD -4.73%, 258 trades, win 51.6%. The gate's seed PF edge disappears at the conservative measured cost. JSON in data/_retrain_USDJPY_*_20261031.json (ignored).
