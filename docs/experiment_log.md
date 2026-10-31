@@ -758,3 +758,8 @@ No MT5 order placed, no settings touched, no yaml edits.
 ## 2026-10-31 12:10 Asia/Dhaka - (B) Round harness committed before the run; sanity reproduction passed
 - `research/new_families/round_20261031.py` + `tests/test_round_20261031.py` (10 tests pass: trial accounting, weekly filter causal and strictly before the decision bar, SMA targets causal, Donchian 55/20 causal + exit-bar reversal, folds and pass rules, cost table has no missing pair and equals Duka p90).
 - Sanity (not a trial, legacy settings: Duka p90, BIS + 1 pip markup, +30 days): F1_4h_q20 USDJPY 361 trades PF 0.9657 (2026-10-22: 361, 0.966); F3_L120 EURUSD 72, PF 1.0322 (72, 1.032); F2_top3 pooled 20, PF 1.5201 (20, 1.520). All three match, so the harness reproduces the 2026-10-22 numbers.
+
+## 2026-10-31 12:25 Asia/Dhaka - (B) Round results (in-sample only; holdout not run, nothing passed). Trial count 167
+- Ran `round_20261031.py --phase insample` (33 s): 11 variants, judged cost mt5_measured (= Duka p90 on all ten pairs) with measured MT5 swaps, 10-pair label, secondary financing/cost columns. Results: `research/new_families/RESULTS_20261031.md`.
+- No primary case passed (PF >= 1.10 with min trades, DD cap, p < 2.99e-4, folds >= 3/5). All single-pair LT cases and F2/F3 are UNDERPOWERED (MDE > 0.5R), so those fails mean "not shown". The 10-pair baskets for F1, F3, LT1, LT2 are powered and clearly negative (PF 0.58-0.84). Weekly-trend filter made F1_D worse (PF 0.43-0.50 vs 0.57-0.71).
+- Holdout (post-2025-10-01) was not run because no in-sample pass. Swap snapshot caveat recorded (single 2026-10 snapshot applied to 2015-2025 flatters carry-like rules). Trial count N = 167 (156 + 11).
