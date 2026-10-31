@@ -117,11 +117,44 @@ def cmd_digest(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     return 0
 
 
+def _apply_cost_override(args: argparse.Namespace, cfg: dict[str, Any], pair: str) -> dict[str, Any]:
+    """Research-only per-run cost override (--cost-model / --cost-pips). In-memory; never rewrites yaml."""
+    cm = getattr(args, "cost_model", None)
+    cp = getattr(args, "cost_pips", None)
+    if cm is None and cp is None:
+        return cfg
+    from forex_lab.cost_model import override_cfg_costs
+
+    new_cfg, info = override_cfg_costs(cfg, pair, cost_model=cm, cost_pips=cp)
+    safe_print(f"[cost] research override for {pair}: {info}")
+    return new_cfg
+
+
+def _add_cost_args(parser: argparse.ArgumentParser) -> None:
+    from forex_lab.cost_model import COST_MODELS
+
+    parser.add_argument(
+        "--cost-model",
+        dest="cost_model",
+        default=None,
+        choices=list(COST_MODELS),
+        help="Research-only round-trip cost for this run (research/costs table); does not rewrite default.yaml. "
+        "mt5_measured = max(MT5 p90, Dukascopy p90).",
+    )
+    parser.add_argument(
+        "--cost-pips",
+        dest="cost_pips",
+        type=float,
+        default=None,
+        help="Research-only round-trip cost in pips for this run (overrides spread_pips + slippage); does not rewrite default.yaml",
+    )
+
 def cmd_retrain(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     """Champion/challenger walk-forward gate. Promote or report null. Not a live edge."""
     from forex_lab.retrain import format_retrain_text, run_retrain_gate
 
     pair = str(getattr(args, "pair", None) or (cfg.get("retrain") or {}).get("pair") or "EURUSD")
+    cfg = _apply_cost_override(args, cfg, pair)
     dry = bool(getattr(args, "dry_run", False))
     # Default never writes the champion; promotion is an explicit human flag.
     promote = bool(getattr(args, "promote", False))
@@ -180,6 +213,7 @@ def cmd_replay(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
         replay = dict(cfg.get("replay") or {})
         replay["slippage_pips"] = float(args.slippage_pips)
         cfg = {**cfg, "replay": replay}
+    cfg = _apply_cost_override(args, cfg, pair)
     if getattr(args, "min_confidence", None) is not None:
         signals = dict(cfg.get("signals") or {})
         signals["min_confidence"] = float(args.min_confidence)
@@ -289,6 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Default writes only the challenger report and never the champion.",
     )
     r.add_argument("--json", action="store_true", help="Print JSON instead of text")
+    _add_cost_args(r)
 
     h = sub.add_parser(
         "history",
@@ -314,6 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--no-pull", action="store_true", help="Use the cache only; do not download")
     rp.add_argument("--model", default=None, help="Champion model: xgboost | logistic")
     rp.add_argument("--slippage-pips", dest="slippage_pips", type=float, default=None)
+    _add_cost_args(rp)
     rp.add_argument(
         "--min-confidence",
         dest="min_confidence",

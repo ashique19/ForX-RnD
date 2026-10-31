@@ -1,0 +1,460 @@
+{
+  "asof": "2026-10-31",
+  "assumed_rt_pips": 1.4,
+  "definition": "round trip = one full spread + slippage on each of 2 fills; mt5_measured = max(mt5_p90, duka_p90)",
+  "pairs": {
+    "AUDUSD": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.0,
+          "p90": 1.1
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.0,
+          "p90": 1.1
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.0,
+          "p90": 1.1
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.0,
+          "p90": 1.1
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.2,
+          "p90": 6.0
+        }
+      },
+      "duka_p50": 1.8,
+      "duka_p90": 2.6,
+      "mt5_measured": 2.6,
+      "mt5_p50": 1.02,
+      "mt5_p90": 1.1,
+      "slip_adverse_mean": 0.01,
+      "slip_adverse_p90": 0.0,
+      "slip_n": 60,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.0,
+      "spread_p90": 1.1
+    },
+    "EURGBP": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.1,
+          "p90": 1.2
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.1,
+          "p90": 1.2
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.1,
+          "p90": 1.2
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.1,
+          "p90": 1.3
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.3,
+          "p90": 7.3
+        }
+      },
+      "duka_p50": 1.4,
+      "duka_p90": 2.8,
+      "mt5_measured": 2.8,
+      "mt5_p50": 1.1279,
+      "mt5_p90": 1.46,
+      "slip_adverse_mean": 0.014,
+      "slip_adverse_p90": 0.08,
+      "slip_n": 43,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.1,
+      "spread_p90": 1.3
+    },
+    "EURJPY": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.7,
+          "p90": 2.0
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.7,
+          "p90": 2.0
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.7,
+          "p90": 2.0
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.7,
+          "p90": 2.0
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 2.1,
+          "p90": 10.1
+        }
+      },
+      "duka_p50": 1.8,
+      "duka_p90": 4.0,
+      "mt5_measured": 4.0,
+      "mt5_p50": 1.7936,
+      "mt5_p90": 2.38,
+      "slip_adverse_mean": 0.0468,
+      "slip_adverse_p90": 0.14,
+      "slip_n": 47,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.7,
+      "spread_p90": 2.1
+    },
+    "EURUSD": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 0.9,
+          "p90": 1.0
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 0.9,
+          "p90": 0.9
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 0.9,
+          "p90": 0.9
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 0.9,
+          "p90": 1.0
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.0,
+          "p90": 3.2
+        }
+      },
+      "duka_p50": 0.8,
+      "duka_p90": 1.4,
+      "mt5_measured": 1.4,
+      "mt5_p50": 0.9208,
+      "mt5_p90": 1.0,
+      "slip_adverse_mean": 0.0104,
+      "slip_adverse_p90": 0.0,
+      "slip_n": 48,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 0.9,
+      "spread_p90": 1.0
+    },
+    "GBPJPY": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 2.0,
+          "p90": 2.4
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.8,
+          "p90": 2.1
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.9,
+          "p90": 2.1
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.7,
+          "p90": 2.2
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 2.3,
+          "p90": 21.7
+        }
+      },
+      "duka_p50": 3.4,
+      "duka_p90": 7.6,
+      "mt5_measured": 7.6,
+      "mt5_p50": 2.0767,
+      "mt5_p90": 2.8,
+      "slip_adverse_mean": 0.0884,
+      "slip_adverse_p90": 0.2,
+      "slip_n": 43,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.9,
+      "spread_p90": 2.4
+    },
+    "GBPUSD": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.3,
+          "p90": 1.4
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.2,
+          "p90": 1.4
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.2,
+          "p90": 1.4
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.2,
+          "p90": 1.4
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.6,
+          "p90": 11.9
+        }
+      },
+      "duka_p50": 1.4,
+      "duka_p90": 2.8,
+      "mt5_measured": 2.8,
+      "mt5_p50": 1.325,
+      "mt5_p90": 1.5,
+      "slip_adverse_mean": 0.0125,
+      "slip_adverse_p90": -0.0,
+      "slip_n": 56,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.3,
+      "spread_p90": 1.5
+    },
+    "NZDUSD": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.5,
+          "p90": 1.6
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.4,
+          "p90": 1.5
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.4,
+          "p90": 1.5
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.5,
+          "p90": 1.6
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.6,
+          "p90": 4.5
+        }
+      },
+      "duka_p50": 2.0,
+      "duka_p90": 3.2,
+      "mt5_measured": 3.2,
+      "mt5_p50": 1.5259,
+      "mt5_p90": 1.6,
+      "slip_adverse_mean": 0.013,
+      "slip_adverse_p90": -0.0,
+      "slip_n": 54,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.5,
+      "spread_p90": 1.6
+    },
+    "USDCAD": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.5,
+          "p90": 1.6
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.4,
+          "p90": 1.5
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.5,
+          "p90": 1.6
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.4,
+          "p90": 1.6
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.8,
+          "p90": 4.6
+        }
+      },
+      "duka_p50": 2.4,
+      "duka_p90": 3.6,
+      "mt5_measured": 3.6,
+      "mt5_p50": 1.5509,
+      "mt5_p90": 1.8,
+      "slip_adverse_mean": 0.0255,
+      "slip_adverse_p90": 0.1,
+      "slip_n": 55,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.5,
+      "spread_p90": 1.6
+    },
+    "USDCHF": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.5,
+          "p90": 1.6
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.4,
+          "p90": 1.5
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.4,
+          "p90": 1.5
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.4,
+          "p90": 1.5
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.7,
+          "p90": 16.1
+        }
+      },
+      "duka_p50": 1.6,
+      "duka_p90": 3.0,
+      "mt5_measured": 3.0,
+      "mt5_p50": 1.4211,
+      "mt5_p90": 1.6,
+      "slip_adverse_mean": 0.0105,
+      "slip_adverse_p90": 0.0,
+      "slip_n": 57,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.4,
+      "spread_p90": 1.6
+    },
+    "USDJPY": {
+      "binding": "duka_p90",
+      "by_hour_bucket": {
+        "asia_00_06": {
+          "n": 437,
+          "p50": 1.2,
+          "p90": 1.4
+        },
+        "ldn_ny_12_15": {
+          "n": 320,
+          "p50": 1.1,
+          "p90": 1.3
+        },
+        "london_07_11": {
+          "n": 386,
+          "p50": 1.2,
+          "p90": 1.3
+        },
+        "ny_16_20": {
+          "n": 442,
+          "p50": 1.2,
+          "p90": 1.4
+        },
+        "rollover_21_23": {
+          "n": 181,
+          "p50": 1.3,
+          "p90": 5.0
+        }
+      },
+      "duka_p50": 1.0,
+      "duka_p90": 2.4,
+      "mt5_measured": 2.4,
+      "mt5_p50": 1.2733,
+      "mt5_p90": 1.6,
+      "slip_adverse_mean": 0.0367,
+      "slip_adverse_p90": 0.1,
+      "slip_n": 60,
+      "slip_source": "pair",
+      "spread_first": "2026-10-14 05:38:13",
+      "spread_last": "2026-10-30 20:56:05",
+      "spread_n": 1766,
+      "spread_p50": 1.2,
+      "spread_p90": 1.4
+    }
+  },
+  "schema": "mt5_measured_costs_v1",
+  "slippage_pooled": {
+    "adverse_mean": 0.0254302103250478,
+    "adverse_p90": 0.1,
+    "n": 523,
+    "signed_mean": 0.008604206500956025,
+    "signed_median": 0.0
+  },
+  "sources": {
+    "duka": "data/paper_shadow/measured_costs.csv",
+    "slippage": "data/paper_shadow/explore_journal.jsonl (mt5_open/mt5_close ok)",
+    "spreads": "data/costs/mt5_spreads.csv"
+  }
+}
