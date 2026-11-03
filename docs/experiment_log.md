@@ -772,7 +772,11 @@ No MT5 order placed, no settings touched, no yaml edits.
 ## 2026-11-03 11:41 Asia/Dhaka - Pre-registration: 4h/daily confluence filter on main-book 1h entries (owner t545u; committed before any run)
 - esearch/new_families/PREREG_20261103.md: 7 variants (4h EMA50 agree, daily EMA50 agree, both, both + conf >= 0.65, 4h swing structure, counter-check both-oppose, plus a conf >= 0.65 control). Trial count 167 -> 174, alpha 2.87e-4.
 - Entries are the saved 10-year main-book walk-forward predictions (champion recipe, holdout enforced, no retrain); costs mt5_measured + measured MT5 swaps, 1.0 pip reference. EURUSD and USDJPY judged individually, 10-pair label as backup. Prior evidence against: baseline PF 0.76 over 10 years, daily SMA filters failed 2026-10-20.
-## 2026-11-03 11:50 Asia/Dhaka - Confluence harness committed before the run; baseline reproduced
+## 2026-11-03 11:44 Asia/Dhaka - Confluence harness committed before the run; baseline reproduced
 - `research/htf/confluence_20261103.py` + `tests/test_confluence_20261103.py` (12 tests pass, including explicit no-lookahead tests: truncation equality on synthetic and real EURUSD data, garbage-future corruption, used-bar-end <= decision time, mid-bin signals use the previous completed 4h bar, swing pivots need k=2 confirming bars).
 - Sanity: the baseline re-simulated at the p90 measured cost reproduced the saved 2026-10-20 baseline trades on all 10 pairs (count and total R identical, e.g. EURUSD 3153 trades -80.729 R, USDJPY 2005 trades -154.674 R).
+## 2026-11-03 11:45 Asia/Dhaka - Confluence round results: 0 of 6 judged variants passed
+- Trial count N: 167 -> 174. Results: `research/new_families/RESULTS_20261103.md`. In-sample only; holdout not run (no case qualified).
+- EURUSD PF (measured cost + swaps) baseline 0.947 vs 0.92-0.96 for all filters; USDJPY baseline 0.797 vs 0.77-0.85. Trades cut 42-77%. 10-pair backup 0.758 -> 0.77-0.79. Counter-check H4_D_DISAGREE was not worse on EURUSD (PF 1.032, p=0.32), so higher-timeframe agreement has no dependable link to entry quality.
+- Banned: H4_EMA50, D_EMA50, H4_AND_D, H4_D_CONF65, H4_STRUCT, CONF65. No forward shadow.
 
