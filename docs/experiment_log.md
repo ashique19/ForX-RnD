@@ -769,6 +769,10 @@ No MT5 order placed, no settings touched, no yaml edits.
 - Cost applied via the new research-only option (no yaml change): `--cost-pips 1.4` and `--cost-model mt5_measured` (= 2.4 pips round trip for USDJPY, equals Duka p90). Same 44 folds.
 - Results vs the 1.0-pip seed (PF 1.0995, return +2.39%, max DD -3.19%, 257 trades, win 52.9%): 1.4 pips: PF 1.0583, return +1.40%, max DD -3.46%, 258 trades, win 52.7%. 2.4 pips (mt5_measured): PF 0.9912, return -0.30%, max DD -4.73%, 258 trades, win 51.6%. The gate's seed PF edge disappears at the conservative measured cost. JSON in data/_retrain_USDJPY_*_20261031.json (ignored).
 
-## 2026-11-03 11:55 Asia/Dhaka - Pre-registration: 4h/daily confluence filter on main-book 1h entries (owner t545u; committed before any run)
+## 2026-11-03 11:41 Asia/Dhaka - Pre-registration: 4h/daily confluence filter on main-book 1h entries (owner t545u; committed before any run)
 - esearch/new_families/PREREG_20261103.md: 7 variants (4h EMA50 agree, daily EMA50 agree, both, both + conf >= 0.65, 4h swing structure, counter-check both-oppose, plus a conf >= 0.65 control). Trial count 167 -> 174, alpha 2.87e-4.
 - Entries are the saved 10-year main-book walk-forward predictions (champion recipe, holdout enforced, no retrain); costs mt5_measured + measured MT5 swaps, 1.0 pip reference. EURUSD and USDJPY judged individually, 10-pair label as backup. Prior evidence against: baseline PF 0.76 over 10 years, daily SMA filters failed 2026-10-20.
+## 2026-11-03 11:50 Asia/Dhaka - Confluence harness committed before the run; baseline reproduced
+- `research/htf/confluence_20261103.py` + `tests/test_confluence_20261103.py` (12 tests pass, including explicit no-lookahead tests: truncation equality on synthetic and real EURUSD data, garbage-future corruption, used-bar-end <= decision time, mid-bin signals use the previous completed 4h bar, swing pivots need k=2 confirming bars).
+- Sanity: the baseline re-simulated at the p90 measured cost reproduced the saved 2026-10-20 baseline trades on all 10 pairs (count and total R identical, e.g. EURUSD 3153 trades -80.729 R, USDJPY 2005 trades -154.674 R).
+
