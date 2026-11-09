@@ -780,3 +780,14 @@ No MT5 order placed, no settings touched, no yaml edits.
 - EURUSD PF (measured cost + swaps) baseline 0.947 vs 0.92-0.96 for all filters; USDJPY baseline 0.797 vs 0.77-0.85. Trades cut 42-77%. 10-pair backup 0.758 -> 0.77-0.79. Counter-check H4_D_DISAGREE was not worse on EURUSD (PF 1.032, p=0.32), so higher-timeframe agreement has no dependable link to entry quality.
 - Banned: H4_EMA50, D_EMA50, H4_AND_D, H4_D_CONF65, H4_STRUCT, CONF65. No forward shadow.
 
+
+## 2026-11-09 12:02 Asia/Dhaka - Desk catch-up after multi-day PC outage (no promote)
+- Context: PC DESKTOP-GK9IH4N back online ~11:54 Asia/Dhaka. Decision API /health OK on :8000. Data/signals last written 2026-11-05 ~17:02 Asia/Dhaka before catch-up.
+- MT5: terminal64 running (started 11:54). MetaTrader5.initialize True; connected True; trade_allowed True; OANDA demo login 1715564002; balance 9939.85; broker open positions 0. No MT5 settings toggled; .env.mt5 unread.
+- Refresh: `scripts/refresh_if_gap.py` -> POST /refresh only (not /pipeline/* or /model/train/*). Status 200. Closed-hour gaps ~90-91h on FX pairs (BTCUSD still ~589h / STALE after). After refresh, board validity OK for EURUSD/USDJPY/AUDUSD/NZDUSD/USDCAD/EURJPY/EURGBP/USDCHF/GBPJPY/GBPUSD with last_bar 2026-11-09 10:00 Asia/Dhaka; signals/latest_signals.csv rewritten 11:59:50. All board signals HOLD under min_conf 0.60.
+- Main paper-shadow since 2026-11-04 18:00 UTC: 1 open + 1 close. USDCAD SELL opened 2026-11-04 20:14:33Z entry_mid 1.39715 conf 0.6026; closed 2026-11-05 04:58:32Z exit_mid 1.39492 exit_reason duration (bar-path exit 2026-11-05 03:00 UTC). Gross ~+22.3 pips (entry-exit)/0.0001. No further main fills/closes while PC was down.
+- Exploration book: reconciled sum_r -21.8173 over 559 closed (PF_r 0.907, wins 272). Journal still lists 22 opens all dated 2026-11-05 09:20-16:04 Asia/Dhaka (EURJPY 3, USDCAD 3, GBPJPY 3, EURGBP 3, AUDUSD 3, EURUSD 3, USDCHF 2, USDJPY 1, GBPUSD 1), but broker positions_get = 0 — demo mirrors are not open at the broker; journal/broker reconcile still needed (append-only; not applied this catch-up).
+- Weekly gate catch-up (no --promote, no yaml edits):
+  - EURUSD: verdict null; promote_eligible false; champion_written false. Challenger PF 0.8793 (566 trades, WR 0.498, DD -0.0616) vs champion PF 0.9256 (1089 trades). Reasons: PF did not improve; PF floor failed (< 1.05).
+  - USDJPY: verdict seed; promotion_blocked true (no --promote); champion_written false. Challenger PF 1.0861 (260 trades, WR 0.5269, return +0.0210, DD -0.0319) at gate's 1.0-pip cost setting. Human --promote still required to seed; not run.
+- Blockers/notes: BTCUSD tip still STALE (2026-10-15); explore journal vs broker open mismatch (22 vs 0); no tip-heal donors attempted this pass. Hard rules held.
