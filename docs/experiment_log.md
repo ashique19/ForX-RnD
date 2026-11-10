@@ -791,3 +791,10 @@ No MT5 order placed, no settings touched, no yaml edits.
   - EURUSD: verdict null; promote_eligible false; champion_written false. Challenger PF 0.8793 (566 trades, WR 0.498, DD -0.0616) vs champion PF 0.9256 (1089 trades). Reasons: PF did not improve; PF floor failed (< 1.05).
   - USDJPY: verdict seed; promotion_blocked true (no --promote); champion_written false. Challenger PF 1.0861 (260 trades, WR 0.5269, return +0.0210, DD -0.0319) at gate's 1.0-pip cost setting. Human --promote still required to seed; not run.
 - Blockers/notes: BTCUSD tip still STALE (2026-10-15); explore journal vs broker open mismatch (22 vs 0); no tip-heal donors attempted this pass. Hard rules held.
+
+## 2026-11-10 08:38 Asia/Dhaka - Aim progress (no promote, no live edge)
+- Still no after-cost edge. Stage-2 paper-shadow fills are 71 (raw 73, 2 excluded), up from 47 on 2026-10-30. Desk healthy: decision API :8000 and UI :5173 both 200 at 2026-11-10 08:37:58 Asia/Dhaka.
+- Two new main-book paper opens at 2026-11-10 08:03 Asia/Dhaka: USDJPY BUY 158.054 conf 0.605, stop 157.729, target 158.379 (tagged US Core CPI 19:30 Asia/Dhaka, outside the 60-minute news window); EURJPY SELL 177.378 conf 0.6451, stop 177.700, target 177.056. Journal 155->157, Stage-2 69->71.
+- Five paper positions still open, including three older ones from 9-14 October (GBPUSD SELL, NZDUSD SELL, USDCHF SELL).
+- W46 gate already run 2026-11-09 ~12:01 Asia/Dhaka (no --promote): EURUSD keep-champion, challenger PF 0.8793 / 566 trades vs champion PF 0.9256 / 1089 trades, PF floor failed. USDJPY seed PF 1.0861, return +2.10%, DD -3.19%, 260 trades, 44 folds, champion_written false; still needs the owner's --promote and is not recommended at the 2.4-pip measured cost.
+- Exploration book unchanged in this note: open 0, reconciled sum_r -27.81, post_fix -25.21, closed_bar -29.72. HEAD 8b295e2. Nothing promoted; this is not a live edge.
