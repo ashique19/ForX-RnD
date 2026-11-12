@@ -798,3 +798,14 @@ No MT5 order placed, no settings touched, no yaml edits.
 - Five paper positions still open, including three older ones from 9-14 October (GBPUSD SELL, NZDUSD SELL, USDCHF SELL).
 - W46 gate already run 2026-11-09 ~12:01 Asia/Dhaka (no --promote): EURUSD keep-champion, challenger PF 0.8793 / 566 trades vs champion PF 0.9256 / 1089 trades, PF floor failed. USDJPY seed PF 1.0861, return +2.10%, DD -3.19%, 260 trades, 44 folds, champion_written false; still needs the owner's --promote and is not recommended at the 2.4-pip measured cost.
 - Exploration book unchanged in this note: open 0, reconciled sum_r -27.81, post_fix -25.21, closed_bar -29.72. HEAD 8b295e2. Nothing promoted; this is not a live edge.
+
+## 2026-11-12 13:52 Asia/Dhaka - Phase 1 daily lens library: 0 of 8 variants passed in-sample; N=182
+
+- **Prereg** 218e3e5 (`research/phase1/PREREG_20261112.md`), committed and pushed before any result was computed (owner t564u). 8 new trials (7 directional daily agreement filters plus a walk-forward BEST_PER_REGIME selector). N = 174 + 8 = 182. Alpha = 0.05/182 = 2.75e-4. Judged costs EURUSD 1.4 pips, USDJPY 2.4 pips. EURUSD and USDJPY judged separately. Paper-shadow journal is a descriptive appendix only (5 and 12 closes; no stored R; underpowered).
+- **Harness** bd09a8e, also pushed before the run: `research/phase1/lenses.py`, `research/phase1/run_phase1.py`, `tests/test_phase1_lenses.py`. 16 tests pass, including no-lookahead (truncation equality, forming-bar shock), weekly completion only at Friday 17:00 New York, Wilder smooth, and BEST_PER_REGIME selection rules (30-trade minimum, must beat baseline mean R, frozen 2025 picks for 2026, ties keep the earlier lens).
+- **Sanity:** baseline re-simulation reproduced the saved 2026-10-20 / 2026-11-03 trades exactly: EURUSD 3153 trades, -80.729 R; USDJPY 2005 trades, -154.674 R.
+- **Results:** `research/phase1/RESULTS_20261112.md`. In-sample only; holdout not run (no case qualified). 0 of 8 variants passed on either pair. All 16 pair-by-variant cases had at least 418 trades (none thin, none underpowered). Every after-cost PF stayed below 1.05; every net R was negative.
+  - Closest: EURUSD SMA200 PF 0.988 vs baseline 0.948 (plus 0.040, short of plus 0.05 and of 1.05), net R -7.64.
+  - USDJPY ADX PF 0.931 vs 0.803 (clears plus 0.05 over baseline) but PF < 1.05, net R -11.36, 2 of 5 folds.
+  - BEST_PER_REGIME vs its matched 2016-01-01..2025-09-30 baseline: EURUSD 0.944 vs 0.953 (n=1208 vs 2602); USDJPY 0.851 vs 0.827 (n=679 vs 1747, short of plus 0.05). Walk-forward selections changed across years; picking last year's winner did not produce an after-cost edge.
+- **Banned:** SMA_STACK, ADX, DONCHIAN, SWING, RSI_REGIME, SMA200, WEEKLY, BEST_PER_REGIME. No forward shadow. Nothing promoted; no yaml, journal, model, or desk change. Intermediate outputs in gitignored `data/edge_check/phase1_20261112/`.
